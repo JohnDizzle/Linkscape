@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Source>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</Source>
+    <SmallTileSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</SmallTileSource>
+    <MediumTileSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</MediumTileSource>
+    <WideTileSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</WideTileSource>
+    <LargeTileSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</LargeTileSource>
+    <AppIconSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</AppIconSource>
+    <SplashScreenSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</SplashScreenSource>
+    <PackageLogoSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</PackageLogoSource>
+  </PropertyGroup>
+</Project>

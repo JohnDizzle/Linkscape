@@ -1,0 +1,14 @@
+{
+  "$comment": "Packaged MSIX debug profiles for the WinUI single-project MSIX app.",
+  "profiles": {
+    "LinkScape Package": {
+      "commandName": "MsixPackage",
+      "nativeDebugging": false
+    },
+    "LinkScape Package Devtools": {
+      "commandName": "MsixPackage",
+      "commandLineArgs": "--devtools",
+      "nativeDebugging": false
+    }
+  }
+}

@@ -1,0 +1,68 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <!-- <snippet:template-shape> -->
+    <PropertyGroup>
+      <OutputType>WinExe</OutputType>
+      <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+      <Platforms>x64;X86</Platforms>
+      <UseWinUI>true</UseWinUI>
+
+      <!-- Change from None to MSIX -->
+      <WindowsPackageType>MSIX</WindowsPackageType>
+      <EnableMsixTooling>true</EnableMsixTooling>
+
+      <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+      <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+      <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+      <Nullable>enable</Nullable>
+        <!--
+            Auto-resolve RuntimeIdentifier from the host SDK when the caller hasn't pinned
+            Platform / RuntimeIdentifier explicitly. Lets `dotnet build` / `dotnet run`
+            succeed without forcing -p:Platform=x64 on every invocation — WindowsAppSDK's
+            self-contained build path requires a concrete RID.
+        -->
+        <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And ('$(Platform)' == '' Or '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU')">$(NETCoreSdkPortableRuntimeIdentifier)</RuntimeIdentifier>
+        <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    </PropertyGroup>
+    <ItemGroup>
+      <Compile Remove="ChatSuggestionService.cs" />
+      <Compile Remove="DesktopFlyoutTrayIconService.cs" />
+    </ItemGroup>
+    <!-- </snippet:template-shape> -->
+
+    <ItemGroup>
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <PackageReference Include="DesktopFlyouts.WinUI" Version="1.4.0" />
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+        <PackageReference Include="Microsoft.UI.Reactor" Version="0.1.0-preview.10" />
+        <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+        <PackageReference Include="System.Speech" Version="10.0.9" />
+    </ItemGroup>
+
+    <!--
+        Debug-only: enable the Reactor devtools surface so the *devtools* flag
+        (from Properties/launchSettings.json's default F5 args) lights up the
+        devtools menu, and so the Visual Studio embedded-preview extension's
+        embed-host activation (which requires devtools support) succeeds.
+        Release / Publish builds drop both the package and the host-config
+        switch so the trim / AOT analyzers stay happy (see
+        docs/guide/packaging.md, section "Keep Reactor.DevtoolsSupport out of
+        retail"). To enable devtools in Release as well, move these into the
+        unconditioned ItemGroup above.
+    -->
+    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+        <RuntimeHostConfigurationOption Include="Reactor.DevtoolsSupport" Value="true" Trim="true" />
+    </ItemGroup>
+    <ItemGroup>
+      <AppxManifest Include="Package.appxmanifest">
+        <SubType>Designer</SubType>
+      </AppxManifest>
+      <Content Include="Assets\**\*.*" />
+    </ItemGroup>
+    <ItemGroup>
+      <None Remove="LinkScape_TemporaryKey.pfx" />
+    </ItemGroup>
+
+    <Import Project="LinkScape.Signing.props" Condition="Exists('LinkScape.Signing.props')" />
+</Project>

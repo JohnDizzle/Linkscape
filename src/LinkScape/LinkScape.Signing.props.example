@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Copy this file to LinkScape.Signing.props and keep it out of source control.
+    Use it only on your local machine or in CI when you are ready to sign MSIX packages.
+  -->
+  <PropertyGroup>
+    <AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
+
+    <!-- Option 1: sign with a local PFX file -->
+    <!-- <PackageCertificateKeyFile>C:\Path\To\Your\SigningCertificate.pfx</PackageCertificateKeyFile> -->
+    <!-- <PackageCertificatePassword>set-via-local-secret-or-ci</PackageCertificatePassword> -->
+
+    <!-- Option 2: sign with a certificate already installed in your cert store -->
+    <!-- <PackageCertificateThumbprint>YOUR_CERTIFICATE_THUMBPRINT</PackageCertificateThumbprint> -->
+  </PropertyGroup>
+</Project>

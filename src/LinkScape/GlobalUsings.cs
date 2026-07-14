@@ -1,0 +1,12 @@
+global using System;
+global using System.Collections.Generic;
+global using System.Linq;
+global using Microsoft.UI.Xaml;
+global using Microsoft.UI.Xaml.Media;
+global using Microsoft.UI.Reactor;
+global using Microsoft.UI.Reactor.Core;
+global using Microsoft.UI.Xaml.Controls;
+global using System.Text.Json;
+global using System.Text.Json.Nodes;
+global using Microsoft.Data.Sqlite;    
+global using static Microsoft.UI.Reactor.Factories;
