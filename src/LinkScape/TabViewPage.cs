@@ -20,6 +20,7 @@ class TabViewPage : Component
         Recent,
         MostVisited,
         Settings,
+        Backdrop,
         Favorites,
         Chat
     }
@@ -54,6 +55,8 @@ class TabViewPage : Component
     private Action<string>? _setAddressFromCore;
     private Action<bool>? _setLoadingStateFromCore;
     private Action? _refreshHistoryFromCore;
+    private bool _importBrowserNamesLoadStarted;
+    private int _commandCenterBusyVersion;
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
@@ -85,11 +88,16 @@ class TabViewPage : Component
         var (canGoForward, setCanGoForward) = UseState(false);
         var (isLoading, setIsLoading) = UseState(false);
         var (historyFilter, setHistoryFilter) = UseState(string.Empty);
-        var (recentHistory, setRecentHistory) = UseState(LoadRecentHistoryItems(string.Empty));
-        var (mostVisitedHistory, setMostVisitedHistory) = UseState(LoadMostVisitedHistoryItems());
+        var (recentHistory, setRecentHistory) = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
+        var (mostVisitedHistory, setMostVisitedHistory) = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var (favoritesFilter, setFavoritesFilter) = UseState(string.Empty);
-        var (favoriteItems, setFavoriteItems) = UseState(LoadFavoriteItems(string.Empty));
-        var (historyImportStatus, setHistoryImportStatus) = UseState(string.Empty);
+        var (favoriteItems, setFavoriteItems) = UseState(Array.Empty<FavoriteItem>(), threadSafe: true);
+        var (favoritesImportStatus, setFavoritesImportStatus) = UseState(string.Empty, threadSafe: true);
+        var (historyImportStatus, setHistoryImportStatus) = UseState(string.Empty, threadSafe: true);
+        var (isCommandCenterBusy, setIsCommandCenterBusy) = UseState(false, threadSafe: true);
+        var (commandCenterBusyText, setCommandCenterBusyText) = UseState(string.Empty, threadSafe: true);
+        var (historyImportBrowserNames, setHistoryImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
+        var (favoritesImportBrowserNames, setFavoritesImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
         var (activeCommandCenterSection, setActiveCommandCenterSection) = UseState(CommandCenterSection.None);
         var (isCommandCenterExpanded, setIsCommandCenterExpanded) = UseState(false);
         var (isRailTabsExpanded, setIsRailTabsExpanded) = UseState(true);
@@ -101,6 +109,16 @@ class TabViewPage : Component
                     BrowserSearchProviders.DefaultProviderKey)));
 
         var isCommandCenterOpen = activeCommandCenterSection != CommandCenterSection.None;
+
+        if (!_importBrowserNamesLoadStarted)
+        {
+            _importBrowserNamesLoadStarted = true;
+            _ = Task.Run(() =>
+            {
+                setHistoryImportBrowserNames(GetHistoryImportBrowserNames());
+                setFavoritesImportBrowserNames(GetFavoritesImportBrowserNames());
+            });
+        }
 
         void MarkTabsChanged(BrowserTab[] nextTabs)
         {
@@ -116,9 +134,23 @@ class TabViewPage : Component
                 setIsCommandCenterExpanded(false);
             }
 
-            setActiveCommandCenterSection(activeCommandCenterSection == section
+            var nextSection = activeCommandCenterSection == section
                 ? CommandCenterSection.None
-                : section);
+                : section;
+
+            setActiveCommandCenterSection(nextSection);
+
+            switch (nextSection)
+            {
+                case CommandCenterSection.History:
+                case CommandCenterSection.Recent:
+                case CommandCenterSection.MostVisited:
+                    RefreshHistoryState();
+                    break;
+                case CommandCenterSection.Favorites:
+                    RefreshFavoritesState();
+                    break;
+            }
         }
 
         void DismissCommandCenter()
@@ -266,11 +298,47 @@ class TabViewPage : Component
             }
         }
 
-        void RefreshHistoryState(string? filterOverride = null)
+        int BeginCommandCenterWork(string busyText)
+        {
+            var version = Interlocked.Increment(ref _commandCenterBusyVersion);
+            setIsCommandCenterBusy(true);
+            setCommandCenterBusyText(busyText);
+            return version;
+        }
+
+        void EndCommandCenterWork(int version)
+        {
+            if (version != Volatile.Read(ref _commandCenterBusyVersion))
+            {
+                return;
+            }
+
+            setCommandCenterBusyText(string.Empty);
+            setIsCommandCenterBusy(false);
+        }
+
+        void SetHistoryStateFromDatabase(string? filterOverride = null)
         {
             var effectiveFilter = filterOverride ?? historyFilter;
             setRecentHistory(LoadRecentHistoryItems(effectiveFilter));
             setMostVisitedHistory(LoadMostVisitedHistoryItems());
+        }
+
+        void RefreshHistoryState(string? filterOverride = null)
+        {
+            var version = BeginCommandCenterWork("Loading history…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    SetHistoryStateFromDatabase(filterOverride);
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
         }
 
         void ApplyHistoryFilter(string nextFilter)
@@ -279,10 +347,27 @@ class TabViewPage : Component
             setRecentHistory(LoadRecentHistoryItems(nextFilter));
         }
 
-        void RefreshFavoritesState(string? filterOverride = null)
+        void SetFavoritesStateFromDatabase(string? filterOverride = null)
         {
             var effectiveFilter = filterOverride ?? favoritesFilter;
             setFavoriteItems(LoadFavoriteItems(effectiveFilter));
+        }
+
+        void RefreshFavoritesState(string? filterOverride = null)
+        {
+            var version = BeginCommandCenterWork("Loading favorites…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    SetFavoritesStateFromDatabase(filterOverride);
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
         }
 
         void ApplyFavoritesFilter(string nextFilter)
@@ -293,18 +378,153 @@ class TabViewPage : Component
 
         void ImportBrowserHistory()
         {
-            try
+            if (isCommandCenterBusy)
             {
-                var summary = BrowserHistoryImportService.ImportAllHistory();
-                setHistoryImportStatus(summary.SourceCount > 0
-                    ? $"Imported {summary.ImportedItemCount} items from {summary.SourceCount} sources"
-                    : "No supported browser history sources were found.");
-                RefreshHistoryState();
+                return;
             }
-            catch
+
+            setActiveCommandCenterSection(CommandCenterSection.History);
+            var version = BeginCommandCenterWork("Importing history…");
+            setHistoryImportStatus("Importing browser history…");
+
+            _ = Task.Run(() =>
             {
-                setHistoryImportStatus("Browser history import failed.");
+                try
+                {
+                    var summary = BrowserHistoryImportService.ImportAllHistory();
+                    setHistoryImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} items from {summary.SourceCount} sources"
+                        : "No supported browser history sources were found.");
+                    SetHistoryStateFromDatabase();
+                }
+                catch
+                {
+                    setHistoryImportStatus("Browser history import failed.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
+        void ImportBrowserHistoryByName(string browserName)
+        {
+            if (isCommandCenterBusy)
+            {
+                return;
             }
+
+            setActiveCommandCenterSection(CommandCenterSection.History);
+            var version = BeginCommandCenterWork($"Importing {browserName} history…");
+            setHistoryImportStatus($"Importing {browserName} history…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = BrowserHistoryImportService.ImportBrowserHistory(browserName);
+                    setHistoryImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} items from {browserName}"
+                        : $"No {browserName} history was imported.");
+                    SetHistoryStateFromDatabase();
+                }
+                catch
+                {
+                    setHistoryImportStatus($"{browserName} history import failed.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
+        void DeleteAllHistory()
+        {
+            HistoryPersistenceService.ClearHistory();
+            setHistoryImportStatus("Deleted all history.");
+            RefreshHistoryState();
+        }
+
+        void ImportBrowserFavorites()
+        {
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            setActiveCommandCenterSection(CommandCenterSection.Favorites);
+            var version = BeginCommandCenterWork("Importing favorites…");
+            setFavoritesImportStatus("Importing browser favorites…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = BrowserFavoritesImportService.ImportAllFavorites();
+                    setFavoritesImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} favorites from {summary.SourceCount} sources"
+                        : "No supported browser favorites were found.");
+                    SetFavoritesStateFromDatabase();
+                }
+                catch
+                {
+                    setFavoritesImportStatus("Browser favorites import failed.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
+        void ImportBrowserFavoritesByName(string browserName)
+        {
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            setActiveCommandCenterSection(CommandCenterSection.Favorites);
+            var version = BeginCommandCenterWork($"Importing {browserName} favorites…");
+            setFavoritesImportStatus($"Importing {browserName} favorites…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = BrowserFavoritesImportService.ImportBrowserFavorites(browserName);
+                    setFavoritesImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} favorites from {browserName}"
+                        : $"No {browserName} favorites were imported.");
+                    SetFavoritesStateFromDatabase();
+                }
+                catch
+                {
+                    setFavoritesImportStatus($"{browserName} favorites import failed.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
+        void DeleteAllFavorites()
+        {
+            FavoritesService.ClearFavorites();
+            var nextTabs = tabs
+                .Select(tab => tab with
+                {
+                    FavoriteId = string.Empty,
+                    IsFavorite = false
+                })
+                .ToArray();
+
+            setFavoritesImportStatus("Deleted all favorites.");
+            MarkTabsChanged(nextTabs);
+            RefreshFavoritesState();
         }
 
         void OpenHistoryItem(string url)
@@ -715,13 +935,23 @@ class TabViewPage : Component
             recentHistory,
             historyFilter,
             historyImportStatus,
+            historyImportBrowserNames,
             favoriteItems,
             favoritesFilter,
+            favoritesImportStatus,
+            favoritesImportBrowserNames,
+            isCommandCenterBusy,
+            commandCenterBusyText,
             settingsSnapshot,
             SaveSettingValue,
             ApplyHistoryFilter,
             ApplyFavoritesFilter,
             ImportBrowserHistory,
+            ImportBrowserHistoryByName,
+            DeleteAllHistory,
+            ImportBrowserFavorites,
+            ImportBrowserFavoritesByName,
+            DeleteAllFavorites,
             OpenHistoryItem,
             ToggleCommandCenterByName,
             ToggleCommandCenterExpanded,
@@ -1163,6 +1393,38 @@ class TabViewPage : Component
             return string.IsNullOrWhiteSpace(filter)
                 ? HistoryPersistenceService.GetRecentHistory(limit).ToArray()
                 : HistoryPersistenceService.SearchHistory(filter, limit).ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string[] GetHistoryImportBrowserNames()
+    {
+        try
+        {
+            return BrowserHistoryImportService.DiscoverSources()
+                .Select(source => source.BrowserName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string[] GetFavoritesImportBrowserNames()
+    {
+        try
+        {
+            return BrowserFavoritesImportService.DiscoverSources()
+                .Select(source => source.BrowserName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
         }
         catch
         {

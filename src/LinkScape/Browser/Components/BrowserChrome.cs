@@ -133,37 +133,80 @@ internal static class BrowserChrome
     }
 
     private static MenuFlyout CreateTabContextFlyout(
-    BrowserTab tab,
-    Action<string> onToggleFavoriteTab,
-    Action<string> onCloseTab,
-    Action<string> onReloadTab)
-{
-    var flyout = new MenuFlyout();
-
-    var favoriteItem = new MenuFlyoutItem
+        BrowserTab tab,
+        Action<string> onToggleFavoriteTab,
+        Action<string> onCloseTab,
+        Action<string> onReloadTab)
     {
-        Text = tab.IsFavorite ? "Remove Favorite" : "Add Favorite"
-    };
-    favoriteItem.Click += (_, _) => onToggleFavoriteTab(tab.Id);
+        var flyout = new MenuFlyout();
 
-    var reloadItem = new MenuFlyoutItem
+        var favoriteItem = new MenuFlyoutItem
+        {
+            Text = tab.IsFavorite ? "Remove Favorite" : "Add Favorite"
+        };
+        favoriteItem.Click += (_, _) => onToggleFavoriteTab(tab.Id);
+
+        var reloadItem = new MenuFlyoutItem
+        {
+            Text = "Reload"
+        };
+        reloadItem.Click += (_, _) => onReloadTab(tab.Id);
+
+        var closeItem = new MenuFlyoutItem
+        {
+            Text = "Close"
+        };
+        closeItem.Click += (_, _) => onCloseTab(tab.Id);
+
+        flyout.Items.Add(favoriteItem);
+        flyout.Items.Add(reloadItem);
+        flyout.Items.Add(closeItem);
+
+        return flyout;
+    }
+
+    private static MenuFlyout CreateHistoryImportFlyout(
+        IReadOnlyList<string> browserNames,
+        Action onImportAllHistory,
+        Action<string> onImportBrowserHistory,
+        bool isImportRunning)
     {
-        Text = "Reload"
-    };
-    reloadItem.Click += (_, _) => onReloadTab(tab.Id);
+        var flyout = new MenuFlyout();
 
-    var closeItem = new MenuFlyoutItem
-    {
-        Text = "Close"
-    };
-    closeItem.Click += (_, _) => onCloseTab(tab.Id);
+        var allBrowsersItem = new MenuFlyoutItem
+        {
+            Text = isImportRunning ? "Import running…" : "All browsers",
+            IsEnabled = !isImportRunning
+        };
+        allBrowsersItem.Click += (_, _) => onImportAllHistory();
+        flyout.Items.Add(allBrowsersItem);
 
-    flyout.Items.Add(favoriteItem);
-    flyout.Items.Add(reloadItem);
-    flyout.Items.Add(closeItem);
+        if (browserNames.Count == 0)
+        {
+            var emptyItem = new MenuFlyoutItem
+            {
+                Text = "No supported browsers found",
+                IsEnabled = false
+            };
+            flyout.Items.Add(emptyItem);
+            return flyout;
+        }
 
-    return flyout;
-}
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        foreach (var browserName in browserNames)
+        {
+            var importBrowserItem = new MenuFlyoutItem
+            {
+                Text = browserName,
+                IsEnabled = !isImportRunning
+            };
+            importBrowserItem.Click += (_, _) => onImportBrowserHistory(browserName);
+            flyout.Items.Add(importBrowserItem);
+        }
+
+        return flyout;
+    }
 
     public static Element BuildTabRail(
     BrowserTab[] tabs,
@@ -181,13 +224,23 @@ internal static class BrowserChrome
     IReadOnlyList<HistoryItem> recentHistoryItems,
     string historyFilter,
     string historyImportStatus,
+    IReadOnlyList<string> historyImportBrowserNames,
     IReadOnlyList<FavoriteItem> favoriteItems,
     string favoritesFilter,
+        string favoritesImportStatus,
+        IReadOnlyList<string> favoritesImportBrowserNames,
+        bool isCommandCenterBusy,
+        string commandCenterBusyText,
     IReadOnlyDictionary<string, string> settingsSnapshot,
     Action<string, string> onSaveSettingValue,
     Action<string> onHistoryFilterChanged,
     Action<string> onFavoritesFilterChanged,
     Action onImportHistory,
+    Action<string> onImportBrowserHistory,
+    Action onDeleteAllHistory,
+        Action onImportFavorites,
+        Action<string> onImportBrowserFavorites,
+        Action onDeleteAllFavorites,
     Action<string> onOpenHistoryItem,
     Action<string> onToggleCommandCenter,
     Action onToggleCommandCenterExpanded,
@@ -205,7 +258,7 @@ internal static class BrowserChrome
             collapsedCommandCenterHeight += CommandCenterBladeHeight + 4;
         }
 
-        var railWidth = isTabsCollapsed ? CollapsedRailWidth : 325;
+        var railWidth = isTabsCollapsed ? CollapsedRailWidth : 400;
         var tabList = (ListView<BrowserTab>(
             tabs,
             (tab, _) =>
@@ -214,8 +267,8 @@ internal static class BrowserChrome
                     string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
                 return isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isTabLoading)
-                    : BuildExpandedTabItem(tab, isTabLoading);
+                    ? BuildCollapsedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab)
+                    : BuildExpandedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab);
             }) with
         {
             SelectedIndex = selectedIndex,
@@ -283,13 +336,23 @@ internal static class BrowserChrome
                     recentHistoryItems,
                     historyFilter,
                     historyImportStatus,
+                    historyImportBrowserNames,
                     favoriteItems,
                     favoritesFilter,
+                    favoritesImportStatus,
+                    favoritesImportBrowserNames,
+                    isCommandCenterBusy,
+                    commandCenterBusyText,
                     settingsSnapshot,
                     onSaveSettingValue,
                     onHistoryFilterChanged,
                     onFavoritesFilterChanged,
                     onImportHistory,
+                    onImportBrowserHistory,
+                    onDeleteAllHistory,
+                    onImportFavorites,
+                    onImportBrowserFavorites,
+                    onDeleteAllFavorites,
                     onOpenHistoryItem,
                     onToggleCommandCenter,
                     onToggleCommandCenterExpanded,
@@ -319,13 +382,23 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
+        IReadOnlyList<string> historyImportBrowserNames,
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
+        string favoritesImportStatus,
+        IReadOnlyList<string> favoritesImportBrowserNames,
+        bool isCommandCenterBusy,
+        string commandCenterBusyText,
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action<string> onHistoryFilterChanged,
         Action<string> onFavoritesFilterChanged,
         Action onImportHistory,
+        Action<string> onImportBrowserHistory,
+        Action onDeleteAllHistory,
+        Action onImportFavorites,
+        Action<string> onImportBrowserFavorites,
+        Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action<string> onToggleCommandCenter,
         Action onToggleCommandCenterExpanded,
@@ -338,13 +411,22 @@ internal static class BrowserChrome
             recentHistoryItems,
             historyFilter,
             historyImportStatus,
+            historyImportBrowserNames,
             favoriteItems,
             favoritesFilter,
+            favoritesImportStatus,
+            favoritesImportBrowserNames,
+            isCommandCenterBusy,
             settingsSnapshot,
             onSaveSettingValue,
             onHistoryFilterChanged,
             onFavoritesFilterChanged,
             onImportHistory,
+            onImportBrowserHistory,
+            onDeleteAllHistory,
+            onImportFavorites,
+            onImportBrowserFavorites,
+            onDeleteAllFavorites,
             onOpenHistoryItem,
             onToggleCommandCenterExpanded,
             onDismissCommandCenter)
@@ -358,10 +440,10 @@ internal static class BrowserChrome
 
         return FlexColumn(
             blade,
-            BuildRailSectionCard(
+                BuildRailSectionCard(
                 "Command Center",
-                BuildCommandCenterFooter(activeCommandCenterSection, onToggleCommandCenter)
-                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight))
+                BuildCommandCenterFooter(activeCommandCenterSection, onToggleCommandCenter, isCommandCenterBusy, commandCenterBusyText)
+                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight, isCommandCenterBusy))
             .MinHeight(0)
             .Flex(grow: isCommandCenterExpanded ? 1 : 0, shrink: 1, basis: 0);
     }
@@ -373,13 +455,22 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
+        IReadOnlyList<string> historyImportBrowserNames,
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
+        string favoritesImportStatus,
+        IReadOnlyList<string> favoritesImportBrowserNames,
+        bool isCommandCenterBusy,
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action<string> onHistoryFilterChanged,
         Action<string> onFavoritesFilterChanged,
         Action onImportHistory,
+        Action<string> onImportBrowserHistory,
+        Action onDeleteAllHistory,
+        Action onImportFavorites,
+        Action<string> onImportBrowserFavorites,
+        Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action onToggleCommandCenterExpanded,
         Action onDismissCommandCenter)
@@ -391,11 +482,12 @@ internal static class BrowserChrome
 
         Element content = activeCommandCenterSection switch
         {
-            "History" => BuildHistoryBladeContent(recentHistoryItems, historyFilter, historyImportStatus, onHistoryFilterChanged, onImportHistory, onOpenHistoryItem, isCommandCenterExpanded),
+            "History" => BuildHistoryBladeContent(recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserNames, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onDeleteAllHistory, onOpenHistoryItem, isCommandCenterExpanded),
             "Recent" => BuildRecentBladeContent(recentHistoryItems, onOpenHistoryItem, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(mostVisitedItems, onOpenHistoryItem, isCommandCenterExpanded),
-            "Favorites" => BuildFavoritesBladeContent(favoriteItems, favoritesFilter, onFavoritesFilterChanged, onOpenHistoryItem, isCommandCenterExpanded),
-            "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
+            "Favorites" => BuildFavoritesBladeContent(favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenHistoryItem, isCommandCenterExpanded),
+            "Settings" => BuildSettingsBladeContent(settingsSnapshot),
+            "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
             _ => Border(null)
         };
@@ -449,7 +541,11 @@ internal static class BrowserChrome
         return blade;
     }
 
-    private static Element BuildCommandCenterFooter(string activeCommandCenterSection, Action<string> onToggleCommandCenter)
+    private static Element BuildCommandCenterFooter(
+        string activeCommandCenterSection,
+        Action<string> onToggleCommandCenter,
+        bool isCommandCenterBusy,
+        string commandCenterBusyText)
     {
         return Border(
             VStack(8,
@@ -461,8 +557,19 @@ internal static class BrowserChrome
                 HStack(8,
                     BuildCommandCenterButton("Settings", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Favorites", activeCommandCenterSection, onToggleCommandCenter),
+                    BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Chat", activeCommandCenterSection, onToggleCommandCenter, "Chat")
-                )
+                ),
+                isCommandCenterBusy
+                    ? HStack(8,
+                        ProgressRing()
+                            .Width(16)
+                            .Height(16)
+                            .Set(progressRing => progressRing.IsActive = true),
+                        TextBlock(string.IsNullOrWhiteSpace(commandCenterBusyText) ? "Working…" : commandCenterBusyText)
+                            .Opacity(0.8)
+                            .TextTrimming(TextTrimming.CharacterEllipsis))
+                    : Border(null).IsVisible(false)
             )
         )
         .Padding(0)
@@ -485,7 +592,11 @@ internal static class BrowserChrome
             .Flex(grow: 1, basis: 0);
     }
 
-    private static Element BuildRailSectionCard(string title, Element content, double? fixedHeight = null)
+    private static Element BuildRailSectionCard(
+        string title,
+        Element content,
+        double? fixedHeight = null,
+        bool isBusy = false)
     {
         var card = Border(
             VStack(10,
@@ -507,7 +618,14 @@ internal static class BrowserChrome
         .CornerRadius(16)
         .Background(BrowserConstants.LayerFillAltBrush)
         .WithBorder(Theme.SurfaceStroke)
-        .Margin(0, 0, 0, 6);
+        .Margin(0, 0, 0, 6)
+        .Set(border =>
+        {
+            if (string.Equals(title, "Command Center", StringComparison.Ordinal))
+            {
+                ApplyCommandCenterBusyState(border, isBusy);
+            }
+        });
 
         if (fixedHeight is double height)
         {
@@ -515,6 +633,72 @@ internal static class BrowserChrome
         }
 
         return card;
+    }
+
+    private static void ApplyCommandCenterBusyState(Microsoft.UI.Xaml.Controls.Border border, bool isBusy)
+    {
+        if (!isBusy)
+        {
+            if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
+            {
+                storyboard.Stop();
+                border.Tag = null;
+            }
+
+            border.BorderThickness = new Thickness(0);
+            border.ClearValue(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty);
+            return;
+        }
+
+        border.BorderThickness = new Thickness(2);
+
+        if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
+        {
+            return;
+        }
+
+        var rotateTransform = new RotateTransform
+        {
+            CenterX = 0.5,
+            CenterY = 0.5
+        };
+        border.BorderBrush = CreateRainbowBorderBrush(rotateTransform);
+
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(1.8)),
+            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, rotateTransform);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Angle");
+
+        var busyStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        busyStoryboard.Children.Add(animation);
+        border.Tag = busyStoryboard;
+        busyStoryboard.Begin();
+    }
+
+    private static Brush CreateRainbowBorderBrush(RotateTransform rotateTransform)
+    {
+        return new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(1, 1),
+            RelativeTransform = rotateTransform,
+            GradientStops = new GradientStopCollection
+            {
+                new() { Color = Microsoft.UI.Colors.Red, Offset = 0.00 },
+                new() { Color = Microsoft.UI.Colors.Orange, Offset = 0.18 },
+                new() { Color = Microsoft.UI.Colors.Yellow, Offset = 0.34 },
+                new() { Color = Microsoft.UI.Colors.LimeGreen, Offset = 0.50 },
+                new() { Color = Microsoft.UI.Colors.DeepSkyBlue, Offset = 0.66 },
+                new() { Color = Microsoft.UI.Colors.MediumPurple, Offset = 0.82 },
+                new() { Color = Microsoft.UI.Colors.HotPink, Offset = 1.00 }
+            }
+        };
     }
 
     private static Element BuildCompactTabsCard(Action onShowTabs)
@@ -556,8 +740,12 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
+        IReadOnlyList<string> historyImportBrowserNames,
+        bool isImportRunning,
         Action<string> onHistoryFilterChanged,
         Action onImportHistory,
+        Action<string> onImportBrowserHistory,
+        Action onDeleteAllHistory,
         Action<string> onOpenHistoryItem,
         bool isCommandCenterExpanded)
     {
@@ -580,7 +768,14 @@ internal static class BrowserChrome
                 ).HAlign(HorizontalAlignment.Left)
                 .Padding(0)
                 .Flex(grow: 1, basis: 0),
-                Button("Import", onImportHistory).HAlign(HorizontalAlignment.Right)
+                HStack(8,
+                    Button("Import", () => { })
+                        .IsEnabled(!isImportRunning)
+                        .Set(button => button.Flyout = CreateHistoryImportFlyout(historyImportBrowserNames, onImportHistory, onImportBrowserHistory, isImportRunning)),
+                    Button("Delete all history", onDeleteAllHistory)
+                        .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                        .AutomationName("Delete all history")
+                ).HAlign(HorizontalAlignment.Right)
             ),
             string.IsNullOrWhiteSpace(historyImportStatus)
                 ? Border(null).IsVisible(false)
@@ -629,17 +824,17 @@ internal static class BrowserChrome
         var topItems = mostVisitedItems.ToArray();
         var rows = new List<Element>();
 
-        for (var index = 0; index < topItems.Length; index += 3)
+        for (var index = 0; index < topItems.Length; index += 2)
         {
             var cards = new List<Element>();
 
-            for (var column = index; column < Math.Min(index + 3, topItems.Length); column++)
+            for (var column = index; column < Math.Min(index + 2, topItems.Length); column++)
             {
                 cards.Add(BuildMostVisitedItem(topItems[column], onOpenHistoryItem)
                     .Flex(grow: 1, basis: 0));
             }
 
-            while (cards.Count < 3)
+            while (cards.Count < 2)
             {
                 cards.Add(Border(null)
                     .Width(100)
@@ -650,7 +845,7 @@ internal static class BrowserChrome
             rows.Add(HStack(8, cards.ToArray()));
         }
 
-        return VStack(10,
+        return VStack(16,
             TextBlock("Most visited")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
             rows.Count == 0
@@ -666,7 +861,13 @@ internal static class BrowserChrome
     private static Element BuildFavoritesBladeContent(
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
+        string favoritesImportStatus,
+        IReadOnlyList<string> favoritesImportBrowserNames,
+        bool isImportRunning,
         Action<string> onFavoritesFilterChanged,
+        Action onImportFavorites,
+        Action<string> onImportBrowserFavorites,
+        Action onDeleteAllFavorites,
         Action<string> onOpenFavoriteItem,
         bool isCommandCenterExpanded)
     {
@@ -677,11 +878,10 @@ internal static class BrowserChrome
             favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], onOpenFavoriteItem));
         }
 
-        return favoriteItems.Count == 0
-            ? BuildPlaceholderBladeContent("Favorites", "No favorites yet. Star a tab to pin it here.")
-            : VStack(10,
-                TextBlock("Favorites")
-                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+        return VStack(10,
+            TextBlock("Favorites")
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+            HStack(14,
                 Border(
                     AutoSuggestBox(favoritesFilter, onFavoritesFilterChanged, submitted => onFavoritesFilterChanged(submitted))
                     .AutomationName("Favorites Filter") with
@@ -692,16 +892,36 @@ internal static class BrowserChrome
                 .HAlign(HorizontalAlignment.Left)
                 .Padding(0)
                 .Flex(grow: 1, basis: 0),
-                VStack(6, favoriteRows.ToArray()));
+                HStack(8,
+                    Button("Import", () => { })
+                        .IsEnabled(!isImportRunning)
+                        .Set(button => button.Flyout = CreateHistoryImportFlyout(favoritesImportBrowserNames, onImportFavorites, onImportBrowserFavorites, isImportRunning)),
+                    Button("Delete all favorites", onDeleteAllFavorites)
+                        .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                        .AutomationName("Delete all favorites")
+                ).HAlign(HorizontalAlignment.Right)
+            ),
+            string.IsNullOrWhiteSpace(favoritesImportStatus)
+                ? Border(null).IsVisible(false)
+                : Border(
+                    TextBlock(favoritesImportStatus)
+                        .TextWrapping(TextWrapping.Wrap)
+                )
+                .Padding(8)
+                .CornerRadius(8)
+                .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+            favoriteItems.Count == 0
+                ? Border(
+                    TextBlock("No favorites yet. Star a tab or import bookmarks from another browser.")
+                        .Opacity(0.7)
+                        .TextWrapping(TextWrapping.Wrap)
+                )
+                .Padding(8, 4)
+                : VStack(6, favoriteRows.ToArray()));
     }
 
-    private static Element BuildSettingsBladeContent(
-    IReadOnlyDictionary<string, string> settingsSnapshot,
-    Action<string, string> onSaveSettingValue)
+    private static Element BuildSettingsBladeContent(IReadOnlyDictionary<string, string> settingsSnapshot)
     {
-        var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredPreset)
-            ? NormalizeBackdropGradientPreset(configuredPreset)
-            : BackdropGradientPresetDefault;
         var settingsItems = settingsSnapshot
             .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
             .Select(entry => new SettingGridItem
@@ -714,12 +934,6 @@ internal static class BrowserChrome
         return VStack(10,
             TextBlock("Settings")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            TextBlock("Backdrop gradient")
-                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            TextBlock("Choose a preset tint for the Acrylic app backdrop.")
-                .TextWrapping(TextWrapping.Wrap)
-                .Opacity(0.76),
-            BuildBackdropPresetPicker(selectedBackdropPreset, onSaveSettingValue),
             TextBlock("Current values from settings.db.")
                 .TextWrapping(TextWrapping.Wrap)
                 .Opacity(0.76),
@@ -751,6 +965,24 @@ internal static class BrowserChrome
         );
     }
 
+    private static Element BuildBackdropBladeContent(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, string> onSaveSettingValue)
+    {
+        var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredPreset)
+            ? NormalizeBackdropGradientPreset(configuredPreset)
+            : BackdropGradientPresetDefault;
+
+        return VStack(10,
+            TextBlock("Backdrop gradient")
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+            TextBlock("Choose a preset tint for the Acrylic app backdrop.")
+                .TextWrapping(TextWrapping.Wrap)
+                .Opacity(0.76),
+            BuildBackdropPresetPicker(selectedBackdropPreset, onSaveSettingValue)
+        );
+    }
+
     private static string NormalizeBackdropGradientPreset(string? preset)
     {
         return preset switch
@@ -770,7 +1002,7 @@ internal static class BrowserChrome
         string selectedPreset,
         Action<string, string> onSaveSettingValue)
     {
-        var presetButtons = new[]
+        var presetButtons = new Element[]
         {
             BuildBackdropPresetButton(BackdropGradientPresetDefault, selectedPreset, onSaveSettingValue),
             BuildBackdropPresetButton("Aurora", selectedPreset, onSaveSettingValue),
@@ -781,17 +1013,12 @@ internal static class BrowserChrome
             BuildBackdropPresetButton("HighContrast", selectedPreset, onSaveSettingValue)
         };
 
-        return ScrollViewer(
-            HStack(8, presetButtons)
-        )
-        .Set(scrollViewer =>
+        return FlexRow(presetButtons) with
         {
-            scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
-            scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Disabled;
-            scrollViewer.HorizontalScrollMode = ScrollMode.Enabled;
-            scrollViewer.VerticalScrollMode = ScrollMode.Disabled;
-        })
-        .Height(48);
+            ColumnGap = 8,
+            RowGap = 8,
+            Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+        };
     }
 
     private static Element BuildBackdropPresetButton(
@@ -805,10 +1032,10 @@ internal static class BrowserChrome
         return Button(normalizedPreset, () => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset))
             .Background(isSelected ? BrowserConstants.AccentFillColorDefaultBrush : BrowserConstants.LayerFillDefaultBrush)
             .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
-            .CornerRadius(10)
-            .Padding(8, 6)
+            .CornerRadius(999)
+            .Padding(12, 6)
             .AutomationName("Select backdrop gradient preset: " + normalizedPreset)
-            .MinWidth(88);
+            .MinWidth(72);
     }
     
     
@@ -845,7 +1072,12 @@ internal static class BrowserChrome
 
         return style;
     }
-    private static Element BuildCollapsedTabItem(BrowserTab tab, bool isLoading)
+    private static Element BuildCollapsedTabItem(
+        BrowserTab tab,
+        bool isLoading,
+        Action<string> onToggleFavoriteTab,
+        Action<string> onCloseTab,
+        Action<string> onReloadTab)
     {
         return Border(
             BuildTabIcon(tab, isLoading)
@@ -860,13 +1092,19 @@ internal static class BrowserChrome
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
         {
+            border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
         });
     }
 
 
 
-    private static Element BuildExpandedTabItem(BrowserTab tab, bool isLoading)
+    private static Element BuildExpandedTabItem(
+        BrowserTab tab,
+        bool isLoading,
+        Action<string> onToggleFavoriteTab,
+        Action<string> onCloseTab,
+        Action<string> onReloadTab)
     {
         return Border(
             HStack(8,
@@ -894,6 +1132,7 @@ internal static class BrowserChrome
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
+            border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
         });
     }

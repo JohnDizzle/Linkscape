@@ -1,3 +1,4 @@
+using AI_Agent.Browser;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
 
@@ -74,46 +75,63 @@ class App : Component
     {
         return NormalizeBackdropGradientPreset(preset) switch
         {
+
             "Aurora" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x50, 0x3C, 0xD4, 0xA0),
-                Microsoft.UI.ColorHelper.FromArgb(0x40, 0x4A, 0x7C, 0xF7),
-                Microsoft.UI.ColorHelper.FromArgb(0x35, 0xA8, 0x55, 0xF7)),
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x00, 0xC8, 0x8A),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x00, 0x99, 0xFF),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0xA0, 0x5B, 0xFF)),
+
+
             "Sunset" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x52, 0xFF, 0x8A, 0x65),
-                Microsoft.UI.ColorHelper.FromArgb(0x45, 0xFF, 0xC1, 0x07),
-                Microsoft.UI.ColorHelper.FromArgb(0x32, 0xAB, 0x47, 0xBC)),
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0xFF, 0x7A, 0x3D),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0xFF, 0xB3, 0x3B),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0xC7, 0x5A, 0xE6)),
+
             "Ocean" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x50, 0x00, 0xBC, 0xD4),
-                Microsoft.UI.ColorHelper.FromArgb(0x42, 0x29, 0x62, 0xFF),
-                Microsoft.UI.ColorHelper.FromArgb(0x30, 0x26, 0xC6, 0xDA)),
-            "Graphite" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x4E, 0x2F, 0x36, 0x40),
-                Microsoft.UI.ColorHelper.FromArgb(0x42, 0x4B, 0x55, 0x63),
-                Microsoft.UI.ColorHelper.FromArgb(0x30, 0x76, 0x82, 0x92)),
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x00, 0xA6, 0xB8),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x1D, 0x78, 0xD8),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0x26, 0xC6, 0xB8)),
+
             "Forest" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x52, 0x2E, 0x7D, 0x32),
-                Microsoft.UI.ColorHelper.FromArgb(0x40, 0x00, 0x79, 0x6B),
-                Microsoft.UI.ColorHelper.FromArgb(0x30, 0x55, 0x8B, 0x2F)),
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x1F, 0x8B, 0x4C),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x19, 0xA9, 0x74),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0x6B, 0xC4, 0x43)),
+
+            "Graphite" => CreateGradientBrush(
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x2A, 0x31, 0x3A),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x44, 0x4E, 0x5C),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0x5A, 0x68, 0x79)),
+
             "HighContrast" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x66, 0x00, 0x00, 0x00),
-                Microsoft.UI.ColorHelper.FromArgb(0x58, 0x12, 0x12, 0x12),
-                Microsoft.UI.ColorHelper.FromArgb(0x4A, 0x00, 0x78, 0xD7)),
-            _ => new SolidColorBrush(Colors.Transparent)
+                Microsoft.UI.ColorHelper.FromArgb(0xB0, 0x00, 0x00, 0x00),
+                Microsoft.UI.ColorHelper.FromArgb(0x95, 0x20, 0x20, 0x20),
+                Microsoft.UI.ColorHelper.FromArgb(0x80, 0x00, 0x78, 0xD7)),
+
+            _ => BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush
         };
     }
 
-    private static Brush CreateGradientBrush(Windows.UI.Color start, Windows.UI.Color middle, Windows.UI.Color end)
+    private static Brush CreateGradientBrush(
+        Windows.UI.Color start,
+        Windows.UI.Color middle,
+        Windows.UI.Color end)
     {
         return new LinearGradientBrush
         {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
+            // Top -> Bottom
+            StartPoint = new Windows.Foundation.Point(0.5, 0.0),
+            EndPoint = new Windows.Foundation.Point(0.5, 1.0),
+
             GradientStops = new GradientStopCollection
             {
-                new() { Color = start, Offset = 0 },
+                new() { Color = start,  Offset = 0.0 },
                 new() { Color = middle, Offset = 0.5 },
-                new() { Color = end, Offset = 1 }
+                new() { Color = end,    Offset = 1.0 }
             }
+
         };
     }
+
+
+    
 }

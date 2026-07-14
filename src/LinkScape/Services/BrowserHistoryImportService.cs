@@ -26,9 +26,29 @@ public static class BrowserHistoryImportService
 
     public static BrowserHistoryImportSummary ImportAllHistory(int limitPerSource = 2_000)
     {
+        return ImportHistory(DiscoverSources(), limitPerSource);
+    }
+
+    public static BrowserHistoryImportSummary ImportBrowserHistory(string browserName, int limitPerSource = 2_000)
+    {
+        if (string.IsNullOrWhiteSpace(browserName))
+        {
+            return new BrowserHistoryImportSummary(0, 0, []);
+        }
+
+        var sources = DiscoverSources()
+            .Where(source => string.Equals(source.BrowserName, browserName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        return ImportHistory(sources, limitPerSource);
+    }
+
+    private static BrowserHistoryImportSummary ImportHistory(
+        IReadOnlyList<BrowserHistoryImportSource> sources,
+        int limitPerSource)
+    {
         var importedItems = new List<HistoryItem>();
         var importedSources = new List<string>();
-        var sources = DiscoverSources();
 
         foreach (var source in sources)
         {

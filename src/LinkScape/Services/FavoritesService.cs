@@ -97,6 +97,17 @@ public static class FavoritesService
         return cmd.ExecuteNonQuery() > 0;
     }
 
+    public static void ClearFavorites()
+    {
+        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM Favorites";
+
+        cmd.ExecuteNonQuery();
+    }
+
     public static FavoriteItem? GetFavorite(string favoriteId)
     {
         if (string.IsNullOrWhiteSpace(favoriteId))
