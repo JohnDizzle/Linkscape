@@ -1089,6 +1089,8 @@ class TabViewPage : Component
                     };
                 });
 
+                var historyRecorded = false;
+
                 if (urlChanged)
                 {
                     try
@@ -1107,11 +1109,29 @@ class TabViewPage : Component
                     try
                     {
                         HistoryPersistenceService.RecordVisit(currentUrl, currentTitle);
+                        historyRecorded = true;
                     }
                     catch
                     {
                     }
+                }
+                else if (completeLoading)
+                {
+                    try
+                    {
+                        if (!HistoryPersistenceService.ContainsUrl(currentUrl))
+                        {
+                            HistoryPersistenceService.RecordVisit(currentUrl, currentTitle);
+                            historyRecorded = true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
 
+                if (historyRecorded)
+                {
                     _refreshHistoryFromCore?.Invoke();
                 }
 

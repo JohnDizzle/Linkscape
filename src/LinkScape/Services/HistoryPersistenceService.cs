@@ -213,6 +213,23 @@ public static class HistoryPersistenceService
         cmd.ExecuteNonQuery();
     }
 
+    public static bool ContainsUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        using var conn = new SqliteConnection(DbConnectionString);
+        conn.Open();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT 1 FROM HistoryItems WHERE Url = $url LIMIT 1";
+        cmd.Parameters.AddWithValue("$url", url);
+
+        return cmd.ExecuteScalar() is not null;
+    }
+
     private static IReadOnlyList<HistoryItem> QueryHistory(
         string sql,
         Action<SqliteCommand>? configure = null)
