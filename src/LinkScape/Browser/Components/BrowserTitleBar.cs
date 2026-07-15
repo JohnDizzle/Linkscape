@@ -14,6 +14,7 @@ internal sealed class BrowserTitleBarController
 internal sealed record BrowserTitleBarProps(
     BrowserTitleBarController Controller,
     BrowserTab SelectedTab,
+    string HomeUrl,
     bool IsTabsCollapsed,
     bool CanGoBack,
     bool CanGoForward,
@@ -26,6 +27,7 @@ internal sealed record BrowserTitleBarProps(
     string SelectedSearchProviderKey,
     IReadOnlyList<BrowserSearchProvider> SearchProviders,
     Action<string> OnSelectSearchProvider,
+    Action OnSetCurrentPageAsHome,
     Action OnToggleFavorite,
     Action OnAddTab,
     Action OnCloseTab);
@@ -51,6 +53,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
             _addressBarText,
+            Props.HomeUrl,
             Props.IsTabsCollapsed,
             Props.CanGoBack,
             Props.CanGoForward,
@@ -65,6 +68,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.SelectedSearchProviderKey,
             Props.SearchProviders,
             Props.OnSelectSearchProvider,
+            Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
             Props.OnAddTab,
             Props.OnCloseTab);

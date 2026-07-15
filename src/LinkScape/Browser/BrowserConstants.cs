@@ -7,6 +7,7 @@ namespace LinkScape.Browser;
 
 internal static class BrowserConstants
 {
+    public const string HomeUrlSettingKey = "browser.home.url";
     public const string HomeUrl = "https://ntp.msn.com/edge/ntp?locale=en-US&title=New+tab";
 
     public const string GlyphMenu = "\uE700";

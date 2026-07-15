@@ -12,6 +12,7 @@ namespace LinkScape;
 class TabViewPage : Component
 {
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
+    private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
 
     private enum CommandCenterSection
     {
@@ -97,6 +98,7 @@ class TabViewPage : Component
         var (settingsSnapshot, setSettingsSnapshot) = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
         var selectedSearchProviderKey = session.SelectedSearchProviderKey;
         var isCommandCenterOpen = session.IsCommandCenterOpen;
+        var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot);
 
         if (!_importBrowserNamesLoadStarted)
         {
@@ -211,6 +213,11 @@ class TabViewPage : Component
                 return;
             }
 
+            if (string.Equals(key, HomeUrlSettingKey, StringComparison.Ordinal))
+            {
+                value = NormalizeHomeUrl(value);
+            }
+
             SettingsService.SetValue(key, value);
             setSettingsSnapshot(SettingsService.Dump());
 
@@ -220,6 +227,18 @@ class TabViewPage : Component
                     state,
                     BrowserSearchProviders.NormalizeProviderKey(value)));
             }
+        }
+
+        void SetCurrentPageAsHome()
+        {
+            var currentUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTag)?.Url;
+
+            if (string.IsNullOrWhiteSpace(currentUrl))
+            {
+                return;
+            }
+
+            SaveSettingValue(HomeUrlSettingKey, currentUrl);
         }
 
         void OpenUriInNewTab(string rawUrl)
@@ -233,7 +252,7 @@ class TabViewPage : Component
                 return;
             }
 
-            var target = BrowserUrl.Normalize(rawUrl, BrowserConstants.HomeUrl, selectedSearchProviderKey);
+            var target = BrowserUrl.Normalize(rawUrl, configuredHomeUrl, selectedSearchProviderKey);
             var nextTabs = BrowserTabActions.Add(
                 currentTabs,
                 target,
@@ -523,7 +542,7 @@ class TabViewPage : Component
         void NavigateActiveTab(string rawUrl)
         {
             var activeId = selectedTag;
-            var fallback = tabs.FirstOrDefault(tab => tab.Id == activeId)?.Url ?? BrowserConstants.HomeUrl;
+            var fallback = tabs.FirstOrDefault(tab => tab.Id == activeId)?.Url ?? configuredHomeUrl;
             var target = BrowserUrl.Normalize(rawUrl, fallback, selectedSearchProviderKey);
 
             _browserTitleBarController.SetAddressText(target);
@@ -564,7 +583,7 @@ class TabViewPage : Component
         void SubmitAddress(string rawUrl)
         {
             var currentUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTag)?.Url;
-            var fallback = currentUrl ?? BrowserConstants.HomeUrl;
+            var fallback = currentUrl ?? configuredHomeUrl;
             var target = BrowserUrl.Normalize(rawUrl, fallback, selectedSearchProviderKey);
 
             NavigateActiveTab(target);
@@ -583,7 +602,7 @@ class TabViewPage : Component
 
             var nextTabs = BrowserTabActions.Add(
                 currentTabs,
-                BrowserConstants.HomeUrl,
+                BrowserSearchProviders.GetHomeUrl(selectedSearchProviderKey),
                 out var newTab);
 
             MarkTabsChanged(nextTabs);
@@ -613,11 +632,6 @@ class TabViewPage : Component
 
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
-            if (currentTabs.Length <= 1)
-            {
-                return;
-            }
-
             var index = Array.FindIndex(currentTabs, tab => tab.Id == tabId);
 
             if (index < 0)
@@ -626,7 +640,7 @@ class TabViewPage : Component
             }
 
             var wasSelected = string.Equals(selectedTag, tabId, StringComparison.Ordinal);
-            var nextTabs = BrowserTabActions.Close(currentTabs, tabId, out var nextTab);
+            var nextTabs = BrowserTabActions.Close(currentTabs, tabId, configuredHomeUrl, out var nextTab);
 
             if (nextTab is null)
             {
@@ -803,6 +817,7 @@ class TabViewPage : Component
             new BrowserTitleBarProps(
                 _browserTitleBarController,
                 selectedTab,
+                configuredHomeUrl,
                 isTabsCollapsed,
                 canGoBack,
                 canGoForward,
@@ -819,6 +834,7 @@ class TabViewPage : Component
                 selectedSearchProviderKey,
                 BrowserSearchProviders.Providers,
                 SetDefaultSearchProvider,
+                SetCurrentPageAsHome,
                 ToggleFavorite,
                 AddTab,
                 CloseActiveTab));
@@ -928,7 +944,7 @@ class TabViewPage : Component
         {
         }
 
-        return [BrowserTab.CreateHome()];
+        return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
     }
 
     private static BrowserTab[] ReconcileTabsWithPersistedFavorites(BrowserTab[] tabs)
@@ -1148,6 +1164,21 @@ class TabViewPage : Component
 
         static string Trim(string value, int maxLength) =>
             value.Length <= maxLength ? value : value[..maxLength];
+    }
+
+    private static string GetConfiguredHomeUrl(IReadOnlyDictionary<string, string>? settingsSnapshot = null)
+    {
+        var configuredHomeUrl = settingsSnapshot is not null &&
+            settingsSnapshot.TryGetValue(HomeUrlSettingKey, out var snapshotHomeUrl)
+                ? snapshotHomeUrl
+                : SettingsService.GetValueOrDefault(HomeUrlSettingKey, BrowserConstants.HomeUrl);
+
+        return NormalizeHomeUrl(configuredHomeUrl);
+    }
+
+    private static string NormalizeHomeUrl(string? value)
+    {
+        return BrowserUrl.Normalize(value ?? string.Empty, BrowserConstants.HomeUrl);
     }
 
     #endregion

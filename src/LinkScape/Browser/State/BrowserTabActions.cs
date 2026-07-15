@@ -45,20 +45,22 @@ internal static class BrowserTabActions
     public static BrowserTab[] Close(
         BrowserTab[] tabs,
         string selectedId,
+        string homeUrl,
         out BrowserTab? nextSelected)
     {
         nextSelected = null;
-
-        if (tabs.Length <= 1)
-        {
-            return tabs;
-        }
 
         var index = Array.FindIndex(tabs, tab => tab.Id == selectedId);
 
         if (index < 0)
         {
             return tabs;
+        }
+
+        if (tabs.Length <= 1)
+        {
+            nextSelected = BrowserTab.CreateHome(homeUrl);
+            return [nextSelected];
         }
 
         var nextTabs = tabs.Where(tab => tab.Id != selectedId).ToArray();

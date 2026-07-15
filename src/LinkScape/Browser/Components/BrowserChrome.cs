@@ -18,6 +18,7 @@ internal static class BrowserChrome
     private const double CollapsedRailWidth = 56;
     private const double TabItemHoverScale = 1.04;
     private const double TabItemHorizontalInset = 4;
+    private const double ExpandedTabItemScrollbarInset = 14;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
 
@@ -35,6 +36,7 @@ internal static class BrowserChrome
     public static Element BuildTitleBar(
         BrowserTab selectedTab,
         string addressText,
+        string homeUrl,
         bool isTabsCollapsed,
         bool canGoBack,
         bool canGoForward,
@@ -49,6 +51,7 @@ internal static class BrowserChrome
         string selectedSearchProviderKey,
         IReadOnlyList<BrowserSearchProvider> searchProviders,
         Action<string> onSelectSearchProvider,
+        Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
         Action onAddTab,
         Action onCloseTab)
@@ -76,7 +79,12 @@ internal static class BrowserChrome
                 .Flex(grow: 1, basis: 0),
 
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
-                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(BrowserConstants.HomeUrl), "Go home", buttonSize: 32, iconSize: 15),
+                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15),
+                Button("Set home", onSetCurrentPageAsHome)
+                    .AutomationName("Set current page as home")
+                    .Height(32)
+                    .Padding(10, 0)
+                    .CornerRadius(16),
                 IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
@@ -284,7 +292,7 @@ internal static class BrowserChrome
             SelectedIndex = selectedIndex,
             OnSelectedIndexChanged = onSelect,
             SelectionMode = ListViewSelectionMode.Single,
-        })
+        }).Padding(2)
         .Set(listView =>
         {
             //listView.ItemContainerTransitions = BrowserConstants.TabTransitions;    
@@ -492,7 +500,7 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(recentHistoryItems, onOpenHistoryItem, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(mostVisitedItems, onOpenHistoryItem, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenHistoryItem, isCommandCenterExpanded),
-            "Settings" => BuildSettingsBladeContent(settingsSnapshot),
+            "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
             _ => Border(null)
@@ -967,8 +975,13 @@ internal static class BrowserChrome
                 .MinWidth(0));
     }
 
-    private static Element BuildSettingsBladeContent(IReadOnlyDictionary<string, string> settingsSnapshot)
+    private static Element BuildSettingsBladeContent(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, string> onSaveSettingValue)
     {
+        var homeUrl = settingsSnapshot.TryGetValue(BrowserConstants.HomeUrlSettingKey, out var configuredHomeUrl)
+            ? BrowserUrl.Normalize(configuredHomeUrl, BrowserConstants.HomeUrl)
+            : BrowserConstants.HomeUrl;
         var settingsItems = settingsSnapshot
             .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
             .Select(entry => new SettingGridItem
@@ -984,6 +997,23 @@ internal static class BrowserChrome
             TextBlock("Current values from Documents\\LinkScapeCache\\settings.db.")
                 .TextWrapping(TextWrapping.Wrap)
                 .Opacity(0.76),
+            Border(
+                VStack(8,
+                    TextBlock("Home page")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock(homeUrl)
+                        .TextWrapping(TextWrapping.Wrap)
+                        .Opacity(0.76),
+                    TextBlock("The Home button, new tabs, and replacing the last closed tab use this URL. Use the title bar button to capture the current page.")
+                        .TextWrapping(TextWrapping.Wrap)
+                        .Opacity(0.68),
+                    Button("Reset home to default", () => onSaveSettingValue(BrowserConstants.HomeUrlSettingKey, BrowserConstants.HomeUrl))
+                        .CornerRadius(999)
+                        .Padding(12, 6)
+                )
+            )
+            .Padding(10)
+            .WithBorder(Theme.SurfaceStroke),
             settingsItems.Count == 0
                 ? Border(
                     TextBlock("No settings were found.")
@@ -1132,9 +1162,12 @@ internal static class BrowserChrome
     private static Style CreateTabItemContainerStyle(bool isTabsCollapsed)
     {
         var style = new Style(typeof(ListViewItem));
+        var itemMargin = isTabsCollapsed
+            ? new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6)
+            : new Thickness(TabItemHorizontalInset, 6, ExpandedTabItemScrollbarInset, 6);
 
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
-        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6)));
+        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, itemMargin));
         style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, isTabsCollapsed ? 0d : 280d));
         style.Setters.Add(new Setter(FrameworkElement.WidthProperty, isTabsCollapsed ? CollapsedTabItemHeight : double.NaN));
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, isTabsCollapsed
@@ -1520,13 +1553,13 @@ internal static class BrowserChrome
     private static Element BuildTabFavicon(BrowserTab tab)
     {
         return Border(
-            tab.IsHomeTab
-                ? FluentIcon(BrowserConstants.GlyphHome, 14)
-                : Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
+            Uri.TryCreate(tab.Url, UriKind.Absolute, out _)
+                ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
                     .AccessibilityHidden()
                     .Width(18)
                     .Height(18)
                     .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
+                : FluentIcon(BrowserConstants.GlyphHome, 14)
         )
         .Width(24)
         .Height(24)
