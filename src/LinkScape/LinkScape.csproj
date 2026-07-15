@@ -25,6 +25,7 @@
         <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     </PropertyGroup>
     <ItemGroup>
+      <Compile Remove="AIChat.cs" />
       <Compile Remove="ChatSuggestionService.cs" />
       <Compile Remove="DesktopFlyoutTrayIconService.cs" />
     </ItemGroup>

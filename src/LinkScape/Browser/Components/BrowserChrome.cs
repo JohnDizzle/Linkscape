@@ -44,6 +44,7 @@ internal static class BrowserChrome
         Action onForward,
         Action<string> onAddressChanged,
         Action<string> onSubmitAddress,
+        Action<Microsoft.UI.Xaml.Controls.AutoSuggestBox> onAddressBoxReady,
         Action<string> onNavigateCurrentTab,
         string selectedSearchProviderKey,
         IReadOnlyList<BrowserSearchProvider> searchProviders,
@@ -64,10 +65,12 @@ internal static class BrowserChrome
                 IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15),
                 Border(
                     AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
-                    .AutomationName("Address Bar") with
+                    .AutomationName("Address Bar")
+                    .Set(addressBox =>
                     {
-                        PlaceholderText = "Search or enter web address"
-                    }
+                        addressBox.PlaceholderText = "Search or enter web address";
+                        onAddressBoxReady(addressBox);
+                    })
                 )
                 .Padding(0)
                 .Flex(grow: 1, basis: 0),
