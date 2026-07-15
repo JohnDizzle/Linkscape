@@ -13,7 +13,7 @@ internal static class BrowserChrome
     private const double CommandCenterCardHeight = 150;
     private const double CompactTabsCardHeight = 84;
     private const double RailSectionSpacing = 14;
-    private const double ExpandedTabItemHeight = 48;
+    private const double ExpandedTabItemHeight = 68;
     private const double CollapsedTabItemHeight = 40;
     private const double CollapsedRailWidth = 56;
     private static Style? _expandedTabItemContainerStyle;
@@ -317,7 +317,7 @@ internal static class BrowserChrome
         bool showCompactTabsCard = !isRailTabsExpanded;
 
         var openTabsCard = showCompactTabsCard
-            ? BuildCompactTabsCard(onMaximizeTabs)
+            ? BuildCompactTabsCard(onMaximizeTabs, isSelectedTabLoading)
                 .Height(CompactTabsCardHeight)
                 .Flex(grow: 0, shrink: 0, basis: CompactTabsCardHeight)
             : BuildRailSectionCard(
@@ -601,20 +601,24 @@ internal static class BrowserChrome
         bool isBusy = false)
     {
         var card = Border(
-            VStack(10,
+            FlexColumn(
                 TextBlock(title)
                     .Set(textBlock =>
                     {
                         textBlock.FontFamily = BrowserConstants.TextFontFamily;
                         textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                    }),
+                    })
+                    .Flex(shrink: 0),
                 Border(content)
                     .Padding(8)
                     .CornerRadius(10)
                     .Background(BrowserConstants.LayerFillDefaultBrush)
                     .WithBorder(Theme.SurfaceStroke)
                     .Flex(grow: 1, basis: 0)
-            )
+            ) with
+            {
+                RowGap = 10
+            }
         )
         .Padding(12)
         .CornerRadius(16)
@@ -703,7 +707,7 @@ internal static class BrowserChrome
         };
     }
 
-    private static Element BuildCompactTabsCard(Action onShowTabs)
+    private static Element BuildCompactTabsCard(Action onShowTabs, bool isLoading)
     {
         return Border(
             HStack(8,
@@ -720,19 +724,38 @@ internal static class BrowserChrome
         .Padding(12)
         .CornerRadius(16)
         .Background(BrowserConstants.LayerFillAltBrush)
-        .WithBorder(Theme.SurfaceStroke)
         .Set(border =>
         {
             border.DoubleTapped += (_, _) => onShowTabs();
             ToolTipService.SetToolTip(border, "Double-click to show the full tabs list.");
+            ApplyCompactTabsCardBorderState(border, isLoading);
         });
+    }
+
+    private static void ApplyCompactTabsCardBorderState(Microsoft.UI.Xaml.Controls.Border border, bool isLoading)
+    {
+        if (isLoading)
+        {
+            ApplyTabLoadingBorderState(border, true);
+            return;
+        }
+
+        ApplyTabLoadingBorderState(border, false);
+        border.BorderThickness = new Thickness(1);
+        border.BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush;
     }
 
     private static Element BuildExpandableTabsList(Element tabList, Action onMinimizeTabs)
     {
-        return Border(tabList)
+        return Border(
+            tabList
+                .Flex(grow: 1, shrink: 1, basis: 0)
+                .VAlign(VerticalAlignment.Stretch))
+            .Padding(0, 0, 6, 0)
+            .Flex(grow: 1, shrink: 1, basis: 0)
             .Set(border =>
             {
+                border.VerticalAlignment = VerticalAlignment.Stretch;
                 border.DoubleTapped += (_, _) => onMinimizeTabs();
                 ToolTipService.SetToolTip(border, "Double-click to collapse to the compact Tabs card.");
             });
@@ -1050,7 +1073,7 @@ internal static class BrowserChrome
         var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
 
         return Button(normalizedPreset, () => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset))
-            .Background(isSelected ? BrowserConstants.AccentFillColorDefaultBrush : BrowserConstants.LayerFillDefaultBrush)
+            .Background(isSelected ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerFillDefaultBrush)
             .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
             .CornerRadius(999)
             .Padding(12, 6)
@@ -1138,6 +1161,7 @@ internal static class BrowserChrome
                         {
                             textBlock.FontFamily = BrowserConstants.TextFontFamily;
                             textBlock.MaxLines = 2;
+                            textBlock.MinHeight = 38;
                             textBlock.MinWidth = 0;
                         })
                 )
@@ -1151,8 +1175,8 @@ internal static class BrowserChrome
             })
             .HAlign(HorizontalAlignment.Stretch)
         )
-        .Height(52)
-        .Padding(10, 8)
+        .Height(ExpandedTabItemHeight)
+        .Padding(10, 10)
         .CornerRadius(6)
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>

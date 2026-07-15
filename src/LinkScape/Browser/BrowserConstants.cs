@@ -30,6 +30,8 @@ internal static class BrowserConstants
     public static Brush CardBackgroundFillColorDefaultBrush => GetBrush("CardBackgroundFillColorDefaultBrush");
     public static Brush SubtleFillColorSecondaryBrush => GetBrush("SubtleFillColorSecondaryBrush");
     public static Brush AccentFillColorDefaultBrush => GetBrush("AccentFillColorDefaultBrush");
+    public static Brush AccentFillColorTertiaryBrush => GetBrush("AccentFillColorTertiaryBrush");
+    public static Brush SurfaceStrokeColorDefaultBrush => GetBrush("SurfaceStrokeColorDefaultBrush");
 
     private static Brush GetBrush(string resourceKey)
     {

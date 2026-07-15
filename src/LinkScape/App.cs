@@ -1,6 +1,8 @@
 using LinkScape.Browser;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
@@ -25,8 +27,7 @@ class App : Component
         RegisterSettingsListener(setBackdropGradientPreset);
 
         return FlexColumn(
-            TitleBar("Linkscape")
-                ,
+            TitleBar("Linkscape").Size(double.NaN, 32),   
             Component<LinkScape.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )
@@ -35,6 +36,7 @@ class App : Component
         .Flex(grow: 1, basis: 0);
     }
 
+    
     private void RegisterSettingsListener(Action<string> setBackdropGradientPreset)
     {
         if (_settingsListenerRegistered)
