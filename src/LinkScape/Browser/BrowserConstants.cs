@@ -2,7 +2,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
 
-namespace AI_Agent.Browser;
+namespace LinkScape.Browser;
 
 internal static class BrowserConstants
 {

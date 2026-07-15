@@ -1,4 +1,4 @@
-namespace AI_Agent.Browser;
+namespace LinkScape.Browser;
 
 internal static class BrowserIcons
 {

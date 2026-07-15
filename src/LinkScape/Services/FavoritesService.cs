@@ -12,11 +12,11 @@ public sealed record FavoriteItem(
 
 public static class FavoritesService
 {
-    private const string DbPath = "favorites.db";
+    private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("favorites.db");
 
     public static void EnsureDatabase()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -52,7 +52,7 @@ public static class FavoritesService
         var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title.Trim();
         var now = DateTime.Now;
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -87,7 +87,7 @@ public static class FavoritesService
             return false;
         }
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -99,7 +99,7 @@ public static class FavoritesService
 
     public static void ClearFavorites()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -156,7 +156,7 @@ public static class FavoritesService
         string sql,
         Action<SqliteCommand>? configure = null)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();

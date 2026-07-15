@@ -1,5 +1,5 @@
-using AI_Agent.Browser;
-using AI_Agent.Models;
+using LinkScape.Browser;
+using LinkScape.Models;
 
 namespace Browser.Components;
 
@@ -13,7 +13,7 @@ internal static class BrowserChrome
     private const double CommandCenterCardHeight = 150;
     private const double CompactTabsCardHeight = 84;
     private const double RailSectionSpacing = 14;
-    private const double ExpandedTabItemHeight = 36;
+    private const double ExpandedTabItemHeight = 48;
     private const double CollapsedTabItemHeight = 40;
     private const double CollapsedRailWidth = 56;
     private static Style? _expandedTabItemContainerStyle;
@@ -51,13 +51,13 @@ internal static class BrowserChrome
         return Border(
             FlexRow(
                 HStack(
-                    IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons"),
-                    IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab"),
-                    IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab")
+                    IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15),
+                    IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15),
+                    IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15)
                 ).Margin(0, 0, 8, 0),
-                IconButton(BrowserConstants.GlyphBack, onBack, "Go back").IsEnabled(canGoBack),
-                IconButton(BrowserConstants.GlyphForward, onForward, "Go forward").IsEnabled(canGoForward),
-                IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page"),
+                IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15).IsEnabled(canGoBack),
+                IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15).IsEnabled(canGoForward),
+                IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15),
                 Border(
                     AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
                     .AutomationName("Address Bar") with
@@ -69,11 +69,13 @@ internal static class BrowserChrome
                 .Flex(grow: 1, basis: 0),
 
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
-                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(BrowserConstants.HomeUrl), "Go home"),
+                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(BrowserConstants.HomeUrl), "Go home", buttonSize: 32, iconSize: 15),
                 IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
-                    "Toggle favorite")
+                    "Toggle favorite",
+                    buttonSize: 32,
+                    iconSize: 15)
                
             ) with
             {
@@ -792,7 +794,13 @@ internal static class BrowserChrome
                         .Opacity(0.7)
                 )
                 .Padding(8, 4)
-                : VStack(0, historyItems));
+                : Border(
+                    VStack(0, historyItems)
+                        .HAlign(HorizontalAlignment.Stretch)
+                )
+                .Padding(4, 0)
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0));
     }
 
     private static Element BuildRecentBladeContent(
@@ -813,7 +821,13 @@ internal static class BrowserChrome
                         .Opacity(0.7)
                 )
                 .Padding(8, 4)
-                : VStack(0, recentItems));
+                : Border(
+                    VStack(0, recentItems)
+                        .HAlign(HorizontalAlignment.Stretch)
+                )
+                .Padding(4, 0)
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0));
     }
 
     private static Element BuildMostVisitedBladeContent(
@@ -917,7 +931,13 @@ internal static class BrowserChrome
                         .TextWrapping(TextWrapping.Wrap)
                 )
                 .Padding(8, 4)
-                : VStack(6, favoriteRows.ToArray()));
+                : Border(
+                    VStack(6, favoriteRows.ToArray())
+                        .HAlign(HorizontalAlignment.Stretch)
+                )
+                .Padding(4, 0)
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0));
     }
 
     private static Element BuildSettingsBladeContent(IReadOnlyDictionary<string, string> settingsSnapshot)
@@ -934,7 +954,7 @@ internal static class BrowserChrome
         return VStack(10,
             TextBlock("Settings")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            TextBlock("Current values from settings.db.")
+            TextBlock("Current values from Documents\\LinkScapeCache\\settings.db.")
                 .TextWrapping(TextWrapping.Wrap)
                 .Opacity(0.76),
             settingsItems.Count == 0
@@ -1094,6 +1114,7 @@ internal static class BrowserChrome
         {
             border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
+            ApplyTabLoadingBorderState(border, IsTabCreationLoading(tab, isLoading));
         });
     }
 
@@ -1107,34 +1128,90 @@ internal static class BrowserChrome
         Action<string> onReloadTab)
     {
         return Border(
-            HStack(8,
+            (FlexRow(
                 BuildTabIcon(tab, isLoading),
                 Border(
                     TextBlock(tab.Title)
                         .TextTrimming(TextTrimming.CharacterEllipsis)
-                        .TextWrapping(TextWrapping.NoWrap)
+                        .TextWrapping(TextWrapping.Wrap)
                         .Set(textBlock =>
                         {
                             textBlock.FontFamily = BrowserConstants.TextFontFamily;
-                            textBlock.MaxLines = 1;
+                            textBlock.MaxLines = 2;
                             textBlock.MinWidth = 0;
                         })
                 )
                 .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
                 InfoBadge(tab.VisitedCount)
-            )
+                    .Flex(shrink: 0)
+            ) with
+            {
+                ColumnGap = 8
+            })
             .HAlign(HorizontalAlignment.Stretch)
         )
-        .Height(ExpandedTabItemHeight)
-        .Padding(8, 6)
+        .Height(52)
+        .Padding(10, 8)
         .CornerRadius(6)
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
             border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
+            ApplyTabLoadingBorderState(border, IsTabCreationLoading(tab, isLoading));
         });
+    }
+
+    private static bool IsTabCreationLoading(BrowserTab tab, bool isLoading)
+    {
+        return isLoading || string.Equals(tab.Title, "Loading...", StringComparison.Ordinal);
+    }
+
+    private static void ApplyTabLoadingBorderState(Microsoft.UI.Xaml.Controls.Border border, bool isLoading)
+    {
+        if (!isLoading)
+        {
+            if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
+            {
+                storyboard.Stop();
+                border.Tag = null;
+            }
+
+            border.BorderThickness = new Thickness(0);
+            border.ClearValue(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty);
+            return;
+        }
+
+        border.BorderThickness = new Thickness(2);
+
+        if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
+        {
+            return;
+        }
+
+        var rotateTransform = new RotateTransform
+        {
+            CenterX = 0.5,
+            CenterY = 0.5
+        };
+        border.BorderBrush = CreateRainbowBorderBrush(rotateTransform);
+
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(1.4)),
+            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, rotateTransform);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Angle");
+
+        var loadingStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        loadingStoryboard.Children.Add(animation);
+        border.Tag = loadingStoryboard;
+        loadingStoryboard.Begin();
     }
 
     private static Element BuildMostVisitedItem(HistoryItem item, Action<string> onOpenHistoryItem)
@@ -1194,53 +1271,99 @@ internal static class BrowserChrome
     {
         return Button(
             Border(
-                HStack(10,
+                (FlexRow(
                     BuildHistoryIcon(item.Url),
                     VStack(4,
                         TextBlock(item.Title)
                             .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap),
+                            .TextWrapping(TextWrapping.NoWrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            }),
                         TextBlock(item.Url)
                             .TextTrimming(TextTrimming.CharacterEllipsis)
                             .TextWrapping(TextWrapping.NoWrap)
                             .Opacity(0.75)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            })
                     )
                     .MinWidth(0)
                     .Flex(grow: 1, basis: 0),
-                    TextBlock(item.LastVisitedAt.ToString("g"))
+                    TextBlock(item.LastVisitedAt.ToString("g")).FontSize(10)
                         .Opacity(0.7)
-                )
+                        .Flex(shrink: 0)
+                ) with
+                {
+                    ColumnGap = 10
+                })
+                .HAlign(HorizontalAlignment.Stretch)
             )
             .Padding(12, 10)
             .CornerRadius(14)
             .Background(BrowserConstants.LayerFillDefaultBrush)
             .WithBorder(Theme.SurfaceStroke)
-            .Margin(0, 0, 0, 8),
-            () => onOpenHistoryItem(item.Url)).AutomationName("HistoryListItem");
+            .Margin(2, 0, 2, 8)
+            .HAlign(HorizontalAlignment.Stretch),
+            () => onOpenHistoryItem(item.Url))
+            .HAlign(HorizontalAlignment.Stretch)
+            .Set(button =>
+            {
+                button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
+            })
+            .AutomationName("HistoryListItem");
     }
 
     private static Element BuildFavoriteTabItem(FavoriteItem item, Action<string> onOpenFavoriteItem)
     {
         return Button(
             Border(
-                HStack(8,
+                (FlexRow(
                     BuildHistoryIcon(item.Url),
                     VStack(2,
                         TextBlock(item.Title)
                             .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap),
+                            .TextWrapping(TextWrapping.NoWrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            }),
                         TextBlock(item.Url)
                             .TextTrimming(TextTrimming.CharacterEllipsis)
                             .TextWrapping(TextWrapping.NoWrap)
                             .Opacity(0.75)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            })
                     )
                     .MinWidth(0)
                     .Flex(grow: 1, basis: 0)
-                )
+                ) with
+                {
+                    ColumnGap = 8
+                })
+                .HAlign(HorizontalAlignment.Stretch)
             )
             .Padding(8, 6)
-            .CornerRadius(8),
-            () => onOpenFavoriteItem(item.Url)).AutomationName("FavoriteItem");
+            .CornerRadius(8)
+            .HAlign(HorizontalAlignment.Stretch),
+            () => onOpenFavoriteItem(item.Url))
+            .HAlign(HorizontalAlignment.Stretch)
+            .Margin(2, 0)
+            .Set(button =>
+            {
+                button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
+            })
+            .AutomationName("FavoriteItem");
     }
 
     private static Element BuildHistoryIcon(string url)

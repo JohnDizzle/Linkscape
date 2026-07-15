@@ -1,4 +1,4 @@
-using AI_Agent.Browser;
+using LinkScape.Browser;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
 
@@ -6,7 +6,7 @@ TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
-ReactorApp.Run<App>("AI_Agent", width: 1200, height: 800);
+ReactorApp.Run<App>("LinkScape", width: 1200, height: 800);
 
 class App : Component
 {
@@ -27,7 +27,7 @@ class App : Component
         return FlexColumn(
             TitleBar("Linkscape")
                 ,
-            Component<AI_Agent.TabViewPage>()
+            Component<LinkScape.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )
         .Background(CreateBackdropBrush(backdropGradientPreset))
@@ -87,10 +87,12 @@ class App : Component
                 Microsoft.UI.ColorHelper.FromArgb(0x68, 0xFF, 0xB3, 0x3B),
                 Microsoft.UI.ColorHelper.FromArgb(0x60, 0xC7, 0x5A, 0xE6)),
 
+
             "Ocean" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x00, 0xA6, 0xB8),
-                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x1D, 0x78, 0xD8),
-                Microsoft.UI.ColorHelper.FromArgb(0x60, 0x26, 0xC6, 0xB8)),
+                Microsoft.UI.ColorHelper.FromArgb(0x75, 0x00, 0x5E, 0xB8),
+                Microsoft.UI.ColorHelper.FromArgb(0x68, 0x14, 0x4E, 0xC8),
+                Microsoft.UI.ColorHelper.FromArgb(0x60, 0x3B, 0x78, 0xE8)),
+
 
             "Forest" => CreateGradientBrush(
                 Microsoft.UI.ColorHelper.FromArgb(0x75, 0x1F, 0x8B, 0x4C),
@@ -103,9 +105,9 @@ class App : Component
                 Microsoft.UI.ColorHelper.FromArgb(0x60, 0x5A, 0x68, 0x79)),
 
             "HighContrast" => CreateGradientBrush(
-                Microsoft.UI.ColorHelper.FromArgb(0xB0, 0x00, 0x00, 0x00),
-                Microsoft.UI.ColorHelper.FromArgb(0x95, 0x20, 0x20, 0x20),
-                Microsoft.UI.ColorHelper.FromArgb(0x80, 0x00, 0x78, 0xD7)),
+                Microsoft.UI.ColorHelper.FromArgb(0xA0, 0x00, 0x00, 0x00),
+                Microsoft.UI.ColorHelper.FromArgb(0x90, 0x0A, 0x0A, 0x0A),
+                Microsoft.UI.ColorHelper.FromArgb(0x80, 0x18, 0x18, 0x18)),
 
             _ => BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush
         };

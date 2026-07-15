@@ -1,6 +1,6 @@
-using AI_Agent.Browser;
+using LinkScape.Browser;
 
-namespace AI_Agent.Models;
+namespace LinkScape.Models;
 
 internal sealed record BrowserTab(
     string Id,
@@ -34,7 +34,7 @@ internal sealed record BrowserTab(
     public static BrowserTab CreateNew(int index, string url, int visitCount = 0) =>
         new(
             Guid.NewGuid().ToString("N"),
-            $"Tab {index}",
+            "Loading...",
             url,
             DateTime.Now,
             "",

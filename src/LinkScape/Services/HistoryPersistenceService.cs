@@ -13,11 +13,11 @@ public sealed record HistoryItem(
 
 public static class HistoryPersistenceService
 {
-    private const string DbPath = "history.db";
+    private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("history.db");
 
     public static void EnsureDatabase()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -50,7 +50,7 @@ public static class HistoryPersistenceService
         var now = DateTime.Now;
         var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title;
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -129,7 +129,7 @@ public static class HistoryPersistenceService
 
     public static void UpsertImportedHistory(IEnumerable<HistoryItem> items)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
         using var transaction = conn.BeginTransaction();
 
@@ -192,7 +192,7 @@ public static class HistoryPersistenceService
 
     public static void DeleteUrl(string url)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -204,7 +204,7 @@ public static class HistoryPersistenceService
 
     public static void ClearHistory()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -217,7 +217,7 @@ public static class HistoryPersistenceService
         string sql,
         Action<SqliteCommand>? configure = null)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();

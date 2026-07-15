@@ -1,6 +1,6 @@
-using AI_Agent.Models;
+using LinkScape.Models;
 
-namespace AI_Agent.Browser.State;
+namespace LinkScape.Browser.State;
 
 internal static class BrowserTabActions
 {

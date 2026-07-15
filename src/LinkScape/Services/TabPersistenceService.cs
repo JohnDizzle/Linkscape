@@ -4,11 +4,11 @@ using Microsoft.Data.Sqlite;
 
 public static class TabPersistenceService
 {
-    private const string DbPath = "tabs.db";
+    private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("tabs.db");
 
     public static void EnsureDatabase()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
@@ -22,7 +22,7 @@ public static class TabPersistenceService
     public static void SaveTabs(string key, object tabs)
     {
         var json = JsonSerializer.Serialize(tabs);
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO KeyValue(Key, Value) VALUES($k, $v) ON CONFLICT(Key) DO UPDATE SET Value = $v";
@@ -33,7 +33,7 @@ public static class TabPersistenceService
 
     public static T? LoadTabs<T>(string key)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Value FROM KeyValue WHERE Key = $k";
@@ -46,7 +46,7 @@ public static class TabPersistenceService
     // newUrl: optional new url to write. urlChanged: indicates whether the URL actually changed (used to decide increment).
     public static void UpdateTabVisit(string key, string tabId, bool incrementVisitCount = true, string? newUrl = null, bool urlChanged = false)
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var selectCmd = conn.CreateCommand();
@@ -133,7 +133,7 @@ public static class TabPersistenceService
         // Ensure DateTime set
         tabObject["DateTime"] = DateTime.Now;
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var selectCmd = conn.CreateCommand();

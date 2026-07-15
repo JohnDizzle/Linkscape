@@ -1,13 +1,13 @@
-using AI_Agent.Browser;
-using AI_Agent.Browser.State;
-using AI_Agent.Models;
+using LinkScape.Browser;
+using LinkScape.Browser.State;
+using LinkScape.Models;
 using Browser.Components;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AI_Agent;
+namespace LinkScape;
 
 class TabViewPage : Component
 {

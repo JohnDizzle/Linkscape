@@ -1,11 +1,11 @@
 public static class SettingsService
 {
-    private const string DbPath = "settings.db";
+    private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("settings.db");
     public static event Action<string, string?>? SettingChanged;
      
     public static void EnsureDatabase()
     {
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -26,7 +26,7 @@ public static class SettingsService
             return null;
         }
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -48,7 +48,7 @@ public static class SettingsService
             return;
         }
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -70,7 +70,7 @@ public static class SettingsService
             return false;
         }
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -91,7 +91,7 @@ public static class SettingsService
     {
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        using var conn = new SqliteConnection($"Data Source={DbPath}");
+        using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();

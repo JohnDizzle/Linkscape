@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace AI_Agent.Browser;
+namespace LinkScape.Browser;
 
 internal static class BrowserUrl
 {
