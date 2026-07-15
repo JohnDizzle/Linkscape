@@ -1,6 +1,7 @@
 
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace LinkScape.Browser;
 
@@ -43,4 +44,15 @@ internal static class BrowserConstants
 
         return new SolidColorBrush(Colors.Transparent);
     }
+
+
+    public static readonly TransitionCollection TabTransitions =
+    [
+        new EntranceThemeTransition
+    {
+        FromVerticalOffset = 20,
+        IsStaggeringEnabled = true
+    }
+    ];
+
 }

@@ -16,8 +16,12 @@ internal static class BrowserChrome
     private const double ExpandedTabItemHeight = 68;
     private const double CollapsedTabItemHeight = 40;
     private const double CollapsedRailWidth = 56;
+    private const double TabItemHoverScale = 1.04;
+    private const double TabItemHorizontalInset = 4;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
+
+    public static double CollapsedRailWidthDefault { get; private set; } = 400; 
 
     internal sealed class SettingGridItem : IReactorKeyed
     {
@@ -260,7 +264,8 @@ internal static class BrowserChrome
             collapsedCommandCenterHeight += CommandCenterBladeHeight + 4;
         }
 
-        var railWidth = isTabsCollapsed ? CollapsedRailWidth : 400;
+        var railWidth = isTabsCollapsed ? CollapsedRailWidth : CollapsedRailWidthDefault ;
+
         var tabList = (ListView<BrowserTab>(
             tabs,
             (tab, _) =>
@@ -268,27 +273,23 @@ internal static class BrowserChrome
                 var isTabLoading = isLoading &&
                     string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
-                return isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab)
-                    : BuildExpandedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab);
+                return (isTabsCollapsed
+                    ? BuildCollapsedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(1)
+                    : BuildExpandedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
             }) with
         {
             SelectedIndex = selectedIndex,
             OnSelectedIndexChanged = onSelect,
             SelectionMode = ListViewSelectionMode.Single,
         })
-        .WithKey(isTabsCollapsed ? "CollapsedTabRailList" : "ExpandedTabRailList")
         .Set(listView =>
         {
+            //listView.ItemContainerTransitions = BrowserConstants.TabTransitions;    
             listView.IsItemClickEnabled = true;
-            listView.Padding = isTabsCollapsed
-                ? new Thickness(0)
-                : new Thickness(4);
             listView.BorderThickness = new Thickness(0);
-            listView.HorizontalContentAlignment = isTabsCollapsed
-                ? HorizontalAlignment.Center
-                : HorizontalAlignment.Stretch;
-            Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollBarVisibility(
+            listView.ContainerContentChanging -= OnTabListContainerContentChanging;
+            listView.ContainerContentChanging += OnTabListContainerContentChanging;
+               Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollBarVisibility(
                 listView,
                 isTabsCollapsed ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Auto);
             Microsoft.UI.Xaml.Controls.ScrollViewer.SetHorizontalScrollBarVisibility(listView, ScrollBarVisibility.Disabled);
@@ -300,15 +301,15 @@ internal static class BrowserChrome
 
         if (isTabsCollapsed)
         {
-            return Border(
+            return FlexColumn(
                 tabList
                     .Flex(grow: 1, basis: 0)
             )
             .Width(railWidth)
+            .Padding(0)
             .Set(border =>
             {
                 border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
-                border.BorderThickness = new Thickness(0);
             })
             .Flex(shrink: 0)
             .VAlign(VerticalAlignment.Stretch);
@@ -1100,21 +1101,94 @@ internal static class BrowserChrome
 
         return _expandedTabItemContainerStyle ??= CreateTabItemContainerStyle(false);
     }
+    //private static Style CreateTabItemContainerStyle(bool isTabsCollapsed)
+    //{
+    //    var style = new Style(typeof(ListViewItem));
+
+    //    style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
+    //    style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
+
+    //    if (!isTabsCollapsed)
+    //    {
+    //        style.Setters.Add(
+    //            new Setter(
+    //                FrameworkElement.MinWidthProperty,
+    //                280d));
+    //    }
+
+    //    style.Setters.Add(
+    //        new Setter(
+    //            Control.HorizontalContentAlignmentProperty,
+    //            isTabsCollapsed
+    //                ? HorizontalAlignment.Center
+    //                : HorizontalAlignment.Stretch));
+
+    //    return style;
+    //}
 
     private static Style CreateTabItemContainerStyle(bool isTabsCollapsed)
     {
         var style = new Style(typeof(ListViewItem));
 
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
-        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
+        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6)));
         style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, isTabsCollapsed ? 0d : 280d));
         style.Setters.Add(new Setter(FrameworkElement.WidthProperty, isTabsCollapsed ? CollapsedTabItemHeight : double.NaN));
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, isTabsCollapsed
             ? HorizontalAlignment.Center
             : HorizontalAlignment.Stretch));
+        
+        //style.Setters.Add(new Setter(UIElement.RenderTransformOriginProperty, new Windows.Foundation.Point(0.5, 0.5)));
+        //style.Setters.Add(new Setter(UIElement.RenderTransformProperty, new ScaleTransform { ScaleX = 1, ScaleY = 1 }));
 
         return style;
     }
+
+    private static void OnTabListContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is ListViewItem container)
+        {
+            ConfigureTabItemHoverScale(container);
+        }
+    }
+
+    private static void ConfigureTabItemHoverScale(ListViewItem container)
+    {
+        if (container.RenderTransform is not ScaleTransform)
+        {
+            container.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+            container.RenderTransform = new ScaleTransform { ScaleX = 1, ScaleY = 1 };
+        }
+
+        container.PointerEntered -= OnTabItemPointerEntered;
+        container.PointerEntered += OnTabItemPointerEntered;
+        container.PointerExited -= OnTabItemPointerExited;
+        container.PointerExited += OnTabItemPointerExited;
+        container.PointerCanceled -= OnTabItemPointerExited;
+        container.PointerCanceled += OnTabItemPointerExited;
+        container.PointerCaptureLost -= OnTabItemPointerExited;
+        container.PointerCaptureLost += OnTabItemPointerExited;
+    }
+
+    private static void OnTabItemPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        SetTabItemScale(sender, TabItemHoverScale);
+    }
+
+    private static void OnTabItemPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        SetTabItemScale(sender, 1d);
+    }
+
+    private static void SetTabItemScale(object sender, double scale)
+    {
+        if (sender is ListViewItem { RenderTransform: ScaleTransform transform })
+        {
+            transform.ScaleX = scale;
+            transform.ScaleY = scale;
+        }
+    }
+
     private static Element BuildCollapsedTabItem(
         BrowserTab tab,
         bool isLoading,
@@ -1129,8 +1203,10 @@ internal static class BrowserChrome
         )
         .Width(CollapsedTabItemHeight)
         .Height(CollapsedTabItemHeight)
-        .Padding(4)
+        .Padding(6)
         .CornerRadius(8)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
@@ -1176,8 +1252,10 @@ internal static class BrowserChrome
             .HAlign(HorizontalAlignment.Stretch)
         )
         .Height(ExpandedTabItemHeight)
-        .Padding(10, 10)
-        .CornerRadius(6)
+        .Padding(14, 10)
+        .CornerRadius(10)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {

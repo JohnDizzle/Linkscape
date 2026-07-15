@@ -33,6 +33,7 @@ class App : Component
         )
         .Background(CreateBackdropBrush(backdropGradientPreset))
         .Backdrop(BackdropKind.AcrylicThin)
+        .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
     }
 
