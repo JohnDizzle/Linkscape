@@ -552,15 +552,18 @@ internal static class BrowserChrome
 
         if (isTabsCollapsed)
         {
-            return FlexColumn(
-                tabList
-                    .Flex(grow: 1, basis: 0)
+            return Border(
+                FlexColumn(
+                    tabList
+                        .Flex(grow: 1, basis: 0)
+                )
             )
             .Width(railWidth)
             .Padding(0)
             .Set(border =>
             {
                 border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
+                border.CornerRadius = new CornerRadius(0, 10, 10, 0);
             })
             .Flex(shrink: 0)
             .VAlign(VerticalAlignment.Stretch);
@@ -632,6 +635,7 @@ internal static class BrowserChrome
         .Set(border =>
         {
             border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
+            border.CornerRadius = new CornerRadius(0, 10, 10, 0);
         })
         .WithBorder(Theme.SurfaceStroke)
         .Flex(shrink: 0)
