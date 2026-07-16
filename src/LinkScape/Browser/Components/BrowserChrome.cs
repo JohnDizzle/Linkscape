@@ -33,6 +33,13 @@ internal static class BrowserChrome
         string IReactorKeyed.Key => Key;
     }
 
+    private sealed class AddressBarVisualState
+    {
+        public Microsoft.UI.Xaml.Controls.Border? Chrome { get; set; }
+
+        public Microsoft.UI.Xaml.Controls.Border? Underline { get; set; }
+    }
+
     public static Element BuildTitleBar(
         BrowserTab selectedTab,
         string addressText,
@@ -66,16 +73,7 @@ internal static class BrowserChrome
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15).IsEnabled(canGoBack),
                 IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15).IsEnabled(canGoForward),
                 IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15),
-                Border(
-                    AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
-                    .AutomationName("Address Bar")
-                    .Set(addressBox =>
-                    {
-                        addressBox.PlaceholderText = "Search or enter web address";
-                        onAddressBoxReady(addressBox);
-                    })
-                )
-                .Padding(0)
+                BuildAddressBar(addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
                 .Flex(grow: 1, basis: 0),
 
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
@@ -101,6 +99,190 @@ internal static class BrowserChrome
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(shrink: 0);
+    }
+
+    private static Element BuildAddressBar(
+        string addressText,
+        Action<string> onAddressChanged,
+        Action<string> onSubmitAddress,
+        Action<Microsoft.UI.Xaml.Controls.AutoSuggestBox> onAddressBoxReady)
+    {
+        Microsoft.UI.Xaml.Controls.Border? addressBarChrome = null;
+        Microsoft.UI.Xaml.Controls.Border? addressBarUnderline = null;
+
+        return Border(
+            VStack(0,
+                Border(
+                    AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
+                        .AutomationName("Address Bar")
+                        .Set(addressBox => ConfigureAddressBox(addressBox, addressBarChrome, addressBarUnderline, onAddressBoxReady))
+                )
+                .Padding(0, 0, 0, 2),
+                Border(null)
+                    .Height(2)
+                    .Opacity(0)
+                    .Margin(12, 0, 12, 0)
+                    .Background(BrowserConstants.AccentFillColorDefaultBrush)
+                    .Set(border => ConfigureAddressBarUnderline(border, addressBarUnderline = border))
+            )
+        )
+        .Height(38)
+        .Padding(10, 1, 10, 0)
+        .CornerRadius(14)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .Set(border => ConfigureAddressBarChrome(border, addressBarChrome = border));
+    }
+
+    private static void ConfigureAddressBox(
+        Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox,
+        Microsoft.UI.Xaml.Controls.Border? addressBarChrome,
+        Microsoft.UI.Xaml.Controls.Border? addressBarUnderline,
+        Action<Microsoft.UI.Xaml.Controls.AutoSuggestBox> onAddressBoxReady)
+    {
+        addressBox.PlaceholderText = "Search or enter web address";
+        addressBox.Height = 34;
+        addressBox.Padding = new Thickness(0, 0, 0, 1);
+        addressBox.CornerRadius = new CornerRadius(12);
+        addressBox.BorderThickness = new Thickness(0);
+        addressBox.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        addressBox.GotFocus -= OnAddressBoxGotFocus;
+        addressBox.GotFocus += OnAddressBoxGotFocus;
+        addressBox.LostFocus -= OnAddressBoxLostFocus;
+        addressBox.LostFocus += OnAddressBoxLostFocus;
+        addressBox.TextChanged -= OnAddressBoxTextChanged;
+        addressBox.TextChanged += OnAddressBoxTextChanged;
+
+        var visualState = addressBox.Tag as AddressBarVisualState ?? new AddressBarVisualState();
+        visualState.Chrome = addressBarChrome;
+        visualState.Underline = addressBarUnderline;
+        addressBox.Tag = visualState;
+
+        onAddressBoxReady(addressBox);
+        UpdateAddressBarVisualState(addressBox);
+    }
+
+    private static void ConfigureAddressBarChrome(Microsoft.UI.Xaml.Controls.Border border, Microsoft.UI.Xaml.Controls.Border? addressBarChrome)
+    {
+        border.BorderThickness = new Thickness(0);
+        border.BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+        if (addressBarChrome is null)
+        {
+            return;
+        }
+
+        border.BorderThickness = addressBarChrome.BorderThickness;
+        border.BorderBrush = addressBarChrome.BorderBrush;
+    }
+
+    private static void ConfigureAddressBarUnderline(Microsoft.UI.Xaml.Controls.Border border, Microsoft.UI.Xaml.Controls.Border? addressBarUnderline)
+    {
+        if (border.RenderTransform is not ScaleTransform)
+        {
+            border.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+            border.RenderTransform = new ScaleTransform { ScaleX = 0.6, ScaleY = 1 };
+        }
+
+        if (addressBarUnderline is null)
+        {
+            return;
+        }
+
+        border.Opacity = addressBarUnderline.Opacity;
+        if (addressBarUnderline.RenderTransform is ScaleTransform sourceTransform && border.RenderTransform is ScaleTransform targetTransform)
+        {
+            targetTransform.ScaleX = sourceTransform.ScaleX;
+        }
+    }
+
+    private static void OnAddressBoxGotFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+        {
+            UpdateAddressBarVisualState(addressBox);
+        }
+    }
+
+    private static void OnAddressBoxLostFocus(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+        {
+            UpdateAddressBarVisualState(addressBox);
+        }
+    }
+
+    private static void OnAddressBoxTextChanged(object sender, Microsoft.UI.Xaml.Controls.AutoSuggestBoxTextChangedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+        {
+            UpdateAddressBarVisualState(addressBox);
+        }
+    }
+
+    private static void UpdateAddressBarVisualState(Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+    {
+        if (addressBox.Tag is not AddressBarVisualState state)
+        {
+            return;
+        }
+
+        var isFocused = addressBox.FocusState != Microsoft.UI.Xaml.FocusState.Unfocused;
+        var hasText = !string.IsNullOrWhiteSpace(addressBox.Text);
+
+        if (state.Chrome is not null)
+        {
+            state.Chrome.BorderThickness = new Thickness(0);
+            state.Chrome.BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        }
+
+        if (state.Underline is not null)
+        {
+            AnimateAddressBarUnderline(
+                state.Underline,
+                isFocused ? 1d : hasText ? 0.35d : 0d,
+                isFocused ? 1d : hasText ? 0.82d : 0.6d);
+        }
+    }
+
+    private static void AnimateAddressBarUnderline(
+        Microsoft.UI.Xaml.Controls.Border underline,
+        double targetOpacity,
+        double targetScaleX)
+    {
+        if (underline.RenderTransform is not ScaleTransform transform)
+        {
+            underline.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+            underline.RenderTransform = transform = new ScaleTransform { ScaleX = targetScaleX, ScaleY = 1 };
+        }
+
+        if (underline.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
+        {
+            storyboard.Stop();
+        }
+
+        var opacityAnimation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            To = targetOpacity,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromMilliseconds(160)),
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(opacityAnimation, underline);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(opacityAnimation, "Opacity");
+
+        var scaleAnimation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            To = targetScaleX,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromMilliseconds(180)),
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(scaleAnimation, transform);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(scaleAnimation, "ScaleX");
+
+        var nextStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        nextStoryboard.Children.Add(opacityAnimation);
+        nextStoryboard.Children.Add(scaleAnimation);
+        underline.Tag = nextStoryboard;
+        nextStoryboard.Begin();
     }
 
     private static Element BuildSearchProviderButton(
@@ -292,7 +474,7 @@ internal static class BrowserChrome
             SelectedIndex = selectedIndex,
             OnSelectedIndexChanged = onSelect,
             SelectionMode = ListViewSelectionMode.Single,
-        }).Padding(2)
+        }).Padding(4)
         .Set(listView =>
         {
             //listView.ItemContainerTransitions = BrowserConstants.TabTransitions;    
@@ -763,7 +945,7 @@ internal static class BrowserChrome
             tabList
                 .Flex(grow: 1, shrink: 1, basis: 0)
                 .VAlign(VerticalAlignment.Stretch))
-            .Padding(0, 0, 6, 0)
+            .Padding(2, 2, 8, 2)
             .Flex(grow: 1, shrink: 1, basis: 0)
             .Set(border =>
             {
@@ -1164,7 +1346,7 @@ internal static class BrowserChrome
         var style = new Style(typeof(ListViewItem));
         var itemMargin = isTabsCollapsed
             ? new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6)
-            : new Thickness(TabItemHorizontalInset, 6, ExpandedTabItemScrollbarInset, 6);
+            : new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6);
 
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
         style.Setters.Add(new Setter(FrameworkElement.MarginProperty, itemMargin));
@@ -1273,22 +1455,28 @@ internal static class BrowserChrome
                         {
                             textBlock.FontFamily = BrowserConstants.TextFontFamily;
                             textBlock.MaxLines = 2;
-                            textBlock.MinHeight = 38;
+                            textBlock.MinHeight = 34;
                             textBlock.MinWidth = 0;
                         })
                 )
                 .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
-                InfoBadge(tab.VisitedCount)
-                    .Flex(shrink: 0)
+                Border(
+                    InfoBadge(tab.VisitedCount)
+                        .HAlign(HorizontalAlignment.Right)
+                        .VAlign(VerticalAlignment.Center)
+                )
+                .Width(26)
+                .HAlign(HorizontalAlignment.Right)
+                .Flex(shrink: 0)
             ) with
             {
-                ColumnGap = 8
+                ColumnGap = 10
             })
             .HAlign(HorizontalAlignment.Stretch)
         )
         .Height(ExpandedTabItemHeight)
-        .Padding(14, 10)
+        .Padding(12, 10)
         .CornerRadius(10)
         .Background(BrowserConstants.LayerFillDefaultBrush)
         .WithBorder(Theme.SurfaceStroke)
@@ -1535,13 +1723,13 @@ internal static class BrowserChrome
     {
         return Border(
             ProgressRing()
-                .Width(16)
-                .Height(16)
+                .Width(14)
+                .Height(14)
                 .IsActive(true)
                 .IsVisible(true)
         )
-        .Width(24)
-        .Height(24)
+        .Width(22)
+        .Height(22)
         .CornerRadius(6)
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)
@@ -1556,13 +1744,13 @@ internal static class BrowserChrome
             Uri.TryCreate(tab.Url, UriKind.Absolute, out _)
                 ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
                     .AccessibilityHidden()
-                    .Width(18)
-                    .Height(18)
+                    .Width(16)
+                    .Height(16)
                     .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
                 : FluentIcon(BrowserConstants.GlyphHome, 14)
         )
-        .Width(24)
-        .Height(24)
+        .Width(22)
+        .Height(22)
         .CornerRadius(6)
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)

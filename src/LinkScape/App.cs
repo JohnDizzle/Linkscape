@@ -1,14 +1,117 @@
 using LinkScape.Browser;
 using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Reactor;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Graphics;
 
 TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
-ReactorApp.Run<App>("LinkScape", width: 1200, height: 800);
+const string WindowPositionXSettingKey = "window.position.x";
+const string WindowPositionYSettingKey = "window.position.y";
+const string WindowWidthSettingKey = "window.size.width";
+const string WindowHeightSettingKey = "window.size.height";
+const string WindowMaximizedSettingKey = "window.state.maximized";
+const int DefaultWindowWidth = 1200;
+const int DefaultWindowHeight = 800;
+
+ReactorApp.Run<App>("LinkScape",
+    configure: host =>
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(host.Window);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+        var appWindow = AppWindow.GetFromWindowId(windowId);
+        var restored = false;
+
+        host.Window.Activated += (s, e) =>
+        {
+            if (restored || e.WindowActivationState == WindowActivationState.Deactivated)
+            {
+                return;
+            }
+
+            restored = true;
+            RestoreWindowPlacement(appWindow);
+        };
+
+        host.Window.Closed += (_, _) => SaveWindowPlacement(appWindow);
+    });
+
+static void RestoreWindowPlacement(AppWindow appWindow)
+{
+    var width = ReadIntSetting(WindowWidthSettingKey) ?? DefaultWindowWidth;
+    var height = ReadIntSetting(WindowHeightSettingKey) ?? DefaultWindowHeight;
+    var x = ReadIntSetting(WindowPositionXSettingKey);
+    var y = ReadIntSetting(WindowPositionYSettingKey);
+
+    try
+    {
+        if (width > 0 && height > 0)
+        {
+            if (x is not null && y is not null)
+            {
+                appWindow.MoveAndResize(
+                    new RectInt32(
+                        x.Value,
+                        y.Value,
+                        width,
+                        height));
+            }
+            else
+            {
+                appWindow.Resize(
+                    new SizeInt32(
+                        width,
+                        height));
+            }
+        }
+
+        if (appWindow.Presenter is OverlappedPresenter presenter &&
+            bool.TryParse(SettingsService.GetValue(WindowMaximizedSettingKey), out var isMaximized) &&
+            isMaximized)
+        {
+            presenter.Maximize();
+        }
+    }
+    catch
+    {
+    }
+}
+
+static void SaveWindowPlacement(AppWindow appWindow)
+{
+    try
+    {
+        var position = appWindow.Position;
+        var size = appWindow.Size;
+        var isMaximized = appWindow.Presenter is OverlappedPresenter presenter &&
+            presenter.State == OverlappedPresenterState.Maximized;
+
+        SettingsService.SetValue(WindowPositionXSettingKey, position.X.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        SettingsService.SetValue(WindowPositionYSettingKey, position.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        SettingsService.SetValue(WindowWidthSettingKey, size.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        SettingsService.SetValue(WindowHeightSettingKey, size.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        SettingsService.SetValue(WindowMaximizedSettingKey, isMaximized ? "true" : "false");
+    }
+    catch
+    {
+    }
+}
+
+static int? ReadIntSetting(string key)
+{
+    return int.TryParse(
+        SettingsService.GetValue(key),
+        System.Globalization.NumberStyles.Integer,
+        System.Globalization.CultureInfo.InvariantCulture,
+        out var value)
+        ? value
+        : null;
+}
 
 class App : Component
 {
@@ -38,6 +141,7 @@ class App : Component
     }
 
     
+
     private void RegisterSettingsListener(Action<string> setBackdropGradientPreset)
     {
         if (_settingsListenerRegistered)
@@ -136,7 +240,4 @@ class App : Component
 
         };
     }
-
-
-    
 }
