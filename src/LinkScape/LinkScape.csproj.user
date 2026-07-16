@@ -9,5 +9,9 @@
     <AppIconSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</AppIconSource>
     <SplashScreenSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</SplashScreenSource>
     <PackageLogoSource>C:\Users\cyber\OneDrive\Pictures\fireglobe.png</PackageLogoSource>
+    <UapAppxPackageBuildMode>StoreOnly</UapAppxPackageBuildMode>
+    <AppxShowAllApps>False</AppxShowAllApps>
+    <AppxBuildConfigurationSelection>x64</AppxBuildConfigurationSelection>
+    <PackageOptionalProjectsInIdeBuilds>False</PackageOptionalProjectsInIdeBuilds>
   </PropertyGroup>
 </Project>

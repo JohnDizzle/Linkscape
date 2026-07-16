@@ -4,7 +4,7 @@
     <PropertyGroup>
       <OutputType>WinExe</OutputType>
       <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
-      <Platforms>x64;X86</Platforms>
+      <Platforms>x86;x64;arm64</Platforms>
       <UseWinUI>true</UseWinUI>
 
       <!-- Change from None to MSIX -->
@@ -22,7 +22,16 @@
             self-contained build path requires a concrete RID.
         -->
         <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And ('$(Platform)' == '' Or '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU')">$(NETCoreSdkPortableRuntimeIdentifier)</RuntimeIdentifier>
-        <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+        <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
+        <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
+        <PackageCertificateThumbprint>1FFFC70138C5E16F28940A6F5883848B7E919C69</PackageCertificateThumbprint>
+        <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
+        <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
+        <GenerateTestArtifacts>False</GenerateTestArtifacts>
+        <AppxBundle>Always</AppxBundle>
+        <AppxBundlePlatforms>x86|x64|arm64</AppxBundlePlatforms>
+        <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
+        <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
     </PropertyGroup>
     <ItemGroup>
       <Compile Remove="AIChat.cs" />
@@ -60,9 +69,6 @@
         <SubType>Designer</SubType>
       </AppxManifest>
       <Content Include="Assets\**\*.*" />
-    </ItemGroup>
-    <ItemGroup>
-      <None Remove="LinkScape_TemporaryKey.pfx" />
     </ItemGroup>
 
     <Import Project="LinkScape.Signing.props" Condition="Exists('LinkScape.Signing.props')" />

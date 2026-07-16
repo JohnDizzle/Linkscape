@@ -6,8 +6,8 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="LinkScape.Browser"
-    Publisher="CN=dbadmin"
+    Name="48996JohnM.Doyle.LinkScapeBrowser"
+    Publisher="CN=B61100C9-E803-4D04-BE74-91A6FB862E5C"
     Version="1.0.0.0" />
 
   <Properties>
@@ -71,4 +71,6 @@
 
     </Application>
   </Applications>
+
+  
 </Package>
