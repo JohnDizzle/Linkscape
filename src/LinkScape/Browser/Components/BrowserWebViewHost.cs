@@ -70,9 +70,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
     private readonly Dictionary<string, BrowserTab> _tabSnapshotsById = [];
     private readonly HashSet<string> _hookedWebViewTabs = [];
+    private readonly HashSet<UIElement> _escapeAcceleratorTargets = [];
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
+    private Microsoft.UI.Xaml.Controls.Border? _inlineWebViewHost;
+    private Microsoft.UI.Xaml.Controls.Border? _fullScreenOverlayHost;
+    private Microsoft.UI.Xaml.Controls.ContentPresenter? _fullScreenPresenter;
     private string? _activeWebViewTabId;
+    private string? _fullScreenTabId;
 
     public override Element Render()
     {
@@ -92,6 +97,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             .Set(host =>
             {
                 _webViewHost = host;
+                EnsureHostStructure(host);
+                AttachEscapeAccelerator(host);
 
                 host.Tapped -= HandleHostTapped;
                 host.Tapped += HandleHostTapped;
@@ -107,6 +114,68 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private void HandleHostTapped(object? sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs args)
     {
         Props.OnHostTapped();
+    }
+
+    private void EnsureHostStructure(Microsoft.UI.Xaml.Controls.Border host)
+    {
+        if (_inlineWebViewHost is not null &&
+            _fullScreenOverlayHost is not null &&
+            _fullScreenPresenter is not null &&
+            host.Child is Microsoft.UI.Xaml.Controls.Grid)
+        {
+            return;
+        }
+
+        _inlineWebViewHost = new Microsoft.UI.Xaml.Controls.Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            MinHeight = 300
+        };
+
+        _fullScreenPresenter = new Microsoft.UI.Xaml.Controls.ContentPresenter
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
+        _fullScreenOverlayHost = new Microsoft.UI.Xaml.Controls.Border
+        {
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Black),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = _fullScreenPresenter,
+            Visibility = Visibility.Collapsed
+        };
+
+        Microsoft.UI.Xaml.Controls.Panel.SetZIndex(_fullScreenOverlayHost, 1);
+
+        var layoutRoot = new Microsoft.UI.Xaml.Controls.Grid();
+        layoutRoot.Children.Add(_inlineWebViewHost);
+        layoutRoot.Children.Add(_fullScreenOverlayHost);
+
+        host.Child = layoutRoot;
+    }
+
+    private void AttachEscapeAccelerator(UIElement element)
+    {
+        if (!_escapeAcceleratorTargets.Add(element))
+        {
+            return;
+        }
+
+        var accelerator = new KeyboardAccelerator
+        {
+            Key = Windows.System.VirtualKey.Escape
+        };
+        accelerator.Invoked += OnEscapeAcceleratorInvoked;
+        element.KeyboardAccelerators.Add(accelerator);
+    }
+
+    private void OnEscapeAcceleratorInvoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        _ = ExitFullScreenIfNeededAsync();
+        args.Handled = true;
     }
 
     private BrowserTab GetTabSnapshot(string tabId, BrowserTab fallback)
@@ -148,9 +217,24 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (_webViewsByTabId.Remove(tabId, out var closedWebView))
         {
-            if (_webViewHost?.Child == closedWebView)
+            if (_inlineWebViewHost?.Child == closedWebView)
             {
-                _webViewHost.Child = null;
+                _inlineWebViewHost.Child = null;
+            }
+
+            if (_fullScreenPresenter?.Content == closedWebView)
+            {
+                _fullScreenPresenter.Content = null;
+            }
+
+            if (string.Equals(_fullScreenTabId, tabId, StringComparison.Ordinal))
+            {
+                _fullScreenTabId = null;
+
+                if (_fullScreenOverlayHost is not null)
+                {
+                    _fullScreenOverlayHost.Visibility = Visibility.Collapsed;
+                }
             }
 
             closedWebView.Close();
@@ -206,6 +290,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             _webViewsByTabId[tab.Id] = webView;
             isNewWebView = true;
             Props.SetNavAvailability(false, false);
+            AttachEscapeAccelerator(webView);
         }
 
         _activeWebView = webView;
@@ -334,6 +419,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 e.Handled = true;
             };
 
+            core.ContainsFullScreenElementChanged += (_, _) =>
+            {
+                SetFullScreenWebViewState(tab.Id, webView, core.ContainsFullScreenElement);
+            };
+
             core.DocumentTitleChanged += (_, _) =>
             {
                 var title = core.DocumentTitle;
@@ -354,7 +444,46 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
         }
 
-        AttachWebViewToHost(host, webView);
+        if (string.Equals(_fullScreenTabId, tab.Id, StringComparison.Ordinal))
+        {
+            AttachWebViewToFullScreenPresenter(webView);
+        }
+        else
+        {
+            AttachWebViewToHost(_inlineWebViewHost ?? host, webView);
+        }
+    }
+
+    private void SetFullScreenWebViewState(
+        string tabId,
+        Microsoft.UI.Xaml.Controls.WebView2 webView,
+        bool isFullScreen)
+    {
+        _webViewHost?.DispatcherQueue.TryEnqueue(() =>
+        {
+            _fullScreenTabId = isFullScreen ? tabId : null;
+
+            if (isFullScreen)
+            {
+                AttachWebViewToFullScreenPresenter(webView);
+                return;
+            }
+
+            if (_fullScreenPresenter?.Content == webView)
+            {
+                _fullScreenPresenter.Content = null;
+            }
+
+            if (_fullScreenOverlayHost is not null)
+            {
+                _fullScreenOverlayHost.Visibility = Visibility.Collapsed;
+            }
+
+            if (string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal))
+            {
+                AttachWebViewToHost(_inlineWebViewHost ?? _webViewHost!, webView);
+            }
+        });
     }
 
     private static void AttachWebViewToHost(
@@ -381,6 +510,37 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         });
     }
 
+    private void AttachWebViewToFullScreenPresenter(Microsoft.UI.Xaml.Controls.WebView2 webView)
+    {
+        if (_fullScreenPresenter is null || _fullScreenOverlayHost is null)
+        {
+            return;
+        }
+
+        _fullScreenOverlayHost.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (webView.Parent is Microsoft.UI.Xaml.Controls.Border previousHost)
+            {
+                previousHost.Child = null;
+            }
+            else if (webView.Parent is Microsoft.UI.Xaml.Controls.ContentPresenter previousPresenter)
+            {
+                previousPresenter.Content = null;
+            }
+
+            if (_fullScreenPresenter.Content != webView)
+            {
+                _fullScreenPresenter.Content = webView;
+            }
+
+            _fullScreenOverlayHost.Visibility = Visibility.Visible;
+            webView.Visibility = Visibility.Visible;
+            webView.InvalidateMeasure();
+            webView.InvalidateArrange();
+            webView.UpdateLayout();
+        });
+    }
+
     private void RefreshWebViewLayout()
     {
         if (_activeWebView is null)
@@ -394,6 +554,27 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             _activeWebView.InvalidateArrange();
             _activeWebView.UpdateLayout();
         });
+    }
+
+    private async Task ExitFullScreenIfNeededAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_fullScreenTabId) ||
+            !_webViewsByTabId.TryGetValue(_fullScreenTabId, out var webView) ||
+            webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await webView.CoreWebView2.ExecuteScriptAsync(
+                "if (document.fullscreenElement && document.exitFullscreen) { document.exitFullscreen(); }");
+        }
+        catch
+        {
+        }
+
+        SetFullScreenWebViewState(_fullScreenTabId, webView, false);
     }
 
     private async Task PauseMediaInTabAsync(string tabId)

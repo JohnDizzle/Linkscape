@@ -6,13 +6,9 @@ namespace Browser.Components;
 internal sealed class BrowserTitleBarController
 {
     internal Action<string, bool>? SetAddressTextCore { get; set; }
-    internal Action<bool>? ShowCommandCenterSettingsTipCore { get; set; }
 
     public void SetAddressText(string value, bool preserveUserEdit = false) =>
         SetAddressTextCore?.Invoke(value, preserveUserEdit);
-
-    public void ShowCommandCenterSettingsTip(bool show = true) =>
-        ShowCommandCenterSettingsTipCore?.Invoke(show);
 }
 
 internal sealed record BrowserTitleBarProps(
@@ -44,7 +40,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     private bool _isAddressBarEditing;
     private bool _suppressAddressBoxTextChanged;
     private bool _isInitialized;
-    private bool _isCommandCenterSettingsTipOpen;
 
     public override Element Render()
     {
@@ -55,7 +50,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         }
 
         Props.Controller.SetAddressTextCore = SetAddressBarText;
-        Props.Controller.ShowCommandCenterSettingsTipCore = show => _isCommandCenterSettingsTipOpen = show;
 
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
@@ -78,8 +72,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
             Props.OnShowCommandCenterSettings,
-            _isCommandCenterSettingsTipOpen,
-            show => _isCommandCenterSettingsTipOpen = show,
             Props.OnAddTab,
             Props.OnCloseTab);
     }

@@ -36,6 +36,7 @@ class TabViewPage : Component
     private readonly BrowserWebViewHostController _browserWebViewHostController = new();
     private bool _importBrowserNamesLoadStarted;
     private int _commandCenterBusyVersion;
+    private int _commandCenterHighlightVersion;
     private BrowserSessionState _latestBrowserSession;
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
@@ -89,6 +90,7 @@ class TabViewPage : Component
         var (favoritesImportStatus, setFavoritesImportStatus) = UseState(string.Empty, threadSafe: true);
         var (historyImportStatus, setHistoryImportStatus) = UseState(string.Empty, threadSafe: true);
         var (isCommandCenterBusy, setIsCommandCenterBusy) = UseState(false, threadSafe: true);
+        var (isCommandCenterHighlighted, setIsCommandCenterHighlighted) = UseState(false, threadSafe: true);
         var (commandCenterBusyText, setCommandCenterBusyText) = UseState(string.Empty, threadSafe: true);
         var (historyImportBrowserNames, setHistoryImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
         var (favoritesImportBrowserNames, setFavoritesImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
@@ -153,6 +155,32 @@ class TabViewPage : Component
                     RefreshFavoritesState();
                     break;
             }
+        }
+
+        void ShowCommandCenterSettingsFromTitleBar()
+        {
+            UpdateBrowserSession(state =>
+            {
+                var nextState = BrowserSessionStore.SetTabsCollapsed(state, false);
+                nextState = BrowserSessionStore.SetRailTabsExpanded(nextState, true);
+                nextState = BrowserSessionStore.SetActiveCommandCenterSection(nextState, nameof(CommandCenterSection.Settings));
+                return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
+            });
+
+            _browserWebViewHostController.RefreshLayout();
+
+            var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
+            setIsCommandCenterHighlighted(true);
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1800);
+
+                if (version == Volatile.Read(ref _commandCenterHighlightVersion))
+                {
+                    setIsCommandCenterHighlighted(false);
+                }
+            });
         }
 
         void DismissCommandCenter()
@@ -868,6 +896,7 @@ class TabViewPage : Component
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
                 ToggleFavorite,
+                ShowCommandCenterSettingsFromTitleBar,
                 AddTab,
                 CloseActiveTab));
 
@@ -894,6 +923,7 @@ class TabViewPage : Component
                 favoritesImportStatus,
                 favoritesImportBrowserNames,
                 isCommandCenterBusy,
+                isCommandCenterHighlighted,
                 commandCenterBusyText,
                 settingsSnapshot,
                 SaveSettingValue,

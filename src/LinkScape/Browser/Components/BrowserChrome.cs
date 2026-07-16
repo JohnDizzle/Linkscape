@@ -61,8 +61,6 @@ internal static class BrowserChrome
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
         Action onShowCommandCenterSettings,
-        bool isCommandCenterSettingsTipOpen,
-        Action<bool> onCommandCenterSettingsTipToggled,
         Action onAddTab,
         Action onCloseTab)
     {
@@ -79,7 +77,7 @@ internal static class BrowserChrome
                 BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
                 .Flex(grow: 1, basis: 0),
 
-                BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
+                
                 IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15),
                 Button("Set home", onSetCurrentPageAsHome)
                     .AutomationName("Set current page as home")
@@ -87,29 +85,18 @@ internal static class BrowserChrome
                     .Padding(10, 0)
                     .CornerRadius(16),
                 IconButton(
-                    BrowserConstants.GlyphSettings,
-                    () =>
-                    {
-                        onShowCommandCenterSettings();
-                        onCommandCenterSettingsTipToggled(true);
-                    },
-                    "Command center settings",
-                    buttonSize: 32,
-                    iconSize: 15)
-                    .Set(button =>
-                    {
-                        AttachCommandCenterSettingsTeachingTip(
-                            button,
-                            isCommandCenterSettingsTipOpen,
-                            onCommandCenterSettingsTipToggled);
-                    }),
-                IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
                     "Toggle favorite",
                     buttonSize: 32,
+                    iconSize: 15),
+                BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
+                IconButton(
+                    BrowserConstants.GlyphSettings,
+                    onShowCommandCenterSettings,
+                    "Command center settings",
+                    buttonSize: 32,
                     iconSize: 15)
-               
             ) with
             {
                 ColumnGap = 8
@@ -119,39 +106,6 @@ internal static class BrowserChrome
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(shrink: 0);
-    }
-
-    private static void AttachCommandCenterSettingsTeachingTip(
-        Microsoft.UI.Xaml.Controls.Button button,
-        bool isOpen,
-        Action<bool> onTipToggled)
-    {
-        var teachingTip = button.Tag as TeachingTip;
-
-        if (teachingTip is null)
-        {
-            teachingTip = new TeachingTip
-            {
-                Title = "Command Center settings",
-                Subtitle = "Open the Settings blade to control home, history, favorites, and command center behavior.",
-                ActionButtonContent = "Open settings",
-                CloseButtonContent = "Dismiss",
-                PreferredPlacement = TeachingTipPlacementMode.Bottom,
-                IsLightDismissEnabled = true
-            };
-            teachingTip.ActionButtonClick += (_, _) =>
-            {
-                onTipToggled(false);
-                teachingTip.IsOpen = false;
-            };
-            teachingTip.CloseButtonClick += (_, _) => onTipToggled(false);
-            teachingTip.Closed += (_, _) => onTipToggled(false);
-            button.Tag = teachingTip;
-            button.Flyout = teachingTip;
-        }
-
-        teachingTip.Target = button;
-        teachingTip.IsOpen = isOpen;
     }
 
     private static Element BuildAddressBar(
@@ -507,6 +461,7 @@ internal static class BrowserChrome
         string favoritesImportStatus,
         IReadOnlyList<string> favoritesImportBrowserNames,
         bool isCommandCenterBusy,
+        bool isCommandCenterHighlighted,
         string commandCenterBusyText,
     IReadOnlyDictionary<string, string> settingsSnapshot,
     Action<string, string> onSaveSettingValue,
@@ -619,6 +574,7 @@ internal static class BrowserChrome
                     favoritesImportStatus,
                     favoritesImportBrowserNames,
                     isCommandCenterBusy,
+                     isCommandCenterHighlighted,
                     commandCenterBusyText,
                     settingsSnapshot,
                     onSaveSettingValue,
@@ -668,6 +624,7 @@ internal static class BrowserChrome
         string favoritesImportStatus,
         IReadOnlyList<string> favoritesImportBrowserNames,
         bool isCommandCenterBusy,
+        bool isCommandCenterHighlighted,
         string commandCenterBusyText,
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
@@ -700,6 +657,7 @@ internal static class BrowserChrome
             favoritesImportStatus,
             favoritesImportBrowserNames,
             isCommandCenterBusy,
+            isCommandCenterHighlighted,
             settingsSnapshot,
             onSaveSettingValue,
             onHistoryFilterChanged,
@@ -729,7 +687,7 @@ internal static class BrowserChrome
                 BuildRailSectionCard(
                 "Command Center",
                 BuildCommandCenterFooter(activeCommandCenterSection, onToggleCommandCenter, isCommandCenterBusy, commandCenterBusyText)
-                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight, isCommandCenterBusy))
+                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight, isCommandCenterBusy || isCommandCenterHighlighted))
             .MinHeight(0)
             .Flex(grow: isCommandCenterExpanded ? 1 : 0, shrink: 1, basis: 0);
     }
@@ -747,6 +705,7 @@ internal static class BrowserChrome
         string favoritesImportStatus,
         IReadOnlyList<string> favoritesImportBrowserNames,
         bool isCommandCenterBusy,
+        bool isCommandCenterHighlighted,
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action<string> onHistoryFilterChanged,
@@ -764,6 +723,8 @@ internal static class BrowserChrome
         Action onToggleCommandCenterExpanded,
         Action onDismissCommandCenter)
     {
+        var shouldHighlight = isCommandCenterBusy || isCommandCenterHighlighted;
+
         if (string.IsNullOrWhiteSpace(activeCommandCenterSection))
         {
             return Border(null).IsVisible(false);
@@ -820,7 +781,8 @@ internal static class BrowserChrome
             .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
             .WithBorder(Theme.SurfaceStroke)
             .Margin(0, isCommandCenterExpanded ? 6 : 0, 0, 4)
-            .MinHeight(0);
+            .MinHeight(0)
+            .Set(border => ApplyCommandCenterBusyState(border, shouldHighlight));
 
         if (!isCommandCenterExpanded)
         {
@@ -874,11 +836,17 @@ internal static class BrowserChrome
     {
         var isActive = string.Equals(activeCommandCenterSection, section, StringComparison.Ordinal);
 
-        return Button(label ?? section, () => onToggleCommandCenter(section))
-            .Background(isActive ? BrowserConstants.SubtleFillColorSecondaryBrush : BrowserConstants.LayerFillDefaultBrush)
-            .CornerRadius(10)
-            .Padding(6)
-            .Flex(grow: 1, basis: 0);
+        return Border(
+            Button(label ?? section, () => onToggleCommandCenter(section))
+                .Background(isActive ? BrowserConstants.SubtleFillColorSecondaryBrush : BrowserConstants.LayerFillDefaultBrush)
+                .CornerRadius(10)
+                .Padding(6)
+                .Flex(grow: 1, basis: 0)
+                .AutomationName(label ?? section)
+        )
+        .WithBorder(isActive ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.SurfaceStrokeColorDefaultBrush)
+        .CornerRadius(10)
+        .Flex(grow: 1, basis: 0);
     }
 
     private static Element BuildRailSectionCard(
