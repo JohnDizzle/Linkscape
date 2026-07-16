@@ -8,6 +8,8 @@ namespace LinkScape.Browser;
 internal static class BrowserConstants
 {
     public const string HomeUrlSettingKey = "browser.home.url";
+    public const string HistoryOpenInNewTabSettingKey = "browser.history.openInNewTab";
+    public const string FavoritesOpenInNewTabSettingKey = "browser.favorites.openInNewTab";
     public const string HomeUrl = "https://ntp.msn.com/edge/ntp?locale=en-US&title=New+tab";
 
     public const string GlyphMenu = "\uE700";
@@ -20,6 +22,7 @@ internal static class BrowserConstants
     public const string GlyphAdd = "\uE710";
     public const string GlyphClose = "\uE711";
     public const string GlyphRefresh = "\uE72C";
+    public const string GlyphSettings = "\uE713";
     public const string GlyphPause = "\uE769";
     public const string GlyphChevronUp = "\uE70E";
     public const string GlyphChevronDown = "\uE70D";

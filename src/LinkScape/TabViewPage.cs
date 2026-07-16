@@ -241,9 +241,12 @@ class TabViewPage : Component
             SaveSettingValue(HomeUrlSettingKey, currentUrl);
         }
 
-        void OpenUriInNewTab(string rawUrl)
+        void OpenUriInNewTab(string rawUrl, bool dismissCommandCenter = true)
         {
-            DismissCommandCenter();
+            if (dismissCommandCenter)
+            {
+                DismissCommandCenter();
+            }
 
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
@@ -535,8 +538,37 @@ class TabViewPage : Component
                 return;
             }
 
-            DismissCommandCenter();
             NavigateActiveTab(url);
+        }
+
+        void OpenHistoryItemInNewTab(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            OpenUriInNewTab(url, dismissCommandCenter: false);
+        }
+
+        void OpenFavoriteItem(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            NavigateActiveTab(url);
+        }
+
+        void OpenFavoriteItemInNewTab(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            OpenUriInNewTab(url, dismissCommandCenter: false);
         }
 
         void NavigateActiveTab(string rawUrl)
@@ -874,6 +906,9 @@ class TabViewPage : Component
                 ImportBrowserFavoritesByName,
                 DeleteAllFavorites,
                 OpenHistoryItem,
+                OpenHistoryItemInNewTab,
+                OpenFavoriteItem,
+                OpenFavoriteItemInNewTab,
                 ToggleCommandCenterByName,
                 ToggleCommandCenterExpanded,
                 isRailTabsExpanded,
@@ -896,7 +931,7 @@ class TabViewPage : Component
                     }
                 },
                 UpdateTab,
-                OpenUriInNewTab,
+                url => OpenUriInNewTab(url),
                 SetTitleFromCore,
                 SetNavAvailabilityIfNeeded,
                 nextAddress => _browserTitleBarController.SetAddressText(nextAddress, preserveUserEdit: true),
