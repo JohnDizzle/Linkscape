@@ -131,7 +131,7 @@ class App : Component
         RegisterSettingsListener(setBackdropGradientPreset);
 
         return FlexColumn(
-            TitleBar("Linkscape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),   
+            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),   
             Component<LinkScape.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )
