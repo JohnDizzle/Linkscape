@@ -65,7 +65,7 @@ internal static class BrowserChrome
         Action onCloseTab)
     {
         return Border(
-            FlexRow(
+            (FlexRow(
                 HStack(
                     IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15),
                     IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15),
@@ -100,11 +100,13 @@ internal static class BrowserChrome
             ) with
             {
                 ColumnGap = 8
-            }
+            })
+            .HAlign(HorizontalAlignment.Stretch)
         )
         .Padding(8, 6, 8, 6)
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)
+        .HAlign(HorizontalAlignment.Stretch)
         .Flex(shrink: 0);
     }
 
@@ -120,16 +122,23 @@ internal static class BrowserChrome
 
         return Border(
             VStack(0,
-                HStack(
-                    BuildAddressBarFavicon(selectedTab).Margin(0, 0, 8, 0),
+                (FlexRow(
+                    BuildAddressBarFavicon(selectedTab),
                     Border(
                         AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
                             .AutomationName("Address Bar")
                             .Set(addressBox => ConfigureAddressBox(addressBox, addressBarChrome, addressBarUnderline, onAddressBoxReady))
                     )
+                    .HAlign(HorizontalAlignment.Stretch)
                     .Flex(grow: 1, basis: 0)
-                )
-                .Padding(0, 0, 0, 2),
+                    .MinWidth(0)
+                ) with
+                {
+                    ColumnGap = 8
+                })
+                .Padding(0, 0, 0, 2)
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0),
                 Border(null)
                     .Height(2)
                     .Opacity(0)
@@ -137,11 +146,15 @@ internal static class BrowserChrome
                     .Background(BrowserConstants.AccentFillColorDefaultBrush)
                     .Set(border => ConfigureAddressBarUnderline(border, addressBarUnderline = border))
             )
+            .HAlign(HorizontalAlignment.Stretch)
+            .MinWidth(0)
         )
         .Height(38)
         .Padding(10, 1, 10, 0)
         .CornerRadius(14)
         .Background(BrowserConstants.LayerFillDefaultBrush)
+        .HAlign(HorizontalAlignment.Stretch)
+        .MinWidth(0)
         .Set(border => ConfigureAddressBarChrome(border, addressBarChrome = border));
     }
 
@@ -173,6 +186,8 @@ internal static class BrowserChrome
     {
         addressBox.PlaceholderText = "Search or enter web address";
         addressBox.Height = 34;
+        addressBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        addressBox.MinWidth = 0;
         addressBox.Padding = new Thickness(0, 0, 0, 1);
         addressBox.CornerRadius = new CornerRadius(12);
         addressBox.BorderThickness = new Thickness(0);
