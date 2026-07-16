@@ -4,11 +4,19 @@ using System.IO;
 public static class LinkScapeCachePaths
 {
     private const string CacheFolderName = "LinkScapeCache";
+    private const string CacheDirectoryOverrideEnvironmentVariable = "LINKSCAPE_CACHE_DIRECTORY";
 
     public static string CacheDirectory
     {
         get
         {
+            var overriddenCacheDirectory = Environment.GetEnvironmentVariable(CacheDirectoryOverrideEnvironmentVariable);
+            if (!string.IsNullOrWhiteSpace(overriddenCacheDirectory))
+            {
+                Directory.CreateDirectory(overriddenCacheDirectory);
+                return overriddenCacheDirectory;
+            }
+
             var documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             var basePath = string.IsNullOrWhiteSpace(documentsPath)
                 ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)

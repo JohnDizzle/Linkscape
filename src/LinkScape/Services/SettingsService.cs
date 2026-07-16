@@ -11,7 +11,7 @@ public static class SettingsService
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
             CREATE TABLE IF NOT EXISTS Settings(
-                Key TEXT PRIMARY KEY,
+                Key TEXT NOT NULL PRIMARY KEY,
                 Value TEXT NOT NULL
             )";
         cmd.ExecuteNonQuery();
@@ -100,8 +100,13 @@ public static class SettingsService
         using var reader = cmd.ExecuteReader();
         while (reader.Read())
         {
+            if (reader.IsDBNull(0))
+            {
+                continue;
+            }
+
             var key = reader.GetString(0);
-            var value = reader.GetString(1);
+            var value = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
             values[key] = value;
         }
 

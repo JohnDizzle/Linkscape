@@ -14,6 +14,18 @@ public sealed record HistoryItem(
 public static class HistoryPersistenceService
 {
     private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("history.db");
+    private static readonly HashSet<string> VolatileQueryParameterNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "_",
+        "code",
+        "client-request-id",
+        "fbclid",
+        "msclkid",
+        "nonce",
+        "redirectid",
+        "session_state",
+        "state"
+    };
 
     public static void EnsureDatabase()
     {
@@ -23,12 +35,15 @@ public static class HistoryPersistenceService
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS HistoryItems(
-                Url TEXT PRIMARY KEY,
+                Url TEXT NOT NULL PRIMARY KEY,
                 Title TEXT NOT NULL,
                 FirstVisitedAt TEXT NOT NULL,
                 LastVisitedAt TEXT NOT NULL,
                 VisitCount INTEGER NOT NULL DEFAULT 1
             );
+
+            DELETE FROM HistoryItems
+            WHERE Url IS NULL;
 
             CREATE INDEX IF NOT EXISTS IX_HistoryItems_LastVisitedAt
             ON HistoryItems(LastVisitedAt DESC);
@@ -42,13 +57,14 @@ public static class HistoryPersistenceService
 
     public static void RecordVisit(string url, string? title)
     {
-        if (string.IsNullOrWhiteSpace(url))
+        var normalizedUrl = NormalizeHistoryUrl(url);
+        if (string.IsNullOrWhiteSpace(normalizedUrl))
         {
             return;
         }
 
         var now = DateTime.Now;
-        var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title;
+        var safeTitle = string.IsNullOrWhiteSpace(title) ? normalizedUrl : title;
 
         using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
@@ -75,7 +91,7 @@ public static class HistoryPersistenceService
                 VisitCount = HistoryItems.VisitCount + 1;
             """;
 
-        cmd.Parameters.AddWithValue("$url", url);
+        cmd.Parameters.AddWithValue("$url", normalizedUrl);
         cmd.Parameters.AddWithValue("$title", safeTitle);
         cmd.Parameters.AddWithValue("$now", now.ToString("O"));
 
@@ -135,12 +151,13 @@ public static class HistoryPersistenceService
 
         foreach (var item in items)
         {
-            if (string.IsNullOrWhiteSpace(item.Url))
+            var normalizedUrl = NormalizeHistoryUrl(item.Url);
+            if (string.IsNullOrWhiteSpace(normalizedUrl))
             {
                 continue;
             }
 
-            var safeTitle = string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title;
+            var safeTitle = string.IsNullOrWhiteSpace(item.Title) ? normalizedUrl : item.Title;
 
             using var cmd = conn.CreateCommand();
             cmd.Transaction = transaction;
@@ -178,7 +195,7 @@ public static class HistoryPersistenceService
                     END;
                 """;
 
-            cmd.Parameters.AddWithValue("$url", item.Url);
+            cmd.Parameters.AddWithValue("$url", normalizedUrl);
             cmd.Parameters.AddWithValue("$title", safeTitle);
             cmd.Parameters.AddWithValue("$firstVisitedAt", item.FirstVisitedAt.ToString("O"));
             cmd.Parameters.AddWithValue("$lastVisitedAt", item.LastVisitedAt.ToString("O"));
@@ -192,12 +209,18 @@ public static class HistoryPersistenceService
 
     public static void DeleteUrl(string url)
     {
+        var normalizedUrl = NormalizeHistoryUrl(url);
+        if (string.IsNullOrWhiteSpace(normalizedUrl))
+        {
+            return;
+        }
+
         using var conn = new SqliteConnection(DbConnectionString);
         conn.Open();
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM HistoryItems WHERE Url = $url";
-        cmd.Parameters.AddWithValue("$url", url);
+        cmd.Parameters.AddWithValue("$url", normalizedUrl);
 
         cmd.ExecuteNonQuery();
     }
@@ -246,6 +269,11 @@ public static class HistoryPersistenceService
 
         while (reader.Read())
         {
+            if (reader.IsDBNull(0) || reader.IsDBNull(1) || reader.IsDBNull(2) || reader.IsDBNull(3) || reader.IsDBNull(4))
+            {
+                continue;
+            }
+
             items.Add(new HistoryItem(
                 reader.GetString(0),
                 reader.GetString(1),
@@ -255,5 +283,125 @@ public static class HistoryPersistenceService
         }
 
         return items;
+    }
+
+    private static string? NormalizeHistoryUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        url = url.Trim();
+
+        if (string.Equals(url, "about:blank", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return url;
+        }
+
+        if (uri.IsFile)
+        {
+            return null;
+        }
+
+        if (TryNormalizeYouTubeUrl(uri, out var normalizedYouTubeUrl))
+        {
+            return normalizedYouTubeUrl;
+        }
+
+        var filteredQueryParameters = ParseQueryString(uri.Query)
+            .Where(static kvp => !IsVolatileHistoryParameter(kvp.Key))
+            .OrderBy(static kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static kvp => kvp.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        var builder = new UriBuilder(uri)
+        {
+            Fragment = string.Empty,
+            Query = BuildQueryString(filteredQueryParameters)
+        };
+
+        var normalizedUrl = builder.Uri.AbsoluteUri;
+        return builder.Path == "/"
+            ? normalizedUrl.TrimEnd('/')
+            : normalizedUrl;
+    }
+
+    private static bool TryNormalizeYouTubeUrl(Uri uri, out string? normalizedUrl)
+    {
+        normalizedUrl = null;
+
+        if (string.Equals(uri.Host, "youtu.be", StringComparison.OrdinalIgnoreCase))
+        {
+            var videoId = uri.AbsolutePath.Trim('/');
+            if (!string.IsNullOrWhiteSpace(videoId))
+            {
+                normalizedUrl = $"https://www.youtube.com/watch?v={videoId}";
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!uri.Host.EndsWith("youtube.com", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(uri.AbsolutePath, "/watch", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var query = ParseQueryString(uri.Query);
+        if (!query.TryGetValue("v", out var canonicalVideoId) || string.IsNullOrWhiteSpace(canonicalVideoId))
+        {
+            return false;
+        }
+
+        normalizedUrl = $"https://www.youtube.com/watch?v={canonicalVideoId}";
+        return true;
+    }
+
+    private static bool IsVolatileHistoryParameter(string key)
+    {
+        return key.StartsWith("utm_", StringComparison.OrdinalIgnoreCase)
+            || VolatileQueryParameterNames.Contains(key);
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseQueryString(string query)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return values;
+        }
+
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(parts[0]);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                continue;
+            }
+
+            var value = parts.Length > 1
+                ? Uri.UnescapeDataString(parts[1])
+                : string.Empty;
+
+            values[key] = value;
+        }
+
+        return values;
+    }
+
+    private static string BuildQueryString(IEnumerable<KeyValuePair<string, string>> queryParameters)
+    {
+        return string.Join(
+            "&",
+            queryParameters.Select(static kvp =>
+                $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
     }
 }

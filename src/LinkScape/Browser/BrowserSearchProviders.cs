@@ -1,6 +1,6 @@
 namespace LinkScape.Browser;
 
-internal sealed record BrowserSearchProvider(string Key, string DisplayName, string SearchUrlTemplate);
+internal sealed record BrowserSearchProvider(string Key, string DisplayName, string SearchUrlTemplate, string HomeUrl);
 
 internal static class BrowserSearchProviders
 {
@@ -8,11 +8,11 @@ internal static class BrowserSearchProviders
 
     private static readonly BrowserSearchProvider[] _providers =
     [
-        new("bing", "Bing", "https://www.bing.com/search?q={0}"),
-        new("google", "Google", "https://www.google.com/search?q={0}"),
-        new("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q={0}"),
-        new("ecosia", "Ecosia", "https://www.ecosia.org/search?q={0}"),
-        new("brave", "Brave", "https://search.brave.com/search?q={0}")
+        new("bing", "Bing", "https://www.bing.com/search?q={0}", "https://www.bing.com/"),
+        new("google", "Google", "https://www.google.com/search?q={0}", "https://www.google.com/"),
+        new("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q={0}", "https://duckduckgo.com/"),
+        new("ecosia", "Ecosia", "https://www.ecosia.org/search?q={0}", "https://www.ecosia.org/"),
+        new("brave", "Brave", "https://search.brave.com/search?q={0}", "https://search.brave.com/")
     ];
 
     public static IReadOnlyList<BrowserSearchProvider> Providers => _providers;
@@ -45,5 +45,10 @@ internal static class BrowserSearchProviders
             System.Globalization.CultureInfo.InvariantCulture,
             provider.SearchUrlTemplate,
             Uri.EscapeDataString((query ?? string.Empty).Trim()));
+    }
+
+    public static string GetHomeUrl(string? providerKey = null)
+    {
+        return GetByKey(providerKey).HomeUrl;
     }
 }

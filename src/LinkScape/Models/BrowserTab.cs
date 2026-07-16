@@ -17,11 +17,11 @@ internal sealed record BrowserTab(
 {
     string IReactorKeyed.Key => Id;
 
-    public static BrowserTab CreateHome() =>
+    public static BrowserTab CreateHome(string? url = null) =>
         new(
             Guid.NewGuid().ToString("N"),
             "Home",
-            BrowserConstants.HomeUrl,
+            BrowserUrl.Normalize(url ?? string.Empty, BrowserConstants.HomeUrl),
             DateTime.Now,
             "",
             0,

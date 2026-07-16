@@ -2,6 +2,7 @@ using LinkScape.Browser;
 using LinkScape.Browser.State;
 using LinkScape.Models;
 using Browser.Components;
+using Microsoft.UI.Dispatching;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -12,6 +13,9 @@ namespace LinkScape;
 class TabViewPage : Component
 {
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
+    private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
+    private const double BrowserSurfaceInsetCollapsed = 8;
+    private const double BrowserSurfaceInsetExpanded = 10;
 
     private enum CommandCenterSection
     {
@@ -25,68 +29,79 @@ class TabViewPage : Component
         Chat
     }
 
-    private const string PauseMediaScript = """
-        (() => {
-            const media = Array.from(document.querySelectorAll('video, audio'));
-
-            for (const element of media) {
-                if (typeof element.pause === 'function') {
-                    element.pause();
-                }
-            }
-
-            return media.length;
-        })();
-        """;
-
     private CancellationTokenSource? _saveTabsCts;
     private string? _latestSelectedTabId;
     private bool _shutdownSaveRegistered;
     private const int MaxTabs = 50;
     private const int MaxTitleLength = 256;
     private const int MaxUrlLength = 2048;
-    private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
-    private readonly HashSet<string> _hookedWebViewTabs = [];
-    private Microsoft.UI.Xaml.Controls.WebView2? _webView;
-    private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
-    private string? _activeWebViewTabId;
-    private Action<string, string>? _setTitleFromCore;
-    private Action<bool, bool>? _setNavAvailability;
-    private Action<string>? _setAddressFromCore;
-    private Action<bool>? _setLoadingStateFromCore;
-    private Action? _refreshHistoryFromCore;
+    private readonly BrowserTitleBarController _browserTitleBarController = new();
+    private readonly BrowserWebViewHostController _browserWebViewHostController = new();
+    private readonly DispatcherQueue? _dispatcherQueue;
     private bool _importBrowserNamesLoadStarted;
+    private bool _activationListenerRegistered;
     private int _commandCenterBusyVersion;
+    private int _commandCenterHighlightVersion;
+    private BrowserSessionState _latestBrowserSession;
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
+    private Action<string>? _openActivatedTarget;
+    private bool _browserNoticeListenerRegistered;
 
     public TabViewPage()
     {
-        _startupTabs = LoadStartupTabs();
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        var startupTabs = LoadStartupTabs();
+        var selectedSearchProviderDefault = BrowserSearchProviders.NormalizeProviderKey(
+            SettingsService.GetValueOrDefault(
+                DefaultSearchProviderSettingKey,
+                BrowserSearchProviders.DefaultProviderKey));
 
-        var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
-        var selectedTab = _startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId) ?? _startupTabs[0];
+        string startupSelectedTabId;
 
-        _startupSelectedTabId = selectedTab.Id;
+        if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget))
+        {
+            startupTabs = AddActivatedStartupTab(startupTabs, activationTarget, selectedSearchProviderDefault, out var activatedTab);
+            startupSelectedTabId = activatedTab.Id;
+        }
+        else
+        {
+            var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
+            var selectedTab = startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId) ?? startupTabs[0];
+            startupSelectedTabId = selectedTab.Id;
+        }
+
+        _startupTabs = startupTabs;
+        _startupSelectedTabId = startupSelectedTabId;
         _latestTabs = _startupTabs;
         _latestSelectedTabId = _startupSelectedTabId;
+        _latestBrowserSession = BrowserSessionState.Create(
+            _startupTabs,
+            _startupSelectedTabId,
+            selectedSearchProviderDefault);
 
         RegisterShutdownSave();
     }
 
     public override Element Render()
     {
-        var startupSelectedTab = _startupTabs.FirstOrDefault(tab => tab.Id == _startupSelectedTabId) ?? _startupTabs[0];
-        var (tabs, setTabs) = UseState(_startupTabs);
+        var selectedSearchProviderDefault = BrowserSearchProviders.NormalizeProviderKey(
+            SettingsService.GetValueOrDefault(
+                DefaultSearchProviderSettingKey,
+                BrowserSearchProviders.DefaultProviderKey));
+
+        var (session, setSession) = UseState(_latestBrowserSession);
+
+        _latestBrowserSession = session;
+        var tabs = session.Tabs;
         _latestTabs = tabs;
-        var (selectedTag, setSelectedTag) = UseState(_startupSelectedTabId);
+        var selectedTag = session.SelectedTabId;
         _latestSelectedTabId = selectedTag;
-        var (addressText, setAddressText) = UseState(startupSelectedTab.Url);
-        var (isTabsCollapsed, setIsTabsCollapsed) = UseState(true);
-        var (canGoBack, setCanGoBack) = UseState(false);
-        var (canGoForward, setCanGoForward) = UseState(false);
-        var (isLoading, setIsLoading) = UseState(false);
+        var isTabsCollapsed = session.IsTabsCollapsed;
+        var canGoBack = session.CanGoBack;
+        var canGoForward = session.CanGoForward;
+        var isLoading = session.IsLoading;
         var (historyFilter, setHistoryFilter) = UseState(string.Empty);
         var (recentHistory, setRecentHistory) = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var (mostVisitedHistory, setMostVisitedHistory) = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
@@ -95,20 +110,20 @@ class TabViewPage : Component
         var (favoritesImportStatus, setFavoritesImportStatus) = UseState(string.Empty, threadSafe: true);
         var (historyImportStatus, setHistoryImportStatus) = UseState(string.Empty, threadSafe: true);
         var (isCommandCenterBusy, setIsCommandCenterBusy) = UseState(false, threadSafe: true);
+        var (isCommandCenterHighlighted, setIsCommandCenterHighlighted) = UseState(false, threadSafe: true);
         var (commandCenterBusyText, setCommandCenterBusyText) = UseState(string.Empty, threadSafe: true);
         var (historyImportBrowserNames, setHistoryImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
         var (favoritesImportBrowserNames, setFavoritesImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
-        var (activeCommandCenterSection, setActiveCommandCenterSection) = UseState(CommandCenterSection.None);
-        var (isCommandCenterExpanded, setIsCommandCenterExpanded) = UseState(false);
-        var (isRailTabsExpanded, setIsRailTabsExpanded) = UseState(true);
+        var activeCommandCenterSection = session.ActiveCommandCenterSection;
+        var isCommandCenterExpanded = session.IsCommandCenterExpanded;
+        var isRailTabsExpanded = session.IsRailTabsExpanded;
         var (settingsSnapshot, setSettingsSnapshot) = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
-        var (selectedSearchProviderKey, setSelectedSearchProviderKey) = UseState(
-            BrowserSearchProviders.NormalizeProviderKey(
-                SettingsService.GetValueOrDefault(
-                    DefaultSearchProviderSettingKey,
-                    BrowserSearchProviders.DefaultProviderKey)));
+        var (browserNotice, setBrowserNotice) = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
+        var selectedSearchProviderKey = session.SelectedSearchProviderKey;
+        var isCommandCenterOpen = session.IsCommandCenterOpen;
+        var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot);
 
-        var isCommandCenterOpen = activeCommandCenterSection != CommandCenterSection.None;
+        RegisterBrowserNoticeListener(setBrowserNotice);
 
         if (!_importBrowserNamesLoadStarted)
         {
@@ -120,51 +135,78 @@ class TabViewPage : Component
             });
         }
 
+        #region Event Handlers
+
+        void UpdateBrowserSession(Func<BrowserSessionState, BrowserSessionState> updater)
+        {
+            _latestBrowserSession = updater(_latestBrowserSession);
+            _latestTabs = _latestBrowserSession.Tabs;
+            _latestSelectedTabId = _latestBrowserSession.SelectedTabId;
+            setSession(_latestBrowserSession);
+        }
+        
         void MarkTabsChanged(BrowserTab[] nextTabs)
         {
             _latestTabs = nextTabs;
-            setTabs(nextTabs);
-            ScheduleTabsSave(nextTabs, selectedTag);
+            UpdateBrowserSession(state => BrowserSessionStore.SetTabs(state, nextTabs));
+            ScheduleTabsSave(nextTabs, _latestSelectedTabId ?? selectedTag);
         }
 
         void ToggleCommandCenter(CommandCenterSection section)
         {
-            if (activeCommandCenterSection == section)
+            var sectionName = section == CommandCenterSection.None ? string.Empty : section.ToString();
+
+            if (string.Equals(activeCommandCenterSection, sectionName, StringComparison.Ordinal))
             {
-                setIsCommandCenterExpanded(false);
+                UpdateBrowserSession(state => BrowserSessionStore.SetCommandCenterExpanded(state, false));
             }
 
-            var nextSection = activeCommandCenterSection == section
-                ? CommandCenterSection.None
-                : section;
+            var nextSection = string.Equals(activeCommandCenterSection, sectionName, StringComparison.Ordinal)
+                ? string.Empty
+                : sectionName;
 
-            setActiveCommandCenterSection(nextSection);
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nextSection));
 
             switch (nextSection)
             {
-                case CommandCenterSection.History:
-                case CommandCenterSection.Recent:
-                case CommandCenterSection.MostVisited:
+                case nameof(CommandCenterSection.History):
+                case nameof(CommandCenterSection.Recent):
+                case nameof(CommandCenterSection.MostVisited):
                     RefreshHistoryState();
                     break;
-                case CommandCenterSection.Favorites:
+                case nameof(CommandCenterSection.Favorites):
                     RefreshFavoritesState();
                     break;
             }
         }
 
+        void ShowCommandCenterSettingsFromTitleBar()
+        {
+            UpdateBrowserSession(state =>
+            {
+                var nextState = BrowserSessionStore.SetTabsCollapsed(state, false);
+                nextState = BrowserSessionStore.SetRailTabsExpanded(nextState, true);
+                nextState = BrowserSessionStore.SetActiveCommandCenterSection(nextState, nameof(CommandCenterSection.Settings));
+                return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
+            });
+
+            var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
+            setIsCommandCenterHighlighted(true);
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1800);
+
+                if (version == Volatile.Read(ref _commandCenterHighlightVersion))
+                {
+                    setIsCommandCenterHighlighted(false);
+                }
+            });
+        }
+
         void DismissCommandCenter()
         {
-            if (isCommandCenterExpanded)
-            {
-                setIsCommandCenterExpanded(false);
-                return;
-            }
-
-            if (isCommandCenterOpen)
-            {
-                setActiveCommandCenterSection(CommandCenterSection.None);
-            }
+            UpdateBrowserSession(BrowserSessionStore.DismissCommandCenter);
         }
 
         void ToggleCommandCenterExpanded()
@@ -175,26 +217,24 @@ class TabViewPage : Component
             }
 
             var nextExpanded = !isCommandCenterExpanded;
-            setIsCommandCenterExpanded(nextExpanded);
+            var nextSession = BrowserSessionStore.SetCommandCenterExpanded(session, nextExpanded);
 
             if (nextExpanded)
             {
-                setIsRailTabsExpanded(false);
+                nextSession = BrowserSessionStore.SetRailTabsExpanded(nextSession, false);
             }
+
+            UpdateBrowserSession(_ => nextSession);
         }
 
         void MaximizeRailTabsCard()
         {
-            setIsCommandCenterExpanded(false);
-            setActiveCommandCenterSection(CommandCenterSection.None);
-            setIsRailTabsExpanded(true);
+            UpdateBrowserSession(BrowserSessionStore.MaximizeRailTabs);
         }
 
         void MinimizeRailTabsCard()
         {
-            setIsCommandCenterExpanded(false);
-            setActiveCommandCenterSection(CommandCenterSection.None);
-            setIsRailTabsExpanded(false);
+            UpdateBrowserSession(BrowserSessionStore.MinimizeRailTabs);
         }
 
         void ToggleCommandCenterByName(string sectionName)
@@ -211,7 +251,7 @@ class TabViewPage : Component
         {
             var normalizedProviderKey = BrowserSearchProviders.NormalizeProviderKey(providerKey);
             SettingsService.SetValue(DefaultSearchProviderSettingKey, normalizedProviderKey);
-            setSelectedSearchProviderKey(normalizedProviderKey);
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedSearchProvider(state, normalizedProviderKey));
             setSettingsSnapshot(SettingsService.Dump());
         }
 
@@ -222,18 +262,40 @@ class TabViewPage : Component
                 return;
             }
 
+            if (string.Equals(key, HomeUrlSettingKey, StringComparison.Ordinal))
+            {
+                value = NormalizeHomeUrl(value);
+            }
+
             SettingsService.SetValue(key, value);
             setSettingsSnapshot(SettingsService.Dump());
 
             if (string.Equals(key, DefaultSearchProviderSettingKey, StringComparison.Ordinal))
             {
-                setSelectedSearchProviderKey(BrowserSearchProviders.NormalizeProviderKey(value));
+                UpdateBrowserSession(state => BrowserSessionStore.SetSelectedSearchProvider(
+                    state,
+                    BrowserSearchProviders.NormalizeProviderKey(value)));
             }
         }
 
-        void OpenUriInNewTab(string rawUrl)
+        void SetCurrentPageAsHome()
         {
-            DismissCommandCenter();
+            var currentUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTag)?.Url;
+
+            if (string.IsNullOrWhiteSpace(currentUrl))
+            {
+                return;
+            }
+
+            SaveSettingValue(HomeUrlSettingKey, currentUrl);
+        }
+
+        void OpenUriInNewTab(string rawUrl, bool dismissCommandCenter = true)
+        {
+            if (dismissCommandCenter)
+            {
+                DismissCommandCenter();
+            }
 
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
@@ -242,7 +304,7 @@ class TabViewPage : Component
                 return;
             }
 
-            var target = BrowserUrl.Normalize(rawUrl, BrowserConstants.HomeUrl, selectedSearchProviderKey);
+            var target = BrowserUrl.Normalize(rawUrl, configuredHomeUrl, selectedSearchProviderKey);
             var nextTabs = BrowserTabActions.Add(
                 currentTabs,
                 target,
@@ -251,12 +313,13 @@ class TabViewPage : Component
 
             MarkTabsChanged(nextTabs);
 
-            setSelectedTag(newTab.Id);
-            setAddressText(newTab.Url);
-
-            _activeWebViewTabId = newTab.Id;
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, newTab.Id));
+            _browserTitleBarController.SetAddressText(newTab.Url);
             ScheduleTabsSave(nextTabs, newTab.Id);
         }
+
+        _openActivatedTarget = target => OpenUriInNewTab(target, dismissCommandCenter: false);
+        RegisterActivationListener();
 
         void UpdateTab(string id, Func<BrowserTab, BrowserTab> updater)
         {
@@ -269,32 +332,25 @@ class TabViewPage : Component
             }
         }
 
-        void SetAddressIfNeeded(string nextAddress)
-        {
-            if (!string.Equals(addressText, nextAddress, StringComparison.Ordinal))
-            {
-                setAddressText(nextAddress);
-            }
-        }
-
         void SetNavAvailabilityIfNeeded(bool back, bool forward)
         {
-            if (canGoBack != back)
+            if (_latestBrowserSession.CanGoBack != back)
             {
-                setCanGoBack(back);
+                UpdateBrowserSession(state => BrowserSessionStore.SetNavAvailability(state, back, forward));
+                return;
             }
 
-            if (canGoForward != forward)
+            if (_latestBrowserSession.CanGoForward != forward)
             {
-                setCanGoForward(forward);
+                UpdateBrowserSession(state => BrowserSessionStore.SetNavAvailability(state, back, forward));
             }
         }
 
         void SetLoadingIfNeeded(bool next)
         {
-            if (isLoading != next)
+            if (_latestBrowserSession.IsLoading != next)
             {
-                setIsLoading(next);
+                UpdateBrowserSession(state => BrowserSessionStore.SetLoading(state, next));
             }
         }
 
@@ -383,7 +439,7 @@ class TabViewPage : Component
                 return;
             }
 
-            setActiveCommandCenterSection(CommandCenterSection.History);
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.History)));
             var version = BeginCommandCenterWork("Importing history…");
             setHistoryImportStatus("Importing browser history…");
 
@@ -415,7 +471,7 @@ class TabViewPage : Component
                 return;
             }
 
-            setActiveCommandCenterSection(CommandCenterSection.History);
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.History)));
             var version = BeginCommandCenterWork($"Importing {browserName} history…");
             setHistoryImportStatus($"Importing {browserName} history…");
 
@@ -454,7 +510,7 @@ class TabViewPage : Component
                 return;
             }
 
-            setActiveCommandCenterSection(CommandCenterSection.Favorites);
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.Favorites)));
             var version = BeginCommandCenterWork("Importing favorites…");
             setFavoritesImportStatus("Importing browser favorites…");
 
@@ -486,7 +542,7 @@ class TabViewPage : Component
                 return;
             }
 
-            setActiveCommandCenterSection(CommandCenterSection.Favorites);
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.Favorites)));
             var version = BeginCommandCenterWork($"Importing {browserName} favorites…");
             setFavoritesImportStatus($"Importing {browserName} favorites…");
 
@@ -534,43 +590,46 @@ class TabViewPage : Component
                 return;
             }
 
-            DismissCommandCenter();
             NavigateActiveTab(url);
         }
 
-        void ApplyWebViewSource(string tabId, string url)
+        void OpenHistoryItemInNewTab(string url)
         {
-            if (!_webViewsByTabId.TryGetValue(tabId, out var webView))
+            if (string.IsNullOrWhiteSpace(url))
             {
                 return;
             }
 
-            try
-            {
-                if (webView.CoreWebView2 is not null)
-                {
-                    webView.CoreWebView2.Navigate(url);
-                }
-                else
-                {
-                    webView.Source = new Uri(url);
-                }
+            OpenUriInNewTab(url, dismissCommandCenter: false);
+        }
 
-                SetLoadingIfNeeded(true);
-            }
-            catch
+        void OpenFavoriteItem(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
             {
-                SetLoadingIfNeeded(false);
+                return;
             }
+
+            NavigateActiveTab(url);
+        }
+
+        void OpenFavoriteItemInNewTab(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            OpenUriInNewTab(url, dismissCommandCenter: false);
         }
 
         void NavigateActiveTab(string rawUrl)
         {
             var activeId = selectedTag;
-            var fallback = tabs.FirstOrDefault(tab => tab.Id == activeId)?.Url ?? BrowserConstants.HomeUrl;
+            var fallback = tabs.FirstOrDefault(tab => tab.Id == activeId)?.Url ?? configuredHomeUrl;
             var target = BrowserUrl.Normalize(rawUrl, fallback, selectedSearchProviderKey);
 
-            SetAddressIfNeeded(target);
+            _browserTitleBarController.SetAddressText(target);
 
             var previousUrl = tabs.FirstOrDefault(tab => tab.Id == activeId)?.Url;
             var urlChanged = !BrowserUrl.AreEqual(previousUrl, target);
@@ -602,29 +661,21 @@ class TabViewPage : Component
             {
             }
 
-            ApplyWebViewSource(activeId, target);
+            _browserWebViewHostController.Navigate(activeId, target);
         }
 
         void SubmitAddress(string rawUrl)
         {
             var currentUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTag)?.Url;
-            var fallback = currentUrl ?? BrowserConstants.HomeUrl;
+            var fallback = currentUrl ?? configuredHomeUrl;
             var target = BrowserUrl.Normalize(rawUrl, fallback, selectedSearchProviderKey);
-
-            if (!BrowserUrl.AreEqual(currentUrl, target))
-            {
-                OpenUriInNewTab(target);
-                return;
-            }
 
             NavigateActiveTab(target);
         }
 
         void AddTab()
         {
-            setIsCommandCenterExpanded(false);
-            setActiveCommandCenterSection(CommandCenterSection.None);
-            setIsRailTabsExpanded(true);
+            UpdateBrowserSession(BrowserSessionStore.MaximizeRailTabs);
 
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
@@ -635,15 +686,13 @@ class TabViewPage : Component
 
             var nextTabs = BrowserTabActions.Add(
                 currentTabs,
-                BrowserConstants.HomeUrl,
+                BrowserSearchProviders.GetHomeUrl(selectedSearchProviderKey),
                 out var newTab);
 
             MarkTabsChanged(nextTabs);
 
-            setSelectedTag(newTab.Id);
-            setAddressText(newTab.Url);
-
-            _activeWebViewTabId = newTab.Id;
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, newTab.Id));
+            _browserTitleBarController.SetAddressText(newTab.Url);
 
             ScheduleTabsSave(nextTabs, newTab.Id);
 
@@ -667,11 +716,6 @@ class TabViewPage : Component
 
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
-            if (currentTabs.Length <= 1)
-            {
-                return;
-            }
-
             var index = Array.FindIndex(currentTabs, tab => tab.Id == tabId);
 
             if (index < 0)
@@ -680,31 +724,20 @@ class TabViewPage : Component
             }
 
             var wasSelected = string.Equals(selectedTag, tabId, StringComparison.Ordinal);
-            var nextTabs = BrowserTabActions.Close(currentTabs, tabId, out var nextTab);
+            var nextTabs = BrowserTabActions.Close(currentTabs, tabId, configuredHomeUrl, out var nextTab);
 
             if (nextTab is null)
             {
                 return;
             }
 
-            if (_webViewsByTabId.Remove(tabId, out var closedWebView))
-            {
-                if (_webViewHost?.Child == closedWebView)
-                {
-                    _webViewHost.Child = null;
-                }
-
-                closedWebView.Close();
-            }
-
-            _hookedWebViewTabs.Remove(tabId);
+            _browserWebViewHostController.CloseTab(tabId);
             MarkTabsChanged(nextTabs);
 
             if (wasSelected)
             {
-                setSelectedTag(nextTab.Id);
-                setAddressText(nextTab.Url);
-                _activeWebViewTabId = nextTab.Id;
+                UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, nextTab.Id));
+                _browserTitleBarController.SetAddressText(nextTab.Url);
                 ScheduleTabsSave(nextTabs, nextTab.Id);
                 return;
             }
@@ -774,22 +807,7 @@ class TabViewPage : Component
 
         void ReloadTab(string tabId)
         {
-            if (_webViewsByTabId.TryGetValue(tabId, out var webView))
-            {
-                if (webView.CoreWebView2 is not null)
-                {
-                    webView.CoreWebView2.Reload();
-                    return;
-                }
-
-                var url = (_latestTabs.Length > 0 ? _latestTabs : tabs)
-                    .FirstOrDefault(tab => tab.Id == tabId)?.Url;
-
-                if (!string.IsNullOrWhiteSpace(url))
-                {
-                    ApplyWebViewSource(tabId, url);
-                }
-            }
+            _browserWebViewHostController.ReloadTab(tabId);
         }
 
         void SelectTab(int index)
@@ -806,10 +824,10 @@ class TabViewPage : Component
 
             if (!string.Equals(previousTabId, nextTab.Id, StringComparison.Ordinal))
             {
-                _ = CaptureScrollPositionAsync(previousTabId, UpdateTab);
-                _ = PauseMediaInTabAsync(previousTabId);
+                _ = _browserWebViewHostController.CaptureScrollPositionAsync(previousTabId);
+                _ = _browserWebViewHostController.PauseMediaInTabAsync(previousTabId);
 
-                setSelectedTag(nextTab.Id);
+                UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, nextTab.Id));
                 ScheduleTabsSave(_latestTabs.Length > 0 ? _latestTabs : tabs, nextTab.Id);
 
                 try
@@ -826,24 +844,13 @@ class TabViewPage : Component
                 }
             }
 
-            SetAddressIfNeeded(nextTab.Url);
-
-            _activeWebViewTabId = nextTab.Id;
-
-            if (_webViewsByTabId.TryGetValue(nextTab.Id, out var selectedWebView))
-            {
-                _webView = selectedWebView;
-
-                if (selectedWebView.CoreWebView2 is { } core)
-                {
-                    SetNavAvailabilityIfNeeded(core.CanGoBack, core.CanGoForward);
-                }
-            }
+            _browserTitleBarController.SetAddressText(nextTab.Url);
         }
+        #endregion
 
         var selectedTab = tabs.FirstOrDefault(tab => tab.Id == selectedTag) ?? tabs[0];
 
-        _setTitleFromCore = (tabId, title) =>
+        void SetTitleFromCore(string tabId, string title)
         {
             if (string.IsNullOrWhiteSpace(title))
             {
@@ -881,12 +888,7 @@ class TabViewPage : Component
                 {
                 }
             }
-        };
-
-        _setNavAvailability = SetNavAvailabilityIfNeeded;
-        _setAddressFromCore = SetAddressIfNeeded;
-        _setLoadingStateFromCore = SetLoadingIfNeeded;
-        _refreshHistoryFromCore = () => RefreshHistoryState();
+        }
 
         var selectedIndex = Array.FindIndex(tabs, tab => tab.Id == selectedTag);
 
@@ -895,427 +897,190 @@ class TabViewPage : Component
             selectedIndex = 0;
         }
 
-        var titleBar = BrowserChrome.BuildTitleBar(
-                         selectedTab,
-                         addressText,
-                         isTabsCollapsed,
-                         canGoBack,
-                         canGoForward,
-                         () =>
-                         {
-                             setIsTabsCollapsed(!isTabsCollapsed);
-                             RefreshWebViewLayout();
-                         },
-                         () => _webView?.GoBack(),
-                         () => _webView?.CoreWebView2?.Reload(),
-                         () => _webView?.GoForward(),
-                         setAddressText,
-                          SubmitAddress,
-                         NavigateActiveTab,
-                          selectedSearchProviderKey,
-                          BrowserSearchProviders.Providers,
-                          SetDefaultSearchProvider,
-                         ToggleFavorite,
-                         AddTab,
-                         CloseActiveTab);
+        var titleBar = Component<BrowserTitleBar, BrowserTitleBarProps>(
+            new BrowserTitleBarProps(
+                _browserTitleBarController,
+                selectedTab,
+                configuredHomeUrl,
+                isTabsCollapsed,
+                canGoBack,
+                canGoForward,
+                () =>
+                {
+                    UpdateBrowserSession(state => BrowserSessionStore.SetTabsCollapsed(state, !isTabsCollapsed));
+                },
+                () => _browserWebViewHostController.GoBack(),
+                () => _browserWebViewHostController.Reload(),
+                () => _browserWebViewHostController.GoForward(),
+                SubmitAddress,
+                NavigateActiveTab,
+                selectedSearchProviderKey,
+                BrowserSearchProviders.Providers,
+                SetDefaultSearchProvider,
+                SetCurrentPageAsHome,
+                ToggleFavorite,
+                ShowCommandCenterSettingsFromTitleBar,
+                AddTab,
+                CloseActiveTab));
 
-        var tabRail = BrowserChrome.BuildTabRail(
-            tabs,
-            selectedIndex,
-            selectedTag,
-            isTabsCollapsed,
-            isLoading,
-            SelectTab,
-            ToggleFavoriteTab,
-            CloseTab,
-            ReloadTab,
-            activeCommandCenterSection == CommandCenterSection.None ? string.Empty : activeCommandCenterSection.ToString(),
-            isCommandCenterExpanded,
-            mostVisitedHistory,
-            recentHistory,
-            historyFilter,
-            historyImportStatus,
-            historyImportBrowserNames,
-            favoriteItems,
-            favoritesFilter,
-            favoritesImportStatus,
-            favoritesImportBrowserNames,
-            isCommandCenterBusy,
-            commandCenterBusyText,
-            settingsSnapshot,
-            SaveSettingValue,
-            ApplyHistoryFilter,
-            ApplyFavoritesFilter,
-            ImportBrowserHistory,
-            ImportBrowserHistoryByName,
-            DeleteAllHistory,
-            ImportBrowserFavorites,
-            ImportBrowserFavoritesByName,
-            DeleteAllFavorites,
-            OpenHistoryItem,
-            ToggleCommandCenterByName,
-            ToggleCommandCenterExpanded,
-            isRailTabsExpanded,
-            MaximizeRailTabsCard,
-            MinimizeRailTabsCard,
-            DismissCommandCenter);
+        var tabRail = Component<BrowserTabRail, BrowserTabRailProps>(
+            new BrowserTabRailProps(
+                tabs,
+                selectedIndex,
+                selectedTag,
+                isTabsCollapsed,
+                isLoading,
+                SelectTab,
+                ToggleFavoriteTab,
+                CloseTab,
+                ReloadTab,
+                activeCommandCenterSection,
+                isCommandCenterExpanded,
+                mostVisitedHistory,
+                recentHistory,
+                historyFilter,
+                historyImportStatus,
+                historyImportBrowserNames,
+                favoriteItems,
+                favoritesFilter,
+                favoritesImportStatus,
+                favoritesImportBrowserNames,
+                isCommandCenterBusy,
+                isCommandCenterHighlighted,
+                commandCenterBusyText,
+                settingsSnapshot,
+                SaveSettingValue,
+                ApplyHistoryFilter,
+                ApplyFavoritesFilter,
+                ImportBrowserHistory,
+                ImportBrowserHistoryByName,
+                DeleteAllHistory,
+                ImportBrowserFavorites,
+                ImportBrowserFavoritesByName,
+                DeleteAllFavorites,
+                OpenHistoryItem,
+                OpenHistoryItemInNewTab,
+                OpenFavoriteItem,
+                OpenFavoriteItemInNewTab,
+                ToggleCommandCenterByName,
+                ToggleCommandCenterExpanded,
+                isRailTabsExpanded,
+                MaximizeRailTabsCard,
+                MinimizeRailTabsCard,
+                DismissCommandCenter,
+                () => _browserWebViewHostController.RefreshLayout()));
 
-        var browserContent = BuildBrowserContent(
-            selectedTab,
-            UpdateTab,
-            OpenUriInNewTab,
-            isCommandCenterOpen,
-            DismissCommandCenter);
+        var browserContent = Component<BrowserWebViewHost, BrowserWebViewHostProps>(
+            new BrowserWebViewHostProps(
+                _browserWebViewHostController,
+                selectedTab,
+                isCommandCenterOpen,
+                () =>
+                {
+                    _browserTitleBarController.SetAddressText(selectedTab.Url);
 
-        return FlexColumn(
-            titleBar,
-            FlexRow(
-                tabRail,
+                    if (isCommandCenterOpen)
+                    {
+                        DismissCommandCenter();
+                    }
+                },
+                UpdateTab,
+                url => OpenUriInNewTab(url),
+                SetTitleFromCore,
+                SetNavAvailabilityIfNeeded,
+                nextAddress => _browserTitleBarController.SetAddressText(nextAddress, preserveUserEdit: true),
+                SetLoadingIfNeeded,
+                () => RefreshHistoryState()));
+
+        var browserSurface = Border(
+            (FlexRow(
+                Border(
+                    Border(null)
+                        .Width(1)
+                        .Background(Theme.SurfaceStroke)
+                        .Opacity(isTabsCollapsed ? 0.16 : 0.36)
+                        .HAlign(HorizontalAlignment.Right)
+                        .VAlign(VerticalAlignment.Stretch)
+                )
+                .Width(isTabsCollapsed ? BrowserSurfaceInsetCollapsed : BrowserSurfaceInsetExpanded)
+                .VAlign(VerticalAlignment.Stretch).CornerRadius(14)
+                .Flex(shrink: 0),
                 browserContent
                     .HAlign(HorizontalAlignment.Stretch)
                     .Flex(grow: 1, basis: 0)
-            )
-            .Flex(grow: 1, basis: 0)
-        );
-    }
-    private Element BuildBrowserContent(
-    BrowserTab selectedTab,
-    Action<string, Func<BrowserTab, BrowserTab>> updateTab,
-    Action<string> openUriInNewTab,
-    bool isCommandCenterOpen,
-    Action dismissCommandCenter)
-    {
-        return Border(null)
-        .Set(host =>
-        {
-            _webViewHost = host;
-
-            host.Tapped -= OnBrowserContentTapped;
-            host.Tapped += OnBrowserContentTapped;
-
-            _ = ShowSelectedWebViewAsync(host, selectedTab, updateTab, openUriInNewTab);
-
-            void OnBrowserContentTapped(object? sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs args)
+            ) with
             {
-                if (isCommandCenterOpen)
-                {
-                    dismissCommandCenter();
-                }
-            }
-        })
+                ColumnGap = 0
+            })
+        )
         .HAlign(HorizontalAlignment.Stretch)
         .VAlign(VerticalAlignment.Stretch)
-        .Flex(grow: 1, basis: 0)
-        .MinHeight(300);
+        .MinWidth(0)
+        .CornerRadius(12)
+        .Flex(grow: 1, basis: 0);
+
+        return FlexColumn(
+            titleBar,
+            BuildBrowserNoticeBanner(browserNotice),
+            FlexRow(
+                tabRail,
+                browserSurface
+            ).Backdrop(BackdropKind.Transparent)
+           .Flex(grow: 1, basis: 0)
+        );
     }
 
-    private async Task ShowSelectedWebViewAsync(
-    Microsoft.UI.Xaml.Controls.Border host,
-    BrowserTab tab,
-    Action<string, Func<BrowserTab, BrowserTab>> updateTab,
-    Action<string> openUriInNewTab)
+    private void RegisterBrowserNoticeListener(Action<BrowserNotice?> setBrowserNotice)
     {
-        var isNewWebView = false;
-
-        if (!_webViewsByTabId.TryGetValue(tab.Id, out var webView))
-        {
-            webView = new Microsoft.UI.Xaml.Controls.WebView2
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch,
-                MinHeight = 300
-            };
-
-            _webViewsByTabId[tab.Id] = webView;
-            isNewWebView = true;
-        }
-
-        _webView = webView;
-        _activeWebViewTabId = tab.Id;
-
-        if (webView.CoreWebView2 is null)
-        {
-            await webView.EnsureCoreWebView2Async();
-        }
-
-        var core = webView.CoreWebView2;
-
-        if (core is not null && _hookedWebViewTabs.Add(tab.Id))
-        {
-            void SyncTabFromCore(bool completeLoading)
-            {
-                var currentUrl = core.Source;
-
-                if (string.IsNullOrWhiteSpace(currentUrl))
-                {
-                    currentUrl = tab.Url;
-                }
-
-                var currentTitle = string.IsNullOrWhiteSpace(core.DocumentTitle)
-                    ? null
-                    : core.DocumentTitle;
-
-                var urlChanged = false;
-                string? favoriteIdToSync = null;
-                string? favoriteTitleToSync = null;
-
-                updateTab(tab.Id, current =>
-                {
-                    urlChanged = !BrowserUrl.AreEqual(current.Url, currentUrl);
-                    var nextTitle = string.IsNullOrWhiteSpace(currentTitle)
-                        ? current.Title
-                        : currentTitle;
-                    var titleChanged = !string.Equals(current.Title, nextTitle, StringComparison.Ordinal);
-
-                    if (!urlChanged && !titleChanged)
-                    {
-                        return current;
-                    }
-
-                    if (current.IsFavorite && !string.IsNullOrWhiteSpace(current.FavoriteId))
-                    {
-                        favoriteIdToSync = current.FavoriteId;
-                        favoriteTitleToSync = nextTitle;
-                    }
-
-                    return current with
-                    {
-                        Url = currentUrl,
-                        Title = nextTitle,
-                        DateTime = DateTime.Now,
-                        VisitedCount = urlChanged
-                            ? current.VisitedCount + 1
-                            : current.VisitedCount
-                    };
-                });
-
-                var historyRecorded = false;
-
-                if (urlChanged)
-                {
-                    try
-                    {
-                        TabPersistenceService.UpdateTabVisit(
-                            "tabs",
-                            tab.Id,
-                            incrementVisitCount: true,
-                            newUrl: currentUrl,
-                            urlChanged: true);
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        HistoryPersistenceService.RecordVisit(currentUrl, currentTitle);
-                        historyRecorded = true;
-                    }
-                    catch
-                    {
-                    }
-                }
-                else if (completeLoading)
-                {
-                    try
-                    {
-                        if (!HistoryPersistenceService.ContainsUrl(currentUrl))
-                        {
-                            HistoryPersistenceService.RecordVisit(currentUrl, currentTitle);
-                            historyRecorded = true;
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (historyRecorded)
-                {
-                    _refreshHistoryFromCore?.Invoke();
-                }
-
-                if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
-                {
-                    if (completeLoading)
-                    {
-                        _setLoadingStateFromCore?.Invoke(false);
-                    }
-
-                    _setAddressFromCore?.Invoke(currentUrl);
-                    _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
-                }
-            }
-
-            webView.NavigationStarting += (_, _) =>
-            {
-                if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
-                {
-                    _setLoadingStateFromCore?.Invoke(true);
-                    _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
-                }
-            };
-
-            webView.NavigationCompleted += async (_, _) =>
-            {
-                SyncTabFromCore(completeLoading: true);
-
-                await RestoreScrollPositionAsync(tab.Id, tab.ScrollX, tab.ScrollY);
-            };
-
-            core.HistoryChanged += (_, _) =>
-            {
-                SyncTabFromCore(completeLoading: false);
-            };  
-
-            core.NewWindowRequested += (_, e) =>
-            {
-                openUriInNewTab(e.Uri);
-                e.Handled = true;
-            };
-
-            core.DocumentTitleChanged += (_, _) =>
-            {
-                var title = core.DocumentTitle;
-
-                if (!string.IsNullOrWhiteSpace(title))
-                {
-                    _setTitleFromCore?.Invoke(tab.Id, title);
-                }
-            };
-
-        }
-
-        if (isNewWebView)
-        {
-            webView.Source = new Uri(tab.Url);
-        }
-        else if (core is not null)
-        {
-            _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
-        }
-
-        AttachWebViewToHost(host, webView);
-    }
-
-    private static void AttachWebViewToHost(
-        Microsoft.UI.Xaml.Controls.Border host,
-        Microsoft.UI.Xaml.Controls.WebView2 webView)
-    {
-        host.DispatcherQueue.TryEnqueue(() =>
-        {
-            if (webView.Parent is Microsoft.UI.Xaml.Controls.Border previousHost &&
-                previousHost != host)
-            {
-                previousHost.Child = null;
-            }
-
-            if (host.Child != webView)
-            {
-                host.Child = webView;
-            }
-
-            webView.Visibility = Visibility.Visible;
-            webView.InvalidateMeasure();
-            webView.InvalidateArrange();
-            webView.UpdateLayout();
-        });
-    }
-
-    void RefreshWebViewLayout()
-    {
-        if (_webView is null)
+        if (_browserNoticeListenerRegistered)
         {
             return;
         }
 
-        _webView.DispatcherQueue.TryEnqueue(() =>
-        {
-            _webView.InvalidateMeasure();
-            _webView.InvalidateArrange();
-            _webView.UpdateLayout();
-        });
-    }
+        _browserNoticeListenerRegistered = true;
+        BrowserNoticeService.NoticeChanged += OnBrowserNoticeChanged;
 
-    private async Task PauseMediaInTabAsync(string tabId)
-    {
-        if (!_webViewsByTabId.TryGetValue(tabId, out var webView) ||
-            webView.CoreWebView2 is null)
+        void OnBrowserNoticeChanged()
         {
-            return;
-        }
-
-        try
-        {
-            await webView.CoreWebView2.ExecuteScriptAsync(PauseMediaScript);
-        }
-        catch
-        {
+            setBrowserNotice(BrowserNoticeService.CurrentNotice);
         }
     }
 
-    private async Task CaptureScrollPositionAsync(
-    string tabId,
-    Action<string, Func<BrowserTab, BrowserTab>> updateTab)
+    private static Element BuildBrowserNoticeBanner(BrowserNotice? browserNotice)
     {
-        if (!_webViewsByTabId.TryGetValue(tabId, out var webView) ||
-            webView.CoreWebView2 is null)
+        if (browserNotice is null || string.IsNullOrWhiteSpace(browserNotice.Message))
         {
-            return;
+            return Border(null).Height(0).Flex(shrink: 0);
         }
 
-        try
-        {
-            var json = await webView.CoreWebView2.ExecuteScriptAsync(
-                "JSON.stringify({ x: window.scrollX || 0, y: window.scrollY || 0 })");
-
-            var encoded = JsonSerializer.Deserialize<string>(json);
-
-            if (string.IsNullOrWhiteSpace(encoded))
+        return Border(
+            (FlexRow(
+                BrowserIcons.FluentIcon("⚠", 14),
+                (TextBlock(browserNotice.Message) with
+                {
+                    TextWrapping = TextWrapping.WrapWholeWords
+                })
+                .Flex(grow: 1, basis: 0),
+                Button("Dismiss", BrowserNoticeService.Clear)
+                    .AutomationName("Dismiss browser notice")
+                    .Height(30)
+                    .Padding(10, 0)
+                    .CornerRadius(15)
+            ) with
             {
-                return;
-            }
-
-            using var document = JsonDocument.Parse(encoded);
-            var root = document.RootElement;
-
-            var x = root.TryGetProperty("x", out var xNode) ? xNode.GetDouble() : 0;
-            var y = root.TryGetProperty("y", out var yNode) ? yNode.GetDouble() : 0;
-
-            updateTab(tabId, tab => tab with
-            {
-                ScrollX = Math.Max(0, x),
-                ScrollY = Math.Max(0, y),
-                DateTime = DateTime.Now
-            });
-        }
-        catch
-        {
-        }
+                ColumnGap = 10
+            })
+            .VAlign(VerticalAlignment.Center)
+        )
+        .Padding(12, 10)
+        .Margin(8, 4, 8, 0)
+        .CornerRadius(16)
+        .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .Flex(shrink: 0);
     }
 
-    private async Task RestoreScrollPositionAsync(string tabId, double scrollX, double scrollY)
-    {
-        if (scrollX <= 0 && scrollY <= 0)
-        {
-            return;
-        }
-
-        if (!_webViewsByTabId.TryGetValue(tabId, out var webView) ||
-            webView.CoreWebView2 is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await webView.CoreWebView2.ExecuteScriptAsync(
-                $"window.scrollTo({scrollX}, {scrollY});");
-        }
-        catch
-        {
-        }
-    }
+    #region Data_Management
 
     private static BrowserTab[] LoadStartupTabs()
     {
@@ -1344,7 +1109,26 @@ class TabViewPage : Component
         {
         }
 
-        return [BrowserTab.CreateHome()];
+        return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+    }
+
+    private static BrowserTab[] AddActivatedStartupTab(
+        BrowserTab[] tabs,
+        string activationTarget,
+        string selectedSearchProviderKey,
+        out BrowserTab activatedTab)
+    {
+        var fallback = GetConfiguredHomeUrl();
+        var currentTabs = tabs.Length > 0 ? tabs : [BrowserTab.CreateHome(fallback)];
+
+        if (currentTabs.Length >= MaxTabs)
+        {
+            activatedTab = currentTabs[^1];
+            return currentTabs;
+        }
+
+        var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
+        return BrowserTabActions.Add(currentTabs, normalizedTarget, out activatedTab, visitCount: 1);
     }
 
     private static BrowserTab[] ReconcileTabsWithPersistedFavorites(BrowserTab[] tabs)
@@ -1489,6 +1273,36 @@ class TabViewPage : Component
         AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushTabsSave();
     }
 
+    private void RegisterActivationListener()
+    {
+        if (_activationListenerRegistered)
+        {
+            return;
+        }
+
+        _activationListenerRegistered = true;
+        ActivationRoutingService.ActivationRequested += OnActivationRequested;
+    }
+
+    private void OnActivationRequested()
+    {
+        void OpenPendingTarget()
+        {
+            if (ActivationRoutingService.TryConsumePendingTarget(out var target))
+            {
+                _openActivatedTarget?.Invoke(target);
+            }
+        }
+
+        if (_dispatcherQueue?.HasThreadAccess ?? true)
+        {
+            OpenPendingTarget();
+            return;
+        }
+
+        _dispatcherQueue?.TryEnqueue(OpenPendingTarget);
+    }
+
     private void FlushTabsSave()
     {
         var selectedTabId = _latestSelectedTabId;
@@ -1546,7 +1360,9 @@ class TabViewPage : Component
         return tabs
             .Where(tab => !string.IsNullOrWhiteSpace(tab.Id))
             .Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                && (uri.Scheme == Uri.UriSchemeHttp
+                    || uri.Scheme == Uri.UriSchemeHttps
+                    || (uri.IsFile && uri.LocalPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))))
             .GroupBy(tab => tab.Id)
             .Select(group => group.First())
             .OrderBy(tab => tab.Order)
@@ -1565,4 +1381,21 @@ class TabViewPage : Component
         static string Trim(string value, int maxLength) =>
             value.Length <= maxLength ? value : value[..maxLength];
     }
+
+    private static string GetConfiguredHomeUrl(IReadOnlyDictionary<string, string>? settingsSnapshot = null)
+    {
+        var configuredHomeUrl = settingsSnapshot is not null &&
+            settingsSnapshot.TryGetValue(HomeUrlSettingKey, out var snapshotHomeUrl)
+                ? snapshotHomeUrl
+                : SettingsService.GetValueOrDefault(HomeUrlSettingKey, BrowserConstants.HomeUrl);
+
+        return NormalizeHomeUrl(configuredHomeUrl);
+    }
+
+    private static string NormalizeHomeUrl(string? value)
+    {
+        return BrowserUrl.Normalize(value ?? string.Empty, BrowserConstants.HomeUrl);
+    }
+
+    #endregion
 }
