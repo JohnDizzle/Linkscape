@@ -24,6 +24,7 @@ internal static class BrowserChrome
     private static Style? _collapsedTabItemContainerStyle;
     private static Style? _glassIconButtonStyle;
     private static Style? _glassCardStyle;
+    private static Style? _collapsedTabGlassCardStyle;
 
     public static double CollapsedRailWidthDefault { get; private set; } = 400; 
 
@@ -169,15 +170,16 @@ internal static class BrowserChrome
             Uri.TryCreate(selectedTab.Url, UriKind.Absolute, out _)
                 ? Image(BrowserUrl.GetDomainFaviconUrl(selectedTab.Url))
                     .AccessibilityHidden()
-                    .Width(14)
-                    .Height(14)
+                    .Width(16)
+                    .Height(16)
                     .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-                : FluentIcon(BrowserConstants.GlyphHome, 12))
-            .Width(18)
-            .Height(18)
-            .CornerRadius(5)
-            .Background(BrowserConstants.LayerFillAltBrush)
-            .Padding(1)
+                : FluentIcon(BrowserConstants.GlyphHome, 14))
+            .Width(24)
+            .Height(24)
+            .CornerRadius(8)
+            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .WithBorder(Theme.SurfaceStroke)
+            .Padding(3)
             .HAlign(HorizontalAlignment.Center)
             .VAlign(VerticalAlignment.Center)
             .Flex(shrink: 0);
@@ -1125,7 +1127,7 @@ internal static class BrowserChrome
                         HStack(8,
                             BuildTabMetricPill("Session", FormatTabSessionAge(tab.DateTime)),
                             BuildTabMetricPill("Opened", tab.DateTime.ToString("g")),
-                            BuildTabMetricPill("Pages", $"{Math.Max(tab.VisitedCount, 0)}")
+                            BuildTabMetricPill("Visits", $"{Math.Max(tab.VisitedCount, 0)}")
                         )
                     )
                     .HAlign(HorizontalAlignment.Stretch)
@@ -1716,15 +1718,14 @@ internal static class BrowserChrome
         Action<string> onReloadTab)
     {
         return Border(
-            BuildTabIcon(tab, isLoading)
+            BuildTabIcon(tab, isLoading, useTileChrome: false)
                 .HAlign(HorizontalAlignment.Center)
                 .VAlign(VerticalAlignment.Center)
         )
         .Width(CollapsedTabItemHeight)
         .Height(CollapsedTabItemHeight)
-        .Padding(6)
-        .CornerRadius(8)
-        .Set(border => border.Style = GetGlassCardStyle())
+        .Padding(8)
+        .Set(border => border.Style = GetCollapsedTabGlassCardStyle())
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
@@ -2066,15 +2067,27 @@ internal static class BrowserChrome
         .Flex(shrink: 0);
     }
 
-    private static Element BuildTabIcon(BrowserTab tab, bool isLoading)
+    private static Element BuildTabIcon(BrowserTab tab, bool isLoading, bool useTileChrome = true)
     {
         return isLoading
-            ? BuildTabLoadingIcon()
-            : BuildTabFavicon(tab);
+            ? BuildTabLoadingIcon(useTileChrome)
+            : BuildTabFavicon(tab, useTileChrome);
     }
 
-    private static Element BuildTabLoadingIcon()
+    private static Element BuildTabLoadingIcon(bool useTileChrome = true)
     {
+        if (!useTileChrome)
+        {
+            return ProgressRing()
+                .Width(16)
+                .Height(16)
+                .IsActive(true)
+                .IsVisible(true)
+                .HAlign(HorizontalAlignment.Center)
+                .VAlign(VerticalAlignment.Center)
+                .Flex(shrink: 0);
+        }
+
         return Border(
             ProgressRing()
                 .Width(14)
@@ -2092,16 +2105,26 @@ internal static class BrowserChrome
         .VAlign(VerticalAlignment.Center)
         .Flex(shrink: 0);
     }
-    private static Element BuildTabFavicon(BrowserTab tab)
+    private static Element BuildTabFavicon(BrowserTab tab, bool useTileChrome = true)
     {
+        var iconContent = Uri.TryCreate(tab.Url, UriKind.Absolute, out _)
+            ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
+                .AccessibilityHidden()
+                .Width(useTileChrome ? 16 : 18)
+                .Height(useTileChrome ? 16 : 18)
+                .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
+            : FluentIcon(BrowserConstants.GlyphHome, useTileChrome ? 14 : 16);
+
+        if (!useTileChrome)
+        {
+            return iconContent
+                .HAlign(HorizontalAlignment.Center)
+                .VAlign(VerticalAlignment.Center)
+                .Flex(shrink: 0);
+        }
+
         return Border(
-            Uri.TryCreate(tab.Url, UriKind.Absolute, out _)
-                ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
-                    .AccessibilityHidden()
-                    .Width(16)
-                    .Height(16)
-                    .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-                : FluentIcon(BrowserConstants.GlyphHome, 14)
+            iconContent
         )
         .Width(22)
         .Height(22)
@@ -2156,7 +2179,8 @@ internal static class BrowserChrome
             {
                 new Setter(Microsoft.UI.Xaml.Controls.Control.BackgroundProperty, BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush),
                 new Setter(Microsoft.UI.Xaml.Controls.Control.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
-                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderThicknessProperty, new Thickness(1))
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderThicknessProperty, new Thickness(1)),
+                new Setter(Microsoft.UI.Xaml.Controls.Control.CornerRadiusProperty, new CornerRadius(10))
             }
         };
     }
@@ -2169,7 +2193,22 @@ internal static class BrowserChrome
             {
                 new Setter(Microsoft.UI.Xaml.Controls.Border.BackgroundProperty, BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush),
                 new Setter(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
-                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderThicknessProperty, new Thickness(1))
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderThicknessProperty, new Thickness(1)),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.CornerRadiusProperty, new CornerRadius(12))
+            }
+        };
+    }
+
+    private static Style GetCollapsedTabGlassCardStyle()
+    {
+        return _collapsedTabGlassCardStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
+        {
+            Setters =
+            {
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BackgroundProperty, new SolidColorBrush(Microsoft.UI.Colors.Transparent)),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderThicknessProperty, new Thickness(1)),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.CornerRadiusProperty, new CornerRadius(18))
             }
         };
     }
