@@ -11,6 +11,7 @@ TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
+LinkScape.ActivationRoutingService.Initialize();
 const string WindowPositionXSettingKey = "window.position.x";
 const string WindowPositionYSettingKey = "window.position.y";
 const string WindowWidthSettingKey = "window.size.width";

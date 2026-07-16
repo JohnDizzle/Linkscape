@@ -62,7 +62,7 @@ internal static class BrowserUrl
         normalizedUrl = string.Empty;
 
         if (Uri.TryCreate(input, UriKind.Absolute, out var absoluteUri) &&
-            !string.IsNullOrWhiteSpace(absoluteUri.Host))
+            (absoluteUri.IsFile || !string.IsNullOrWhiteSpace(absoluteUri.Host)))
         {
             normalizedUrl = absoluteUri.ToString();
             return true;

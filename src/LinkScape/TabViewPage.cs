@@ -2,6 +2,7 @@ using LinkScape.Browser;
 using LinkScape.Browser.State;
 using LinkScape.Models;
 using Browser.Components;
+using Microsoft.UI.Dispatching;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -34,26 +35,42 @@ class TabViewPage : Component
     private const int MaxUrlLength = 2048;
     private readonly BrowserTitleBarController _browserTitleBarController = new();
     private readonly BrowserWebViewHostController _browserWebViewHostController = new();
+    private readonly DispatcherQueue? _dispatcherQueue;
     private bool _importBrowserNamesLoadStarted;
+    private bool _activationListenerRegistered;
     private int _commandCenterBusyVersion;
     private int _commandCenterHighlightVersion;
     private BrowserSessionState _latestBrowserSession;
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
+    private Action<string>? _openActivatedTarget;
 
     public TabViewPage()
     {
-        _startupTabs = LoadStartupTabs();
-
-        var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
-        var selectedTab = _startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId) ?? _startupTabs[0];
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        var startupTabs = LoadStartupTabs();
         var selectedSearchProviderDefault = BrowserSearchProviders.NormalizeProviderKey(
             SettingsService.GetValueOrDefault(
                 DefaultSearchProviderSettingKey,
                 BrowserSearchProviders.DefaultProviderKey));
 
-        _startupSelectedTabId = selectedTab.Id;
+        string startupSelectedTabId;
+
+        if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget))
+        {
+            startupTabs = AddActivatedStartupTab(startupTabs, activationTarget, selectedSearchProviderDefault, out var activatedTab);
+            startupSelectedTabId = activatedTab.Id;
+        }
+        else
+        {
+            var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
+            var selectedTab = startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId) ?? startupTabs[0];
+            startupSelectedTabId = selectedTab.Id;
+        }
+
+        _startupTabs = startupTabs;
+        _startupSelectedTabId = startupSelectedTabId;
         _latestTabs = _startupTabs;
         _latestSelectedTabId = _startupSelectedTabId;
         _latestBrowserSession = BrowserSessionState.Create(
@@ -296,6 +313,9 @@ class TabViewPage : Component
             _browserTitleBarController.SetAddressText(newTab.Url);
             ScheduleTabsSave(nextTabs, newTab.Id);
         }
+
+        _openActivatedTarget = target => OpenUriInNewTab(target, dismissCommandCenter: false);
+        RegisterActivationListener();
 
         void UpdateTab(string id, Func<BrowserTab, BrowserTab> updater)
         {
@@ -1012,6 +1032,25 @@ class TabViewPage : Component
         return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
     }
 
+    private static BrowserTab[] AddActivatedStartupTab(
+        BrowserTab[] tabs,
+        string activationTarget,
+        string selectedSearchProviderKey,
+        out BrowserTab activatedTab)
+    {
+        var fallback = GetConfiguredHomeUrl();
+        var currentTabs = tabs.Length > 0 ? tabs : [BrowserTab.CreateHome(fallback)];
+
+        if (currentTabs.Length >= MaxTabs)
+        {
+            activatedTab = currentTabs[^1];
+            return currentTabs;
+        }
+
+        var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
+        return BrowserTabActions.Add(currentTabs, normalizedTarget, out activatedTab, visitCount: 1);
+    }
+
     private static BrowserTab[] ReconcileTabsWithPersistedFavorites(BrowserTab[] tabs)
     {
         FavoriteItem[] persistedFavorites;
@@ -1154,6 +1193,36 @@ class TabViewPage : Component
         AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushTabsSave();
     }
 
+    private void RegisterActivationListener()
+    {
+        if (_activationListenerRegistered)
+        {
+            return;
+        }
+
+        _activationListenerRegistered = true;
+        ActivationRoutingService.ActivationRequested += OnActivationRequested;
+    }
+
+    private void OnActivationRequested()
+    {
+        void OpenPendingTarget()
+        {
+            if (ActivationRoutingService.TryConsumePendingTarget(out var target))
+            {
+                _openActivatedTarget?.Invoke(target);
+            }
+        }
+
+        if (_dispatcherQueue?.HasThreadAccess ?? true)
+        {
+            OpenPendingTarget();
+            return;
+        }
+
+        _dispatcherQueue?.TryEnqueue(OpenPendingTarget);
+    }
+
     private void FlushTabsSave()
     {
         var selectedTabId = _latestSelectedTabId;
@@ -1211,7 +1280,9 @@ class TabViewPage : Component
         return tabs
             .Where(tab => !string.IsNullOrWhiteSpace(tab.Id))
             .Where(tab => Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                && (uri.Scheme == Uri.UriSchemeHttp
+                    || uri.Scheme == Uri.UriSchemeHttps
+                    || (uri.IsFile && uri.LocalPath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))))
             .GroupBy(tab => tab.Id)
             .Select(group => group.First())
             .OrderBy(tab => tab.Order)
