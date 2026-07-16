@@ -12,6 +12,7 @@ internal static class BrowserChrome
     private const double CommandCenterFooterHeight = 108;
     private const double CommandCenterCardHeight = 150;
     private const double CompactTabsCardHeight = 84;
+    private const double ActiveTabHeaderMinHeight = 134;
     private const double RailSectionSpacing = 14;
     private const double ExpandedTabItemHeight = 68;
     private const double CollapsedTabItemHeight = 40;
@@ -21,6 +22,8 @@ internal static class BrowserChrome
     private const double ExpandedTabItemScrollbarInset = 14;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
+    private static Style? _glassIconButtonStyle;
+    private static Style? _glassCardStyle;
 
     public static double CollapsedRailWidthDefault { get; private set; } = 400; 
 
@@ -67,18 +70,18 @@ internal static class BrowserChrome
         return Border(
             (FlexRow(
                 HStack(
-                    IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15),
-                    IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15),
-                    IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15)
+                    IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
+                    IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
+                    IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true)
                 ).Margin(0, 0, 8, 0),
-                IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15).IsEnabled(canGoBack),
-                IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15).IsEnabled(canGoForward),
-                IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15),
+                IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
+                IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
+                IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
                 BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
                 .Flex(grow: 1, basis: 0),
 
                 
-                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15),
+                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
                 Button("Set home", onSetCurrentPageAsHome)
                     .AutomationName("Set current page as home")
                     .Height(32)
@@ -89,14 +92,16 @@ internal static class BrowserChrome
                     onToggleFavorite,
                     "Toggle favorite",
                     buttonSize: 32,
-                    iconSize: 15),
+                    iconSize: 15,
+                    useGlass: true),
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
                 IconButton(
                     BrowserConstants.GlyphSettings,
                     onShowCommandCenterSettings,
                     "Command center settings",
                     buttonSize: 32,
-                    iconSize: 15)
+                    iconSize: 15,
+                    useGlass: true)
             ) with
             {
                 ColumnGap = 8
@@ -562,12 +567,17 @@ internal static class BrowserChrome
         bool showCompactTabsCard = !isRailTabsExpanded;
 
         var openTabsCard = showCompactTabsCard
-            ? BuildCompactTabsCard(onMaximizeTabs, isSelectedTabLoading)
+            ? BuildCompactTabsCard(selectedTab, onMaximizeTabs, onToggleFavoriteTab, isSelectedTabLoading)
                 .Height(CompactTabsCardHeight)
-                .Flex(grow: 0, shrink: 0, basis: CompactTabsCardHeight)
+                .Flex(grow: 0, shrink: 0, basis: CompactTabsCardHeight).WithKey($"{selectedTab.Id}-compact")
             : BuildRailSectionCard(
                 "Open Tabs",
-                BuildExpandableTabsList(tabList, onMinimizeTabs))
+                VStack(12,
+                    BuildActiveTabHeader(selectedTab, tabs.Length, isSelectedTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab),
+                    BuildExpandableTabsList(tabList, onMinimizeTabs)
+                        .Flex(grow: 1, shrink: 1, basis: 0)
+                ).WithKey($"{selectedTab.Id}-expanded")
+                .Flex(grow: 1, shrink: 1, basis: 0))
                 .Flex(grow: 1, shrink: 1, basis: 0);
 
         return Border(
@@ -977,25 +987,46 @@ internal static class BrowserChrome
         };
     }
 
-    private static Element BuildCompactTabsCard(Action onShowTabs, bool isLoading)
+    private static Element BuildCompactTabsCard(
+        BrowserTab tab,
+        Action onShowTabs,
+        Action<string> onToggleFavoriteTab,
+        bool isLoading)
     {
         return Border(
-            HStack(8,
-                FluentIcon(BrowserConstants.GlyphMenu, 18),
-                TextBlock("Tabs")
-                    .Set(textBlock =>
-                    {
-                        textBlock.FontFamily = BrowserConstants.TextFontFamily;
-                        textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                    })
-                    .Flex(grow: 1, basis: 0)
+            Border(
+                HStack(8,
+                    BuildTabIcon(tab, isLoading),
+                    TextBlock(tab.Title)
+                        .TextTrimming(TextTrimming.CharacterEllipsis)
+                        .TextWrapping(TextWrapping.NoWrap)
+                        .Set(textBlock =>
+                        {
+                            textBlock.FontFamily = BrowserConstants.TextFontFamily;
+                            textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                            textBlock.MaxLines = 1;
+                            textBlock.MinWidth = 0;
+                        })
+                        .MinWidth(0)
+                        .Flex(grow: 1, basis: 0),
+                    IconButton(
+                        tab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
+                        () => onToggleFavoriteTab(tab.Id),
+                        tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
+                        buttonSize: 28,
+                        iconSize: 14)
+                )
+                .HAlign(HorizontalAlignment.Stretch)
             )
+            .Padding(10, 8)
+            .CornerRadius(12)
+            .Set(border => border.Style = GetGlassCardStyle())
         )
         .Padding(12)
         .CornerRadius(16)
-        .Background(BrowserConstants.LayerFillAltBrush)
         .Set(border =>
         {
+            border.Style = GetGlassCardStyle();
             border.DoubleTapped += (_, _) => onShowTabs();
             ToolTipService.SetToolTip(border, "Double-click to show the full tabs list.");
             ApplyCompactTabsCardBorderState(border, isLoading);
@@ -1029,6 +1060,131 @@ internal static class BrowserChrome
                 border.DoubleTapped += (_, _) => onMinimizeTabs();
                 ToolTipService.SetToolTip(border, "Double-click to collapse to the compact Tabs card.");
             });
+    }
+
+    private static Element BuildActiveTabHeader(
+        BrowserTab tab,
+        int tabCount,
+        bool isLoading,
+        Action<string> onToggleFavoriteTab,
+        Action<string> onCloseTab,
+        Action<string> onReloadTab)
+    {
+        return Border(
+            VStack(12,
+                (FlexRow(
+                    VStack(2,
+                        TextBlock("Active Tab")
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                        TextBlock($"{tabCount} tab{(tabCount == 1 ? string.Empty : "s")} in session")
+                            .Opacity(0.72)
+                            .FontSize(11)
+                    )
+                    .Flex(grow: 1, basis: 0),
+                    IconButton(
+                        tab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
+                        () => onToggleFavoriteTab(tab.Id),
+                        tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
+                        buttonSize: 28,
+                        iconSize: 14)
+                ) with
+                {
+                    ColumnGap = 8
+                })
+                .HAlign(HorizontalAlignment.Stretch),
+                Border(
+                    VStack(10,
+                        (FlexRow(
+                            BuildTabIcon(tab, isLoading),
+                            VStack(4,
+                                TextBlock(tab.Title)
+                                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                                    .TextWrapping(TextWrapping.Wrap)
+                                    .Set(textBlock =>
+                                    {
+                                        textBlock.FontFamily = BrowserConstants.TextFontFamily;
+                                        textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                                        textBlock.MaxLines = 2;
+                                        textBlock.MinWidth = 0;
+                                    }),
+                                TextBlock("Active tab")
+                                    .Opacity(0.66)
+                                    .FontSize(11)
+                            )
+                            .MinWidth(0)
+                            .Flex(grow: 1, basis: 0),
+                            HStack(4,
+                                IconButton(BrowserConstants.GlyphRefresh, () => onReloadTab(tab.Id), "Reload active tab", buttonSize: 28, iconSize: 13),
+                                IconButton(BrowserConstants.GlyphClose, () => onCloseTab(tab.Id), "Close active tab", buttonSize: 28, iconSize: 13)
+                            ).Flex(shrink: 0)
+                        ) with
+                        {
+                            ColumnGap = 10
+                        })
+                        .HAlign(HorizontalAlignment.Stretch),
+                        HStack(8,
+                            BuildTabMetricPill("Session", FormatTabSessionAge(tab.DateTime)),
+                            BuildTabMetricPill("Opened", tab.DateTime.ToString("g")),
+                            BuildTabMetricPill("Pages", $"{Math.Max(tab.VisitedCount, 0)}")
+                        )
+                    )
+                    .HAlign(HorizontalAlignment.Stretch)
+                )
+                .Padding(12)
+                .CornerRadius(12)
+                .Background(BrowserConstants.LayerFillDefaultBrush)
+                .WithBorder(Theme.SurfaceStroke)
+            )
+            .HAlign(HorizontalAlignment.Stretch)
+        )
+        .Padding(12)
+        .CornerRadius(16)
+        .Background(BrowserConstants.LayerFillAltBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .MinHeight(ActiveTabHeaderMinHeight)
+        .HAlign(HorizontalAlignment.Stretch);
+    }
+
+    private static Element BuildTabMetricPill(string label, string value)
+    {
+        return Border(
+            VStack(2,
+                TextBlock(label)
+                    .Opacity(0.62)
+                    .FontSize(10),
+                TextBlock(value)
+                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                    .TextWrapping(TextWrapping.NoWrap)
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
+            )
+        )
+        .Padding(8, 6)
+        .CornerRadius(10)
+        .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .Flex(grow: 1, basis: 0);
+    }
+
+    private static string FormatTabSessionAge(DateTime openedAt)
+    {
+        var elapsed = DateTime.Now - openedAt;
+
+        if (elapsed < TimeSpan.Zero)
+        {
+            elapsed = TimeSpan.Zero;
+        }
+
+        if (elapsed.TotalHours >= 1)
+        {
+            return $"{(int)elapsed.TotalHours}h {elapsed.Minutes}m";
+        }
+
+        if (elapsed.TotalMinutes >= 1)
+        {
+            return $"{(int)elapsed.TotalMinutes}m";
+        }
+
+        return $"{Math.Max((int)elapsed.TotalSeconds, 0)}s";
     }
 
     private static Element BuildHistoryBladeContent(
@@ -1498,6 +1654,8 @@ internal static class BrowserChrome
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, isTabsCollapsed
             ? HorizontalAlignment.Center
             : HorizontalAlignment.Stretch));
+        style.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Microsoft.UI.Colors.Transparent)));
+        style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
         
         //style.Setters.Add(new Setter(UIElement.RenderTransformOriginProperty, new Windows.Foundation.Point(0.5, 0.5)));
         //style.Setters.Add(new Setter(UIElement.RenderTransformProperty, new ScaleTransform { ScaleX = 1, ScaleY = 1 }));
@@ -1566,8 +1724,7 @@ internal static class BrowserChrome
         .Height(CollapsedTabItemHeight)
         .Padding(6)
         .CornerRadius(8)
-        .Background(BrowserConstants.LayerFillDefaultBrush)
-        .WithBorder(Theme.SurfaceStroke)
+        .Set(border => border.Style = GetGlassCardStyle())
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
@@ -1621,8 +1778,7 @@ internal static class BrowserChrome
         .Height(ExpandedTabItemHeight)
         .Padding(12, 10)
         .CornerRadius(10)
-        .Background(BrowserConstants.LayerFillDefaultBrush)
-        .WithBorder(Theme.SurfaceStroke)
+        .Set(border => border.Style = GetGlassCardStyle())
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
@@ -1975,13 +2131,47 @@ internal static class BrowserChrome
         Action onClick,
         string automationName,
         double buttonSize = 30,
-        double iconSize = 14)
+        double iconSize = 14,
+        bool useGlass = false)
     {
         return Button(FluentIcon(glyph, iconSize), onClick)
             .AutomationName(automationName)
             .Width(buttonSize)
             .Height(buttonSize)
-            .Padding(0);
+            .Padding(0)
+            .Set(button =>
+            {
+                if (useGlass)
+                {
+                    button.Style = GetGlassIconButtonStyle();
+                }
+            });
+    }
+
+    private static Style GetGlassIconButtonStyle()
+    {
+        return _glassIconButtonStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Button))
+        {
+            Setters =
+            {
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BackgroundProperty, BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderThicknessProperty, new Thickness(1))
+            }
+        };
+    }
+
+    private static Style GetGlassCardStyle()
+    {
+        return _glassCardStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
+        {
+            Setters =
+            {
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BackgroundProperty, BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Border.BorderThicknessProperty, new Thickness(1))
+            }
+        };
     }
 
     private static StackPanel CreateTabToolTip(BrowserTab tab)
