@@ -7,6 +7,7 @@ internal static class BrowserChrome
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
     private const string BackdropGradientPresetDefault = "Default";
+    private const int RailToggleDurationMilliseconds = 220;
     private const double RailHeaderHeight = 0;
     private const double CommandCenterBladeHeight = 300;
     private const double CommandCenterFooterHeight = 108;
@@ -43,6 +44,15 @@ internal static class BrowserChrome
 
         public Microsoft.UI.Xaml.Controls.Border? Underline { get; set; }
     }
+
+    private sealed class RailVisualState
+    {
+        public bool IsInitialized { get; set; }
+
+        public Microsoft.UI.Xaml.Media.Animation.Storyboard? WidthStoryboard { get; set; }
+    }
+
+    public static TimeSpan RailToggleDuration => TimeSpan.FromMilliseconds(RailToggleDurationMilliseconds);
 
     public static Element BuildTitleBar(
         BrowserTab selectedTab,
@@ -502,7 +512,8 @@ internal static class BrowserChrome
     bool isRailTabsExpanded,
     Action onMaximizeTabs,
     Action onMinimizeTabs,
-    Action onDismissCommandCenter)
+    Action onDismissCommandCenter,
+    Action onRailTransitionCompleted)
     {
         var selectedTab = tabs.FirstOrDefault(tab => string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal)) ?? tabs[0];
         var isSelectedTabLoading = isLoading && string.Equals(selectedTab.Id, selectedTabId, StringComparison.Ordinal);
@@ -556,13 +567,8 @@ internal static class BrowserChrome
                         .Flex(grow: 1, basis: 0)
                 )
             )
-            .Width(railWidth)
             .Padding(0)
-            .Set(border =>
-            {
-                border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
-                border.CornerRadius = new CornerRadius(0, 10, 10, 0);
-            })
+            .Set(border => ConfigureRailContainer(border, railWidth, onRailTransitionCompleted))
             .Flex(shrink: 0)
             .VAlign(VerticalAlignment.Stretch);
         }
@@ -629,15 +635,76 @@ internal static class BrowserChrome
             }
         )
         .Padding(12)
-        .Width(railWidth)
-        .Set(border =>
-        {
-            border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
-            border.CornerRadius = new CornerRadius(0, 10, 10, 0);
-        })
+        .Set(border => ConfigureRailContainer(border, railWidth, onRailTransitionCompleted))
         .WithBorder(Theme.SurfaceStroke)
         .Flex(shrink: 0)
         .VAlign(VerticalAlignment.Stretch);
+    }
+
+    private static void ConfigureRailContainer(
+        Microsoft.UI.Xaml.Controls.Border border,
+        double targetWidth,
+        Action onRailTransitionCompleted)
+    {
+        border.Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
+        border.CornerRadius = new CornerRadius(0, 10, 10, 0);
+        border.MinWidth = 0;
+
+        var state = border.Tag as RailVisualState ?? new RailVisualState();
+        border.Tag = state;
+
+        if (!state.IsInitialized)
+        {
+            state.IsInitialized = true;
+            border.Width = targetWidth;
+            return;
+        }
+
+        var currentWidth = border.ActualWidth > 0
+            ? border.ActualWidth
+            : double.IsNaN(border.Width)
+                ? targetWidth
+                : border.Width;
+
+        if (Math.Abs(currentWidth - targetWidth) < 0.5)
+        {
+            border.Width = targetWidth;
+            state.WidthStoryboard?.Stop();
+            state.WidthStoryboard = null;
+            return;
+        }
+
+        state.WidthStoryboard?.Stop();
+
+        var widthAnimation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = currentWidth,
+            To = targetWidth,
+            Duration = new Microsoft.UI.Xaml.Duration(RailToggleDuration),
+            EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase
+            {
+                EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseInOut
+            },
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(widthAnimation, border);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(widthAnimation, "Width");
+
+        var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        storyboard.Children.Add(widthAnimation);
+        storyboard.Completed += (_, _) =>
+        {
+            border.Width = targetWidth;
+            onRailTransitionCompleted();
+
+            if (ReferenceEquals(state.WidthStoryboard, storyboard))
+            {
+                state.WidthStoryboard = null;
+            }
+        };
+
+        state.WidthStoryboard = storyboard;
+        storyboard.Begin();
     }
 
     private static Element BuildCommandCenterHost(

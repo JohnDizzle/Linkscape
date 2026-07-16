@@ -399,27 +399,36 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         });
     }
 
-    private void RefreshWebViewLayout()
-    {
-        if (_activeWebView is null)
-        {
-            return;
-        }
-
-        _activeWebView.DispatcherQueue.TryEnqueue(() =>
-        {
-            _activeWebView.InvalidateMeasure();
-            _activeWebView.InvalidateArrange();
-            _activeWebView.UpdateLayout();
-        });
-    }
-
     private static bool IsNoNetworkFailure(CoreWebView2WebErrorStatus status)
     {
         return status is
             CoreWebView2WebErrorStatus.HostNameNotResolved or
             CoreWebView2WebErrorStatus.ConnectionAborted or
             CoreWebView2WebErrorStatus.ServerUnreachable;
+    }
+
+    private void RefreshWebViewLayout()
+    {
+        if (_webViewHost is null)
+        {
+            return;
+        }
+
+        _webViewHost.DispatcherQueue.TryEnqueue(() =>
+        {
+            _webViewHost.InvalidateMeasure();
+            _webViewHost.InvalidateArrange();
+            _webViewHost.UpdateLayout();
+
+            if (_activeWebView is null)
+            {
+                return;
+            }
+
+            _activeWebView.InvalidateMeasure();
+            _activeWebView.InvalidateArrange();
+            _activeWebView.UpdateLayout();
+        });
     }
 
     private async Task PauseMediaInTabAsync(string tabId)

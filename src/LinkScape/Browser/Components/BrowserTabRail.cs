@@ -45,7 +45,8 @@ internal sealed record BrowserTabRailProps(
     bool IsRailTabsExpanded,
     Action OnMaximizeTabs,
     Action OnMinimizeTabs,
-    Action OnDismissCommandCenter);
+    Action OnDismissCommandCenter,
+    Action OnRailTransitionCompleted);
 
 internal sealed class BrowserTabRail : Component<BrowserTabRailProps>
 {
@@ -93,5 +94,6 @@ internal sealed class BrowserTabRail : Component<BrowserTabRailProps>
             Props.IsRailTabsExpanded,
             Props.OnMaximizeTabs,
             Props.OnMinimizeTabs,
-            Props.OnDismissCommandCenter);
+            Props.OnDismissCommandCenter,
+            Props.OnRailTransitionCompleted);
 }

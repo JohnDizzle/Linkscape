@@ -14,6 +14,8 @@ class TabViewPage : Component
 {
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
     private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
+    private const double BrowserSurfaceInsetCollapsed = 8;
+    private const double BrowserSurfaceInsetExpanded = 10;
 
     private enum CommandCenterSection
     {
@@ -187,8 +189,6 @@ class TabViewPage : Component
                 nextState = BrowserSessionStore.SetActiveCommandCenterSection(nextState, nameof(CommandCenterSection.Settings));
                 return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
             });
-
-            _browserWebViewHostController.RefreshLayout();
 
             var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
             setIsCommandCenterHighlighted(true);
@@ -908,7 +908,6 @@ class TabViewPage : Component
                 () =>
                 {
                     UpdateBrowserSession(state => BrowserSessionStore.SetTabsCollapsed(state, !isTabsCollapsed));
-                    _browserWebViewHostController.RefreshLayout();
                 },
                 () => _browserWebViewHostController.GoBack(),
                 () => _browserWebViewHostController.Reload(),
@@ -968,7 +967,8 @@ class TabViewPage : Component
                 isRailTabsExpanded,
                 MaximizeRailTabsCard,
                 MinimizeRailTabsCard,
-                DismissCommandCenter));
+                DismissCommandCenter,
+                () => _browserWebViewHostController.RefreshLayout()));
 
         var browserContent = Component<BrowserWebViewHost, BrowserWebViewHostProps>(
             new BrowserWebViewHostProps(
@@ -992,16 +992,41 @@ class TabViewPage : Component
                 SetLoadingIfNeeded,
                 () => RefreshHistoryState()));
 
+        var browserSurface = Border(
+            (FlexRow(
+                Border(
+                    Border(null)
+                        .Width(1)
+                        .Background(Theme.SurfaceStroke)
+                        .Opacity(isTabsCollapsed ? 0.16 : 0.36)
+                        .HAlign(HorizontalAlignment.Right)
+                        .VAlign(VerticalAlignment.Stretch)
+                )
+                .Width(isTabsCollapsed ? BrowserSurfaceInsetCollapsed : BrowserSurfaceInsetExpanded)
+                .VAlign(VerticalAlignment.Stretch).CornerRadius(14)
+                .Flex(shrink: 0),
+                browserContent
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .Flex(grow: 1, basis: 0)
+            ) with
+            {
+                ColumnGap = 0
+            })
+        )
+        .HAlign(HorizontalAlignment.Stretch)
+        .VAlign(VerticalAlignment.Stretch)
+        .MinWidth(0)
+        .CornerRadius(12)
+        .Flex(grow: 1, basis: 0);
+
         return FlexColumn(
             titleBar,
             BuildBrowserNoticeBanner(browserNotice),
             FlexRow(
                 tabRail,
-                browserContent
-                    .HAlign(HorizontalAlignment.Stretch)
-                    .Flex(grow: 1, basis: 0)
-            )
-            .Flex(grow: 1, basis: 0)
+                browserSurface
+            ).Backdrop(BackdropKind.Transparent)
+           .Flex(grow: 1, basis: 0)
         );
     }
 
