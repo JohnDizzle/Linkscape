@@ -138,7 +138,7 @@ class App : Component
 
         try
         {
-            
+
             return fatalError is not null
                 ? BuildErrorSurface(backdropGradientPreset, fatalError)
                 : BuildMainSurface(backdropGradientPreset);
@@ -177,6 +177,44 @@ class App : Component
         args.Handled = true;
     }
 
+    private static void RestartApplication()
+    {
+        try
+        {
+            var executablePath = Environment.ProcessPath;
+
+            if (string.IsNullOrWhiteSpace(executablePath))
+            {
+                return;
+            }
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = executablePath,
+                UseShellExecute = true
+            });
+
+            Environment.Exit(0);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void OpenDeveloperContact()
+    {
+        try
+        {
+            var subject = Uri.EscapeDataString("LinkScape error details");
+            var body = Uri.EscapeDataString("Please paste the copied error details here.");
+            var uri = new Uri($"mailto:dbamdin@fizzledbydizzlelive.onmicrosoft?subject={subject}&body={body}");
+            _ = Windows.System.Launcher.LaunchUriAsync(uri);
+        }
+        catch
+        {
+        }
+    }
+
     private void RegisterErrorListener(Action<Exception?> setFatalError)
     {
         if (_errorListenerRegistered)
@@ -213,7 +251,7 @@ class App : Component
             Border(
                 VStack(
                     12,
-                    (TextBlock("LinkScape hit an unexpected error") with
+                    (TextBlock("LinkScape Browser hit an unexpected error") with
                     {
                         FontSize = 28,
                         TextWrapping = TextWrapping.WrapWholeWords
@@ -236,8 +274,13 @@ class App : Component
                         .Background(BrowserConstants.LayerFillDefaultBrush),
                     HStack(
                         10,
-                        Button("Reload shell", LinkScape.AppErrorStateService.Clear)
-                            .AutomationName("Reload shell")
+                        Button("Retry", LinkScape.AppErrorStateService.Clear)
+                            .AutomationName("Retry app shell")
+                            .Height(36)
+                            .Padding(14, 0)
+                            .CornerRadius(18),
+                        Button("Restart app", RestartApplication)
+                            .AutomationName("Restart application")
                             .Height(36)
                             .Padding(14, 0)
                             .CornerRadius(18),
@@ -257,14 +300,36 @@ class App : Component
                             .Height(36)
                             .Padding(14, 0)
                             .CornerRadius(18)
-                    )
+                    ),
+                    (FlexRow(
+                        (TextBlock("You may also send the details to ") with
+                        {
+                            FontSize = 12,
+                            TextWrapping = TextWrapping.WrapWholeWords
+                        })
+                        .Opacity(0.72),
+                        Button("Developer", OpenDeveloperContact)
+                            .AutomationName("Developer contact")
+                            .Padding(0)
+                            .CornerRadius(14),
+                        (TextBlock(" if you want direct help.") with
+                        {
+                            FontSize = 12,
+                            TextWrapping = TextWrapping.WrapWholeWords
+                        })
+                        .Opacity(0.72)
+                    ) with
+                    {
+                        ColumnGap = 4
+                    })
+                    .VAlign(VerticalAlignment.Center)
                 )
                 .HAlign(HorizontalAlignment.Center)
                 .VAlign(VerticalAlignment.Center)
                 .MaxWidth(640)
                 .Padding(28)
                 .CornerRadius(24)
-                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xD8, 0x4B, 0x1F, 0x24)))
                 .WithBorder(Theme.SurfaceStroke)
             )
             .Padding(32)
