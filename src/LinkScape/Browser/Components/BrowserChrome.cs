@@ -70,11 +70,9 @@ internal static class BrowserChrome
     {
         return Border(
             (FlexRow(
-                HStack(
-                    IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
-                    IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
-                    IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true)
-                ).Margin(0, 0, 8, 0),
+                IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
+                IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
+                IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
                 IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
                 IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
