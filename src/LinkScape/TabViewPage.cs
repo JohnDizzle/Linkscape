@@ -45,6 +45,7 @@ class TabViewPage : Component
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
     private Action<string>? _openActivatedTarget;
+    private bool _browserNoticeListenerRegistered;
 
     public TabViewPage()
     {
@@ -115,9 +116,12 @@ class TabViewPage : Component
         var isCommandCenterExpanded = session.IsCommandCenterExpanded;
         var isRailTabsExpanded = session.IsRailTabsExpanded;
         var (settingsSnapshot, setSettingsSnapshot) = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
+        var (browserNotice, setBrowserNotice) = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
         var selectedSearchProviderKey = session.SelectedSearchProviderKey;
         var isCommandCenterOpen = session.IsCommandCenterOpen;
         var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot);
+
+        RegisterBrowserNoticeListener(setBrowserNotice);
 
         if (!_importBrowserNamesLoadStarted)
         {
@@ -990,6 +994,7 @@ class TabViewPage : Component
 
         return FlexColumn(
             titleBar,
+            BuildBrowserNoticeBanner(browserNotice),
             FlexRow(
                 tabRail,
                 browserContent
@@ -998,6 +1003,56 @@ class TabViewPage : Component
             )
             .Flex(grow: 1, basis: 0)
         );
+    }
+
+    private void RegisterBrowserNoticeListener(Action<BrowserNotice?> setBrowserNotice)
+    {
+        if (_browserNoticeListenerRegistered)
+        {
+            return;
+        }
+
+        _browserNoticeListenerRegistered = true;
+        BrowserNoticeService.NoticeChanged += OnBrowserNoticeChanged;
+
+        void OnBrowserNoticeChanged()
+        {
+            setBrowserNotice(BrowserNoticeService.CurrentNotice);
+        }
+    }
+
+    private static Element BuildBrowserNoticeBanner(BrowserNotice? browserNotice)
+    {
+        if (browserNotice is null || string.IsNullOrWhiteSpace(browserNotice.Message))
+        {
+            return Border(null).Height(0).Flex(shrink: 0);
+        }
+
+        return Border(
+            (FlexRow(
+                BrowserIcons.FluentIcon("⚠", 14),
+                (TextBlock(browserNotice.Message) with
+                {
+                    TextWrapping = TextWrapping.WrapWholeWords
+                })
+                .Flex(grow: 1, basis: 0),
+                Button("Dismiss", BrowserNoticeService.Clear)
+                    .AutomationName("Dismiss browser notice")
+                    .Height(30)
+                    .Padding(10, 0)
+                    .CornerRadius(15)
+            ) with
+            {
+                ColumnGap = 10
+            })
+            .VAlign(VerticalAlignment.Center)
+        )
+        .Padding(12, 10)
+        .Margin(8, 4, 8, 0)
+        .CornerRadius(16)
+        .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .Flex(shrink: 0);
     }
 
     #region Data_Management

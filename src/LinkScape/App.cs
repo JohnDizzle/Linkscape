@@ -118,6 +118,9 @@ class App : Component
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
     private const string BackdropGradientPresetDefault = "Default";
+    private static readonly object UnhandledExceptionSyncRoot = new();
+    private static bool _unhandledExceptionHandlerRegistered;
+    private bool _errorListenerRegistered;
     private bool _settingsListenerRegistered;
 
     public override Element Render()
@@ -127,11 +130,73 @@ class App : Component
                 SettingsService.GetValueOrDefault(
                     BackdropGradientPresetSettingKey,
                     BackdropGradientPresetDefault)));
+        var (fatalError, setFatalError) = UseState<Exception?>(LinkScape.AppErrorStateService.CurrentError, threadSafe: true);
 
         RegisterSettingsListener(setBackdropGradientPreset);
+        RegisterErrorListener(setFatalError);
+        RegisterUnhandledExceptionHandler();
 
+        try
+        {
+            
+            return fatalError is not null
+                ? BuildErrorSurface(backdropGradientPreset, fatalError)
+                : BuildMainSurface(backdropGradientPreset);
+        }
+        catch (Exception ex)
+        {
+            LinkScape.AppErrorStateService.SetError(ex);
+            return BuildErrorSurface(backdropGradientPreset, ex);
+        }
+    }
+
+    private static void RegisterUnhandledExceptionHandler()
+    {
+        lock (UnhandledExceptionSyncRoot)
+        {
+            if (_unhandledExceptionHandlerRegistered)
+            {
+                return;
+            }
+
+            var application = Application.Current;
+
+            if (application is null)
+            {
+                return;
+            }
+
+            application.UnhandledException += OnUnhandledException;
+            _unhandledExceptionHandlerRegistered = true;
+        }
+    }
+
+    private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
+    {
+        LinkScape.AppErrorStateService.SetError(args.Exception);
+        args.Handled = true;
+    }
+
+    private void RegisterErrorListener(Action<Exception?> setFatalError)
+    {
+        if (_errorListenerRegistered)
+        {
+            return;
+        }
+
+        _errorListenerRegistered = true;
+        LinkScape.AppErrorStateService.ErrorChanged += OnErrorChanged;
+
+        void OnErrorChanged()
+        {
+            setFatalError(LinkScape.AppErrorStateService.CurrentError);
+        }
+    }
+
+    private static Element BuildMainSurface(string backdropGradientPreset)
+    {
         return FlexColumn(
-            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),   
+            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),
             Component<LinkScape.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )
@@ -141,7 +206,77 @@ class App : Component
         .Flex(grow: 1, basis: 0);
     }
 
-    
+    private static Element BuildErrorSurface(string backdropGradientPreset, Exception error)
+    {
+        return FlexColumn(
+            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),
+            Border(
+                VStack(
+                    12,
+                    (TextBlock("LinkScape hit an unexpected error") with
+                    {
+                        FontSize = 28,
+                        TextWrapping = TextWrapping.WrapWholeWords
+                    })
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    (TextBlock("The app shell was replaced with a safe page so you can recover without a raw stack trace.") with
+                    {
+                        FontSize = 14,
+                        TextWrapping = TextWrapping.WrapWholeWords
+                    })
+                    .Opacity(0.82),
+                    Border(
+                        TextBlock(error.Message) with
+                        {
+                            FontSize = 13,
+                            TextWrapping = TextWrapping.WrapWholeWords
+                        })
+                        .Padding(14)
+                        .CornerRadius(12)
+                        .Background(BrowserConstants.LayerFillDefaultBrush),
+                    HStack(
+                        10,
+                        Button("Reload shell", LinkScape.AppErrorStateService.Clear)
+                            .AutomationName("Reload shell")
+                            .Height(36)
+                            .Padding(14, 0)
+                            .CornerRadius(18),
+                        Button("Copy details", () =>
+                        {
+                            try
+                            {
+                                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                                package.SetText(error.ToString());
+                                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                            }
+                            catch
+                            {
+                            }
+                        })
+                            .AutomationName("Copy error details")
+                            .Height(36)
+                            .Padding(14, 0)
+                            .CornerRadius(18)
+                    )
+                )
+                .HAlign(HorizontalAlignment.Center)
+                .VAlign(VerticalAlignment.Center)
+                .MaxWidth(640)
+                .Padding(28)
+                .CornerRadius(24)
+                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .WithBorder(Theme.SurfaceStroke)
+            )
+            .Padding(32)
+            .HAlign(HorizontalAlignment.Stretch)
+            .VAlign(VerticalAlignment.Stretch)
+            .Flex(grow: 1, basis: 0)
+        )
+        .Background(CreateBackdropBrush(backdropGradientPreset))
+        .Backdrop(BackdropKind.AcrylicThin)
+        .WithBorder(Theme.SurfaceStroke)
+        .Flex(grow: 1, basis: 0);
+    }
 
     private void RegisterSettingsListener(Action<string> setBackdropGradientPreset)
     {

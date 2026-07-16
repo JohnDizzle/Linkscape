@@ -1,5 +1,6 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -318,6 +319,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
             webView.NavigationStarting += (_, _) =>
             {
+                LinkScape.BrowserNoticeService.Clear();
+
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
                     Props.SetLoadingStateFromCore(true);
@@ -325,8 +328,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 }
             };
 
-            webView.NavigationCompleted += async (_, _) =>
+            webView.NavigationCompleted += async (_, args) =>
             {
+                if (!args.IsSuccess && IsNoNetworkFailure(args.WebErrorStatus))
+                {
+                    LinkScape.BrowserNoticeService.Show("No network connection. Check your internet access and try again.");
+                }
+
                 SyncTabFromCore(completeLoading: true);
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
@@ -404,6 +412,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             _activeWebView.InvalidateArrange();
             _activeWebView.UpdateLayout();
         });
+    }
+
+    private static bool IsNoNetworkFailure(CoreWebView2WebErrorStatus status)
+    {
+        return status is
+            CoreWebView2WebErrorStatus.HostNameNotResolved or
+            CoreWebView2WebErrorStatus.ConnectionAborted or
+            CoreWebView2WebErrorStatus.ServerUnreachable;
     }
 
     private async Task PauseMediaInTabAsync(string tabId)
