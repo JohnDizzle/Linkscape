@@ -6,13 +6,13 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="LinkScape.Browser"
-    Publisher="CN=dbadmin"
+    Name="48996JohnM.Doyle.LinkScapeBrowser"
+    Publisher="CN=B61100C9-E803-4D04-BE74-91A6FB862E5C"
     Version="1.0.0.0" />
 
   <Properties>
-    <DisplayName>LinkScape Broswer</DisplayName>
-    <PublisherDisplayName>JohnDizzle</PublisherDisplayName>
+    <DisplayName>LinkScape Browser</DisplayName>
+    <PublisherDisplayName>John M. Doyle</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -29,6 +29,8 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
+    <Capability Name="internetClientServer"/>
+    <Capability Name="internetClient"/>
   </Capabilities>
 
   <Applications>
@@ -38,7 +40,7 @@
       EntryPoint="$targetentrypoint$">
 
       <uap:VisualElements
-        DisplayName="Linkscape"
+        DisplayName="Linkscape Browser"
         Description="LinkScape Browser"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
@@ -49,4 +51,6 @@
       </uap:VisualElements>
     </Application>
   </Applications>
+
+  
 </Package>
