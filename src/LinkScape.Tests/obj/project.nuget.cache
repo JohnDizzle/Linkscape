@@ -1,11 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "POqrlMspmpQ=",
+  "dgSpecHash": "KPU1K1/M7Rg=",
   "success": true,
   "projectFilePath": "C:\\Users\\fizzl\\source\\repos\\JohnDizzle\\AI-Agent\\src\\LinkScape.Tests\\LinkScape.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\fizzl\\.nuget\\packages\\communitytoolkit.mvvm\\8.4.2\\communitytoolkit.mvvm.8.4.2.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\coverlet.collector\\6.0.2\\coverlet.collector.6.0.2.nupkg.sha512",
+    "C:\\Users\\fizzl\\.nuget\\packages\\desktopflyouts.winui\\1.4.0\\desktopflyouts.winui.1.4.0.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\messageformat\\8.0.0\\messageformat.8.0.0.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.applicationinsights\\2.22.0\\microsoft.applicationinsights.2.22.0.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.codecoverage\\18.0.0\\microsoft.codecoverage.18.0.0.nupkg.sha512",
@@ -25,7 +26,8 @@
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.web.webview2\\1.0.3719.77\\microsoft.web.webview2.1.0.3719.77.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.win32.systemevents\\10.0.9\\microsoft.win32.systemevents.10.0.9.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windows.ai.machinelearning\\2.1.70\\microsoft.windows.ai.machinelearning.2.1.70.nupkg.sha512",
-    "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windows.sdk.buildtools\\10.0.26100.4654\\microsoft.windows.sdk.buildtools.10.0.26100.4654.nupkg.sha512",
+    "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windows.cswinrt\\2.2.0\\microsoft.windows.cswinrt.2.2.0.nupkg.sha512",
+    "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windows.sdk.buildtools\\10.0.28000.1839\\microsoft.windows.sdk.buildtools.10.0.28000.1839.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windows.sdk.buildtools.msix\\1.7.251221100\\microsoft.windows.sdk.buildtools.msix.1.7.251221100.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windowsappsdk\\2.2.0\\microsoft.windowsappsdk.2.2.0.nupkg.sha512",
     "C:\\Users\\fizzl\\.nuget\\packages\\microsoft.windowsappsdk.ai\\2.2.3\\microsoft.windowsappsdk.ai.2.2.3.nupkg.sha512",

@@ -1735,3 +1735,5 @@ C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\obj\x64\Debu
 C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\obj\x64\Debug\net10.0-windows10.0.26100.0\qualifiers.txt
 C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\obj\x64\Debug\net10.0-windows10.0.26100.0\qualifiers.txt.intermediate
 C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\obj\x64\Debug\net10.0-windows10.0.26100.0\MultipleQualifiersPerDimensionFound.txt
+C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\bin\x64\Debug\net10.0-windows10.0.26100.0\DesktopFlyouts.Wasdk.dll
+C:\Users\fizzl\source\repos\JohnDizzle\AI-Agent\src\LinkScape.Tests\obj\x64\Debug\net10.0-windows10.0.26100.0\DesktopFlyouts.Wasdk.pri.xml

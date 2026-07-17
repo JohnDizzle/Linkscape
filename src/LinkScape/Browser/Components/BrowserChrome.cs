@@ -426,10 +426,11 @@ internal static class BrowserChrome
         return flyout;
     }
 
-    private static MenuFlyout CreateHistoryImportFlyout(
-        IReadOnlyList<string> browserNames,
-        Action onImportAllHistory,
-        Action<string> onImportBrowserHistory,
+    private static MenuFlyout CreateBrowserImportFlyout(
+        IReadOnlyDictionary<string, BrowserImportProfile[]> browserProfiles,
+        Action onImportAll,
+        Action<string> onImportBrowser,
+        Action<string, string> onImportBrowserProfile,
         bool isImportRunning)
     {
         var flyout = new MenuFlyout();
@@ -439,10 +440,10 @@ internal static class BrowserChrome
             Text = isImportRunning ? "Import running…" : "All browsers",
             IsEnabled = !isImportRunning
         };
-        allBrowsersItem.Click += (_, _) => onImportAllHistory();
+        allBrowsersItem.Click += (_, _) => onImportAll();
         flyout.Items.Add(allBrowsersItem);
 
-        if (browserNames.Count == 0)
+        if (browserProfiles.Count == 0)
         {
             var emptyItem = new MenuFlyoutItem
             {
@@ -455,14 +456,61 @@ internal static class BrowserChrome
 
         flyout.Items.Add(new MenuFlyoutSeparator());
 
-        foreach (var browserName in browserNames)
+        foreach (var (browserName, discoveredProfiles) in browserProfiles.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var importBrowserItem = new MenuFlyoutItem
+            var profiles = discoveredProfiles
+                .Where(profile => !string.IsNullOrWhiteSpace(profile.Id) && !string.IsNullOrWhiteSpace(profile.Name))
+                .DistinctBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (profiles.Length <= 1)
+            {
+                var importSingleProfileBrowserItem = new MenuFlyoutItem
+                {
+                    Text = browserName,
+                    IsEnabled = !isImportRunning
+                };
+                importSingleProfileBrowserItem.Click += (_, _) =>
+                {
+                    if (profiles.Length == 1)
+                    {
+                        onImportBrowserProfile(browserName, profiles[0].Id);
+                        return;
+                    }
+
+                    onImportBrowser(browserName);
+                };
+                flyout.Items.Add(importSingleProfileBrowserItem);
+                continue;
+            }
+
+            var importBrowserItem = new MenuFlyoutSubItem
             {
                 Text = browserName,
                 IsEnabled = !isImportRunning
             };
-            importBrowserItem.Click += (_, _) => onImportBrowserHistory(browserName);
+
+            var importAllProfilesItem = new MenuFlyoutItem
+            {
+                Text = "All profiles",
+                IsEnabled = !isImportRunning
+            };
+            importAllProfilesItem.Click += (_, _) => onImportBrowser(browserName);
+            importBrowserItem.Items.Add(importAllProfilesItem);
+            importBrowserItem.Items.Add(new MenuFlyoutSeparator());
+
+            foreach (var profile in profiles)
+            {
+                var importProfileItem = new MenuFlyoutItem
+                {
+                    Text = profile.Name,
+                    IsEnabled = !isImportRunning
+                };
+                importProfileItem.Click += (_, _) => onImportBrowserProfile(browserName, profile.Id);
+                importBrowserItem.Items.Add(importProfileItem);
+            }
+
             flyout.Items.Add(importBrowserItem);
         }
 
@@ -485,11 +533,11 @@ internal static class BrowserChrome
     IReadOnlyList<HistoryItem> recentHistoryItems,
     string historyFilter,
     string historyImportStatus,
-    IReadOnlyList<string> historyImportBrowserNames,
+    IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
     IReadOnlyList<FavoriteItem> favoriteItems,
     string favoritesFilter,
         string favoritesImportStatus,
-        IReadOnlyList<string> favoritesImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isCommandCenterBusy,
         bool isCommandCenterHighlighted,
         string commandCenterBusyText,
@@ -499,9 +547,11 @@ internal static class BrowserChrome
     Action<string> onFavoritesFilterChanged,
     Action onImportHistory,
     Action<string> onImportBrowserHistory,
+    Action<string, string> onImportBrowserHistoryProfile,
     Action onDeleteAllHistory,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
+        Action<string, string> onImportBrowserFavoritesProfile,
         Action onDeleteAllFavorites,
     Action<string> onOpenHistoryItem,
     Action<string> onOpenHistoryItemInNewTab,
@@ -606,11 +656,11 @@ internal static class BrowserChrome
                     recentHistoryItems,
                     historyFilter,
                     historyImportStatus,
-                    historyImportBrowserNames,
+                    historyImportBrowserProfiles,
                     favoriteItems,
                     favoritesFilter,
                     favoritesImportStatus,
-                    favoritesImportBrowserNames,
+                    favoritesImportBrowserProfiles,
                     isCommandCenterBusy,
                      isCommandCenterHighlighted,
                     commandCenterBusyText,
@@ -620,9 +670,11 @@ internal static class BrowserChrome
                     onFavoritesFilterChanged,
                     onImportHistory,
                     onImportBrowserHistory,
+                    onImportBrowserHistoryProfile,
                     onDeleteAllHistory,
                     onImportFavorites,
                     onImportBrowserFavorites,
+                    onImportBrowserFavoritesProfile,
                     onDeleteAllFavorites,
                     onOpenHistoryItem,
                     onOpenHistoryItemInNewTab,
@@ -720,11 +772,11 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
-        IReadOnlyList<string> historyImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
         string favoritesImportStatus,
-        IReadOnlyList<string> favoritesImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isCommandCenterBusy,
         bool isCommandCenterHighlighted,
         string commandCenterBusyText,
@@ -734,9 +786,11 @@ internal static class BrowserChrome
         Action<string> onFavoritesFilterChanged,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
+        Action<string, string> onImportBrowserHistoryProfile,
         Action onDeleteAllHistory,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
+        Action<string, string> onImportBrowserFavoritesProfile,
         Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
@@ -755,11 +809,11 @@ internal static class BrowserChrome
             recentHistoryItems,
             historyFilter,
             historyImportStatus,
-            historyImportBrowserNames,
+            historyImportBrowserProfiles,
             favoriteItems,
             favoritesFilter,
             favoritesImportStatus,
-            favoritesImportBrowserNames,
+            favoritesImportBrowserProfiles,
             isCommandCenterBusy,
             isCommandCenterHighlighted,
             settingsSnapshot,
@@ -768,9 +822,11 @@ internal static class BrowserChrome
             onFavoritesFilterChanged,
             onImportHistory,
             onImportBrowserHistory,
+            onImportBrowserHistoryProfile,
             onDeleteAllHistory,
             onImportFavorites,
             onImportBrowserFavorites,
+            onImportBrowserFavoritesProfile,
             onDeleteAllFavorites,
             onOpenHistoryItem,
             onOpenHistoryItemInNewTab,
@@ -805,11 +861,11 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
-        IReadOnlyList<string> historyImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
         string favoritesImportStatus,
-        IReadOnlyList<string> favoritesImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isCommandCenterBusy,
         bool isCommandCenterHighlighted,
         IReadOnlyDictionary<string, string> settingsSnapshot,
@@ -818,9 +874,11 @@ internal static class BrowserChrome
         Action<string> onFavoritesFilterChanged,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
+        Action<string, string> onImportBrowserHistoryProfile,
         Action onDeleteAllHistory,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
+        Action<string, string> onImportBrowserFavoritesProfile,
         Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
@@ -840,10 +898,10 @@ internal static class BrowserChrome
 
         Element content = activeCommandCenterSection switch
         {
-            "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserNames, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
+            "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserProfiles, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onImportBrowserHistoryProfile, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
-            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
+            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
             "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
@@ -1282,11 +1340,12 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
         string historyImportStatus,
-        IReadOnlyList<string> historyImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         bool isImportRunning,
         Action<string> onHistoryFilterChanged,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
+        Action<string, string> onImportBrowserHistoryProfile,
         Action onDeleteAllHistory,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
@@ -1317,7 +1376,12 @@ internal static class BrowserChrome
                 HStack(8,
                     Button("Import", () => { })
                         .IsEnabled(!isImportRunning)
-                        .Set(button => button.Flyout = CreateHistoryImportFlyout(historyImportBrowserNames, onImportHistory, onImportBrowserHistory, isImportRunning)),
+                        .Set(button => button.Flyout = CreateBrowserImportFlyout(
+                            historyImportBrowserProfiles,
+                            onImportHistory,
+                            onImportBrowserHistory,
+                            onImportBrowserHistoryProfile,
+                            isImportRunning)),
                     Button("Delete all history", onDeleteAllHistory)
                         .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
                         .AutomationName("Delete all history")
@@ -1502,11 +1566,12 @@ internal static class BrowserChrome
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
         string favoritesImportStatus,
-        IReadOnlyList<string> favoritesImportBrowserNames,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isImportRunning,
         Action<string> onFavoritesFilterChanged,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
+        Action<string, string> onImportBrowserFavoritesProfile,
         Action onDeleteAllFavorites,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
@@ -1538,7 +1603,12 @@ internal static class BrowserChrome
                 HStack(8,
                     Button("Import", () => { })
                         .IsEnabled(!isImportRunning)
-                        .Set(button => button.Flyout = CreateHistoryImportFlyout(favoritesImportBrowserNames, onImportFavorites, onImportBrowserFavorites, isImportRunning)),
+                        .Set(button => button.Flyout = CreateBrowserImportFlyout(
+                            favoritesImportBrowserProfiles,
+                            onImportFavorites,
+                            onImportBrowserFavorites,
+                            onImportBrowserFavoritesProfile,
+                            isImportRunning)),
                     Button("Delete all favorites", onDeleteAllFavorites)
                         .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
                         .AutomationName("Delete all favorites")

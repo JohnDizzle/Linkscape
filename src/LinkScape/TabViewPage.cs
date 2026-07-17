@@ -114,8 +114,12 @@ class TabViewPage : Component
         var (isCommandCenterBusy, setIsCommandCenterBusy) = UseState(false, threadSafe: true);
         var (isCommandCenterHighlighted, setIsCommandCenterHighlighted) = UseState(false, threadSafe: true);
         var (commandCenterBusyText, setCommandCenterBusyText) = UseState(string.Empty, threadSafe: true);
-        var (historyImportBrowserNames, setHistoryImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
-        var (favoritesImportBrowserNames, setFavoritesImportBrowserNames) = UseState(Array.Empty<string>(), threadSafe: true);
+        var (historyImportBrowserProfiles, setHistoryImportBrowserProfiles) = UseState<IReadOnlyDictionary<string, BrowserImportProfile[]>>(
+            new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase),
+            threadSafe: true);
+        var (favoritesImportBrowserProfiles, setFavoritesImportBrowserProfiles) = UseState<IReadOnlyDictionary<string, BrowserImportProfile[]>>(
+            new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase),
+            threadSafe: true);
         var activeCommandCenterSection = session.ActiveCommandCenterSection;
         var isCommandCenterExpanded = session.IsCommandCenterExpanded;
         var isRailTabsExpanded = session.IsRailTabsExpanded;
@@ -132,8 +136,8 @@ class TabViewPage : Component
             _importBrowserNamesLoadStarted = true;
             _ = Task.Run(() =>
             {
-                setHistoryImportBrowserNames(GetHistoryImportBrowserNames());
-                setFavoritesImportBrowserNames(GetFavoritesImportBrowserNames());
+                setHistoryImportBrowserProfiles(GetHistoryImportBrowserProfiles());
+                setFavoritesImportBrowserProfiles(GetFavoritesImportBrowserProfiles());
             });
         }
 
@@ -216,6 +220,40 @@ class TabViewPage : Component
             });
         }
 
+        void ImportBrowserHistoryByProfile(string browserName, string profileName)
+        {
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            var profileLabel = GetProfileLabel(historyImportBrowserProfiles, browserName, profileName);
+
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.History)));
+            var version = BeginCommandCenterWork($"Importing {browserName} history from {profileLabel}…");
+            setHistoryImportStatus($"Importing {browserName} history from {profileLabel}…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = BrowserHistoryImportService.ImportBrowserHistory(browserName, profileName);
+                    setHistoryImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} items from {browserName} ({profileLabel})"
+                        : $"No {browserName} history was imported from {profileLabel}.");
+                    SetHistoryStateFromDatabase();
+                }
+                catch
+                {
+                    setHistoryImportStatus($"{browserName} history import failed for {profileLabel}.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
         void PulseCommandCenterHighlight(int durationMilliseconds = 1800)
         {
             var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
@@ -228,6 +266,40 @@ class TabViewPage : Component
                 if (version == Volatile.Read(ref _commandCenterHighlightVersion))
                 {
                     setIsCommandCenterHighlighted(false);
+                }
+            });
+        }
+
+        void ImportBrowserFavoritesByProfile(string browserName, string profileName)
+        {
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            var profileLabel = GetProfileLabel(favoritesImportBrowserProfiles, browserName, profileName);
+
+            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.Favorites)));
+            var version = BeginCommandCenterWork($"Importing {browserName} favorites from {profileLabel}…");
+            setFavoritesImportStatus($"Importing {browserName} favorites from {profileLabel}…");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = BrowserFavoritesImportService.ImportBrowserFavorites(browserName, profileName);
+                    setFavoritesImportStatus(summary.SourceCount > 0
+                        ? $"Imported {summary.ImportedItemCount} favorites from {browserName} ({profileLabel})"
+                        : $"No {browserName} favorites were imported from {profileLabel}.");
+                    SetFavoritesStateFromDatabase();
+                }
+                catch
+                {
+                    setFavoritesImportStatus($"{browserName} favorites import failed for {profileLabel}.");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
                 }
             });
         }
@@ -1091,11 +1163,11 @@ class TabViewPage : Component
                 recentHistory,
                 historyFilter,
                 historyImportStatus,
-                historyImportBrowserNames,
+                historyImportBrowserProfiles,
                 favoriteItems,
                 favoritesFilter,
                 favoritesImportStatus,
-                favoritesImportBrowserNames,
+                favoritesImportBrowserProfiles,
                 isCommandCenterBusy,
                 isCommandCenterHighlighted,
                 commandCenterBusyText,
@@ -1105,9 +1177,11 @@ class TabViewPage : Component
                 ApplyFavoritesFilter,
                 ImportBrowserHistory,
                 ImportBrowserHistoryByName,
+                ImportBrowserHistoryByProfile,
                 DeleteAllHistory,
                 ImportBrowserFavorites,
                 ImportBrowserFavoritesByName,
+                ImportBrowserFavoritesByProfile,
                 DeleteAllFavorites,
                 OpenHistoryItem,
                 OpenHistoryItemInNewTab,
@@ -1358,36 +1432,66 @@ class TabViewPage : Component
         }
     }
 
-    private static string[] GetHistoryImportBrowserNames()
+    private static IReadOnlyDictionary<string, BrowserImportProfile[]> GetHistoryImportBrowserProfiles()
     {
         try
         {
             return BrowserHistoryImportService.DiscoverSources()
-                .Select(source => source.BrowserName)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+                .GroupBy(source => source.BrowserName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group
+                        .Select(source => new BrowserImportProfile(source.ProfileName, source.ProfileLabel))
+                        .DistinctBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
-            return [];
+            return new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase);
         }
     }
 
-    private static string[] GetFavoritesImportBrowserNames()
+    private static IReadOnlyDictionary<string, BrowserImportProfile[]> GetFavoritesImportBrowserProfiles()
     {
         try
         {
             return BrowserFavoritesImportService.DiscoverSources()
-                .Select(source => source.BrowserName)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Order(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+                .GroupBy(source => source.BrowserName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group
+                        .Select(source => new BrowserImportProfile(source.ProfileName, source.ProfileLabel))
+                        .DistinctBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                        .ToArray(),
+                    StringComparer.OrdinalIgnoreCase);
         }
         catch
         {
-            return [];
+            return new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    private static string GetProfileLabel(
+        IReadOnlyDictionary<string, BrowserImportProfile[]> browserProfiles,
+        string browserName,
+        string profileName)
+    {
+        if (browserProfiles.TryGetValue(browserName, out var profiles))
+        {
+            var match = profiles.FirstOrDefault(profile => string.Equals(profile.Id, profileName, StringComparison.OrdinalIgnoreCase));
+
+            if (match is not null && !string.IsNullOrWhiteSpace(match.Name))
+            {
+                return match.Name;
+            }
+        }
+
+        return profileName;
     }
 
     private static HistoryItem[] LoadMostVisitedHistoryItems(int limit = 12)

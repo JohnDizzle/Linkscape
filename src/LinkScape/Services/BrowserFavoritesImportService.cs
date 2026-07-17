@@ -6,6 +6,7 @@ using System.Text.Json;
 public sealed record BrowserFavoritesImportSource(
     string BrowserName,
     string ProfileName,
+    string ProfileLabel,
     string FilePath,
     string Engine);
 
@@ -38,11 +39,42 @@ public static class BrowserFavoritesImportService
             return new BrowserFavoritesImportSummary(0, 0, []);
         }
 
-        var sources = DiscoverSources()
-            .Where(source => string.Equals(source.BrowserName, browserName, StringComparison.OrdinalIgnoreCase))
+        return ImportFavorites(GetSourcesForBrowser(browserName));
+    }
+
+    public static IReadOnlyList<string> DiscoverProfiles(string browserName)
+    {
+        if (string.IsNullOrWhiteSpace(browserName))
+        {
+            return [];
+        }
+
+        return GetSourcesForBrowser(browserName)
+            .Select(source => source.ProfileLabel)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static BrowserFavoritesImportSummary ImportBrowserFavorites(string browserName, string profileName)
+    {
+        if (string.IsNullOrWhiteSpace(browserName) || string.IsNullOrWhiteSpace(profileName))
+        {
+            return new BrowserFavoritesImportSummary(0, 0, []);
+        }
+
+        var sources = GetSourcesForBrowser(browserName)
+            .Where(source => string.Equals(source.ProfileName, profileName, StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         return ImportFavorites(sources);
+    }
+
+    private static BrowserFavoritesImportSource[] GetSourcesForBrowser(string browserName)
+    {
+        return DiscoverSources()
+            .Where(source => string.Equals(source.BrowserName, browserName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
     }
 
     private static BrowserFavoritesImportSummary ImportFavorites(IReadOnlyList<BrowserFavoritesImportSource> sources)
@@ -70,7 +102,7 @@ public static class BrowserFavoritesImportService
             }
 
             importedCount += favorites.Count;
-            importedSources.Add($"{source.BrowserName} - {source.ProfileName}");
+            importedSources.Add($"{source.BrowserName} - {source.ProfileLabel}");
         }
 
         return new BrowserFavoritesImportSummary(
@@ -102,11 +134,18 @@ public static class BrowserFavoritesImportService
                 continue;
             }
 
+            var profileLabels = GetChromiumProfileLabels(rootPath);
+
             var rootBookmarksPath = Path.Combine(rootPath, "Bookmarks");
 
             if (File.Exists(rootBookmarksPath))
             {
-                sources.Add(new BrowserFavoritesImportSource(browserName, "Default", rootBookmarksPath, "Chromium"));
+                sources.Add(new BrowserFavoritesImportSource(
+                    browserName,
+                    "Default",
+                    GetProfileLabel(profileLabels, "Default"),
+                    rootBookmarksPath,
+                    "Chromium"));
                 continue;
             }
 
@@ -124,7 +163,12 @@ public static class BrowserFavoritesImportService
 
                 if (File.Exists(bookmarksPath))
                 {
-                    sources.Add(new BrowserFavoritesImportSource(browserName, profileName, bookmarksPath, "Chromium"));
+                    sources.Add(new BrowserFavoritesImportSource(
+                        browserName,
+                        profileName,
+                        GetProfileLabel(profileLabels, profileName),
+                        bookmarksPath,
+                        "Chromium"));
                 }
             }
         }
@@ -136,6 +180,7 @@ public static class BrowserFavoritesImportService
     {
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var profilesRoot = Path.Combine(appData, "Mozilla", "Firefox", "Profiles");
+        var profileLabels = GetFirefoxProfileLabels(Path.Combine(appData, "Mozilla", "Firefox", "profiles.ini"));
 
         if (!Directory.Exists(profilesRoot))
         {
@@ -151,11 +196,142 @@ public static class BrowserFavoritesImportService
 
             if (File.Exists(placesPath))
             {
-                sources.Add(new BrowserFavoritesImportSource("Firefox", profileName, placesPath, "Firefox"));
+                sources.Add(new BrowserFavoritesImportSource(
+                    "Firefox",
+                    profileName,
+                    GetProfileLabel(profileLabels, profileName),
+                    placesPath,
+                    "Firefox"));
             }
         }
 
         return sources;
+    }
+
+    private static Dictionary<string, string> GetChromiumProfileLabels(string rootPath)
+    {
+        var localStatePath = Path.Combine(rootPath, "Local State");
+
+        if (!File.Exists(localStatePath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            using var stream = File.OpenRead(localStatePath);
+            using var document = JsonDocument.Parse(stream);
+
+            if (!document.RootElement.TryGetProperty("profile", out var profileElement) ||
+                !profileElement.TryGetProperty("info_cache", out var infoCacheElement) ||
+                infoCacheElement.ValueKind != JsonValueKind.Object)
+            {
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var profileProperty in infoCacheElement.EnumerateObject())
+            {
+                if (profileProperty.Value.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var profileLabel = TryGetJsonString(profileProperty.Value, "shortcut_name")
+                    ?? TryGetJsonString(profileProperty.Value, "name")
+                    ?? profileProperty.Name;
+
+                labels[profileProperty.Name] = profileLabel;
+            }
+
+            return labels;
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static Dictionary<string, string> GetFirefoxProfileLabels(string profilesIniPath)
+    {
+        if (!File.Exists(profilesIniPath))
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string? currentName = null;
+            string? currentPath = null;
+
+            void CommitCurrentProfile()
+            {
+                if (string.IsNullOrWhiteSpace(currentName) || string.IsNullOrWhiteSpace(currentPath))
+                {
+                    return;
+                }
+
+                var profileKey = Path.GetFileName(currentPath.Replace('/', Path.DirectorySeparatorChar));
+
+                if (!string.IsNullOrWhiteSpace(profileKey))
+                {
+                    labels[profileKey] = currentName;
+                }
+            }
+
+            foreach (var line in File.ReadLines(profilesIniPath))
+            {
+                var trimmedLine = line.Trim();
+
+                if (trimmedLine.StartsWith("[", StringComparison.Ordinal) && trimmedLine.EndsWith("]", StringComparison.Ordinal))
+                {
+                    CommitCurrentProfile();
+                    currentName = null;
+                    currentPath = null;
+                    continue;
+                }
+
+                if (trimmedLine.StartsWith("Name=", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentName = trimmedLine[5..];
+                    continue;
+                }
+
+                if (trimmedLine.StartsWith("Path=", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentPath = trimmedLine[5..];
+                }
+            }
+
+            CommitCurrentProfile();
+            return labels;
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static string GetProfileLabel(IReadOnlyDictionary<string, string> profileLabels, string profileName)
+    {
+        if (profileLabels.TryGetValue(profileName, out var profileLabel) && !string.IsNullOrWhiteSpace(profileLabel))
+        {
+            return profileLabel;
+        }
+
+        return profileName;
+    }
+
+    private static string? TryGetJsonString(JsonElement jsonElement, string propertyName)
+    {
+        if (!jsonElement.TryGetProperty(propertyName, out var propertyElement) || propertyElement.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return propertyElement.GetString();
     }
 
     private static IReadOnlyList<(string Url, string Title)> ReadChromiumBookmarks(string bookmarksPath)
