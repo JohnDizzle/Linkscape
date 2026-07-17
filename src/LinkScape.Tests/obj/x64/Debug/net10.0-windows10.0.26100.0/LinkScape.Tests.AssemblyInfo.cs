@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LinkScape.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a496864b9546ce8d0829e685a275777052644a3b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7490b1a5cc83649b08803f17a569708ef6ecf2d2")]
 [assembly: System.Reflection.AssemblyProductAttribute("LinkScape.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LinkScape.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -3,19 +3,15 @@
 ################################################################################
 
 /.vs
-/obj
-/bin/x64/Debug/net10.0-windows10.0.26100.0
-/publish
-/bin
+**/obj/
+**/bin/
+**/publish/
 
 # Private signing assets
 *.pfx
 *.snk
 src/LinkScape/LinkScape.Signing.props
 
-# history cleanup
-src/LinkScape/bin/
-src/LinkScape/obj/
 LinkScape_TemporaryKey.pfx
 src/LinkScape/LinkScape_TemporaryKey.pfx
 /src/LinkScape/AppPackages
