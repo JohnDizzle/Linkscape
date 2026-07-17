@@ -230,6 +230,7 @@ internal static class MainWindowActivation
         }
         catch
         {
+            // logerror("Failed to restore and activate main window", ex);
         }
     }
 }

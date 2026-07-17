@@ -505,8 +505,10 @@ internal static class BrowserChrome
         Action onDeleteAllFavorites,
     Action<string> onOpenHistoryItem,
     Action<string> onOpenHistoryItemInNewTab,
+    Action<string> onDeleteHistoryItem,
     Action<string> onOpenFavoriteItem,
     Action<string> onOpenFavoriteItemInNewTab,
+    Action<string> onDeleteFavoriteItem,
     Action<string> onToggleCommandCenter,
     Action onToggleCommandCenterExpanded,
     bool isRailTabsExpanded,
@@ -623,9 +625,11 @@ internal static class BrowserChrome
                     onImportBrowserFavorites,
                     onDeleteAllFavorites,
                     onOpenHistoryItem,
-                     onOpenHistoryItemInNewTab,
-                     onOpenFavoriteItem,
-                     onOpenFavoriteItemInNewTab,
+                    onOpenHistoryItemInNewTab,
+                    onDeleteHistoryItem,
+                    onOpenFavoriteItem,
+                    onOpenFavoriteItemInNewTab,
+                    onDeleteFavoriteItem,
                     onToggleCommandCenter,
                     onToggleCommandCenterExpanded,
                     onDismissCommandCenter)
@@ -736,8 +740,10 @@ internal static class BrowserChrome
         Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
+        Action<string> onDeleteFavoriteItem,
         Action<string> onToggleCommandCenter,
         Action onToggleCommandCenterExpanded,
         Action onDismissCommandCenter)
@@ -768,8 +774,10 @@ internal static class BrowserChrome
             onDeleteAllFavorites,
             onOpenHistoryItem,
             onOpenHistoryItemInNewTab,
+            onDeleteHistoryItem,
             onOpenFavoriteItem,
             onOpenFavoriteItemInNewTab,
+            onDeleteFavoriteItem,
             onToggleCommandCenterExpanded,
             onDismissCommandCenter)
             .MinHeight(0)
@@ -816,8 +824,10 @@ internal static class BrowserChrome
         Action onDeleteAllFavorites,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
+        Action<string> onDeleteFavoriteItem,
         Action onToggleCommandCenterExpanded,
         Action onDismissCommandCenter)
     {
@@ -830,10 +840,10 @@ internal static class BrowserChrome
 
         Element content = activeCommandCenterSection switch
         {
-            "History" => BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserNames, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
-            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
-            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
-            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, isCommandCenterExpanded),
+            "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserNames, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
+            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
+            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
+            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
             "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
@@ -851,14 +861,16 @@ internal static class BrowserChrome
                         onToggleCommandCenterExpanded,
                         isCommandCenterExpanded ? "Collapse command center blade" : "Expand command center blade",
                         buttonSize: 24,
-                        iconSize: 8)
+                        iconSize: 8,
+                        useGlass: true)
                     .Margin(2, 0, 2, 0),
                     IconButton(
                         BrowserConstants.GlyphClose,
                         onDismissCommandCenter,
                         "Dismiss command center blade",
                         buttonSize: 24,
-                        iconSize: 8)
+                        iconSize: 8,
+                        useGlass: true)
                 ).HAlign(HorizontalAlignment.Right),
                 ScrollViewer(content)
                     .Set(scrollViewer =>
@@ -921,7 +933,7 @@ internal static class BrowserChrome
                     : Border(null).IsVisible(false)
             )
         )
-        .Padding(0)
+        .Padding(2)
         .Background(BrowserConstants.CardBackgroundFillColorDefaultBrush)
         .Height(CommandCenterFooterHeight);
     }
@@ -936,13 +948,22 @@ internal static class BrowserChrome
 
         return Border(
             Button(label ?? section, () => onToggleCommandCenter(section))
-                .Background(isActive ? BrowserConstants.SubtleFillColorSecondaryBrush : BrowserConstants.LayerFillDefaultBrush)
                 .CornerRadius(10)
                 .Padding(6)
                 .Flex(grow: 1, basis: 0)
                 .AutomationName(label ?? section)
-        )
-        .WithBorder(isActive ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.SurfaceStrokeColorDefaultBrush)
+                .Set(button =>
+                {
+                    button.Style = GetGlassIconButtonStyle();
+                    button.Background = isActive
+                        ? BrowserConstants.LayerFillAltBrush
+                        : BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
+                    button.BorderBrush = isActive
+                        ? BrowserConstants.SubtleFillColorSecondaryBrush
+                        : BrowserConstants.SurfaceStrokeColorDefaultBrush;
+                    button.BorderThickness = new Thickness(isActive ? 1.5 : 1);
+                })
+        ).WithKey($"cc-button-{ label}-{section}")
         .CornerRadius(10)
         .Flex(grow: 1, basis: 0);
     }
@@ -1060,18 +1081,18 @@ internal static class BrowserChrome
     {
         return Border(
             Border(
-                HStack(8,
+                (FlexRow(
                     BuildTabIcon(tab, isLoading),
                     TextBlock(tab.Title)
                         .TextTrimming(TextTrimming.CharacterEllipsis)
-                        .TextWrapping(TextWrapping.NoWrap)
+                        .TextWrapping(TextWrapping.Wrap)
                         .Set(textBlock =>
                         {
                             textBlock.FontFamily = BrowserConstants.TextFontFamily;
                             textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                            textBlock.MaxLines = 1;
+                            textBlock.MaxLines = 2;
                             textBlock.MinWidth = 0;
-                        })
+                        }).FontSize(12)
                         .MinWidth(0)
                         .Flex(grow: 1, basis: 0),
                     IconButton(
@@ -1080,7 +1101,11 @@ internal static class BrowserChrome
                         tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
                         buttonSize: 28,
                         iconSize: 14)
-                )
+                        .Flex(shrink: 0)
+                ) with
+                {
+                    ColumnGap = 8
+                })
                 .HAlign(HorizontalAlignment.Stretch)
             )
             .Padding(10, 8)
@@ -1265,12 +1290,13 @@ internal static class BrowserChrome
         Action onDeleteAllHistory,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var historyItems = BuildGroupedHistoryItems(
             recentHistoryItems,
-            item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, openInNewTabByDefault))
+            item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault))
             .ToArray();
 
         return VStack(18,
@@ -1390,11 +1416,12 @@ internal static class BrowserChrome
         bool isLoading,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var recentItems = recentHistoryItems
-            .Select(item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, openInNewTabByDefault))
+            .Select(item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault))
             .ToArray();
 
         return VStack(10,
@@ -1425,6 +1452,7 @@ internal static class BrowserChrome
         bool isLoading,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
@@ -1437,7 +1465,7 @@ internal static class BrowserChrome
 
             for (var column = index; column < Math.Min(index + 2, topItems.Length); column++)
             {
-                cards.Add(BuildMostVisitedItem(topItems[column], onOpenHistoryItem, onOpenHistoryItemInNewTab, openInNewTabByDefault)
+                cards.Add(BuildMostVisitedItem(topItems[column], onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault)
                     .Flex(grow: 1, basis: 0));
             }
 
@@ -1482,6 +1510,7 @@ internal static class BrowserChrome
         Action onDeleteAllFavorites,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
+        Action<string> onDeleteFavoriteItem,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
@@ -1489,7 +1518,7 @@ internal static class BrowserChrome
 
         for (var index = 0; index < favoriteItems.Count; index++)
         {
-            favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], onOpenFavoriteItem, onOpenFavoriteItemInNewTab, openInNewTabByDefault));
+            favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, openInNewTabByDefault));
         }
 
         return VStack(10,
@@ -2107,6 +2136,7 @@ internal static class BrowserChrome
         HistoryItem item,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         bool openInNewTabByDefault)
     {
         return Button(
@@ -2146,7 +2176,7 @@ internal static class BrowserChrome
             .Width(100)
             .Height(125),
             () => OpenItem(item.Url, openInNewTabByDefault, onOpenHistoryItem, onOpenHistoryItemInNewTab))
-            .Set(button => button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab))
+            .Set(button => button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item"))
             .AutomationName("MostViewed");
     }
 
@@ -2166,109 +2196,133 @@ internal static class BrowserChrome
         HistoryItem item,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
+        Action<string> onDeleteHistoryItem,
         bool openInNewTabByDefault)
     {
-        return Button(
-            Border(
-                (FlexRow(
-                    BuildHistoryIcon(item.Url),
-                    VStack(4,
-                        TextBlock(item.Title)
-                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap)
-                            .Set(textBlock =>
-                            {
-                                textBlock.MaxLines = 1;
-                                textBlock.MinWidth = 0;
-                            }),
-                        TextBlock(item.Url)
-                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap)
-                            .Opacity(0.75)
-                            .Set(textBlock =>
-                            {
-                                textBlock.MaxLines = 1;
-                                textBlock.MinWidth = 0;
-                            })
-                    )
-                    .MinWidth(0)
-                    .Flex(grow: 1, basis: 0),
-                    TextBlock(item.LastVisitedAt.ToString("g")).FontSize(10)
-                        .Opacity(0.7)
-                        .Flex(shrink: 0)
-                ) with
-                {
-                    ColumnGap = 10
-                })
-                .HAlign(HorizontalAlignment.Stretch)
-            )
-            .Padding(12, 10)
-            .CornerRadius(14)
-            .Background(BrowserConstants.LayerFillDefaultBrush)
-            .WithBorder(Theme.SurfaceStroke)
-            .Margin(2, 0, 2, 8)
-            .HAlign(HorizontalAlignment.Stretch),
-            () => OpenItem(item.Url, openInNewTabByDefault, onOpenHistoryItem, onOpenHistoryItemInNewTab))
-            .HAlign(HorizontalAlignment.Stretch)
-            .Set(button =>
+        return Border(
+            (FlexRow(
+                Button(
+                    (FlexRow(
+                        BuildHistoryIcon(item.Url),
+                        VStack(4,
+                            TextBlock(item.Title)
+                                .TextTrimming(TextTrimming.CharacterEllipsis)
+                                .TextWrapping(TextWrapping.NoWrap)
+                                .Set(textBlock =>
+                                {
+                                    textBlock.MaxLines = 1;
+                                    textBlock.MinWidth = 0;
+                                }),
+                            TextBlock(item.Url)
+                                .TextTrimming(TextTrimming.CharacterEllipsis)
+                                .TextWrapping(TextWrapping.NoWrap)
+                                .Opacity(0.75)
+                                .Set(textBlock =>
+                                {
+                                    textBlock.MaxLines = 1;
+                                    textBlock.MinWidth = 0;
+                                })
+                        )
+                        .MinWidth(0)
+                        .Flex(grow: 1, basis: 0),
+                        TextBlock(item.LastVisitedAt.ToString("g")).FontSize(10)
+                            .Opacity(0.7)
+                            .Flex(shrink: 0)
+                    ) with
+                    {
+                        ColumnGap = 10
+                    })
+                    .HAlign(HorizontalAlignment.Stretch),
+                    () => OpenItem(item.Url, openInNewTabByDefault, onOpenHistoryItem, onOpenHistoryItemInNewTab))
+                    .Padding(0)
+                    .Background(new SolidColorBrush(Microsoft.UI.Colors.Transparent))
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .Flex(grow: 1, basis: 0)
+                    .Set(button =>
+                    {
+                        button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                        ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
+                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item");
+                    }),
+                IconButton(BrowserConstants.GlyphClose, () => onDeleteHistoryItem(item.Url), "Delete history item", buttonSize: 24, iconSize: 10, useGlass: true)
+                    .Flex(shrink: 0)
+            ) with
             {
-                button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-                ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
-                button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab);
+                ColumnGap = 8
             })
-            .AutomationName("HistoryListItem");
+            .HAlign(HorizontalAlignment.Stretch)
+        )
+        .Padding(12, 10)
+        .CornerRadius(14)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .Margin(2, 0, 2, 8)
+        .HAlign(HorizontalAlignment.Stretch)
+        .AutomationName("HistoryListItem");
     }
 
     private static Element BuildFavoriteTabItem(
         FavoriteItem item,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
+        Action<string> onDeleteFavoriteItem,
         bool openInNewTabByDefault)
     {
-        return Button(
-            Border(
-                (FlexRow(
-                    BuildHistoryIcon(item.Url),
-                    VStack(2,
-                        TextBlock(item.Title)
-                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap)
-                            .Set(textBlock =>
-                            {
-                                textBlock.MaxLines = 1;
-                                textBlock.MinWidth = 0;
-                            }),
-                        TextBlock(item.Url)
-                            .TextTrimming(TextTrimming.CharacterEllipsis)
-                            .TextWrapping(TextWrapping.NoWrap)
-                            .Opacity(0.75)
-                            .Set(textBlock =>
-                            {
-                                textBlock.MaxLines = 1;
-                                textBlock.MinWidth = 0;
-                            })
-                    )
-                    .MinWidth(0)
+        return Border(
+            (FlexRow(
+                Button(
+                    (FlexRow(
+                        BuildHistoryIcon(item.Url),
+                        VStack(2,
+                            TextBlock(item.Title)
+                                .TextTrimming(TextTrimming.CharacterEllipsis)
+                                .TextWrapping(TextWrapping.NoWrap)
+                                .Set(textBlock =>
+                                {
+                                    textBlock.MaxLines = 1;
+                                    textBlock.MinWidth = 0;
+                                }),
+                            TextBlock(item.Url)
+                                .TextTrimming(TextTrimming.CharacterEllipsis)
+                                .TextWrapping(TextWrapping.NoWrap)
+                                .Opacity(0.75)
+                                .Set(textBlock =>
+                                {
+                                    textBlock.MaxLines = 1;
+                                    textBlock.MinWidth = 0;
+                                })
+                        )
+                        .MinWidth(0)
+                        .Flex(grow: 1, basis: 0)
+                    ) with
+                    {
+                        ColumnGap = 8
+                    })
+                    .HAlign(HorizontalAlignment.Stretch),
+                    () => OpenItem(item.Url, openInNewTabByDefault, onOpenFavoriteItem, onOpenFavoriteItemInNewTab))
+                    .Padding(0)
+                    .Background(new SolidColorBrush(Microsoft.UI.Colors.Transparent))
+                    .HAlign(HorizontalAlignment.Stretch)
                     .Flex(grow: 1, basis: 0)
-                ) with
-                {
-                    ColumnGap = 8
-                })
-                .HAlign(HorizontalAlignment.Stretch)
-            )
-            .Padding(8, 6)
-            .CornerRadius(8)
-            .HAlign(HorizontalAlignment.Stretch),
-            () => OpenItem(item.Url, openInNewTabByDefault, onOpenFavoriteItem, onOpenFavoriteItemInNewTab))
-            .HAlign(HorizontalAlignment.Stretch)
-            .Margin(2, 0)
-            .Set(button =>
+                    .Set(button =>
+                    {
+                        button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                        ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
+                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, () => onDeleteFavoriteItem(item.Id), "Remove favorite");
+                    }),
+                IconButton(BrowserConstants.GlyphClose, () => onDeleteFavoriteItem(item.Id), "Remove favorite", buttonSize: 24, iconSize: 10, useGlass: true)
+                    .Flex(shrink: 0)
+            ) with
             {
-                button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-                ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
-                button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenFavoriteItem, onOpenFavoriteItemInNewTab);
+                ColumnGap = 8
             })
-            .AutomationName("FavoriteItem");
+            .HAlign(HorizontalAlignment.Stretch)
+        )
+        .Padding(8, 6)
+        .CornerRadius(8)
+        .Margin(2, 0)
+        .HAlign(HorizontalAlignment.Stretch)
+        .AutomationName("FavoriteItem");
     }
 
     private static void OpenItem(
@@ -2289,7 +2343,9 @@ internal static class BrowserChrome
     private static MenuFlyout CreateOpenItemContextFlyout(
         string url,
         Action<string> onOpenCurrentTab,
-        Action<string> onOpenNewTab)
+        Action<string> onOpenNewTab,
+        Action? onDeleteItem = null,
+        string? deleteText = null)
     {
         var flyout = new MenuFlyout();
 
@@ -2306,6 +2362,18 @@ internal static class BrowserChrome
         };
         openInNewTabItem.Click += (_, _) => onOpenNewTab(url);
         flyout.Items.Add(openInNewTabItem);
+
+        if (onDeleteItem is not null)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            var deleteItem = new MenuFlyoutItem
+            {
+                Text = string.IsNullOrWhiteSpace(deleteText) ? "Delete" : deleteText
+            };
+            deleteItem.Click += (_, _) => onDeleteItem();
+            flyout.Items.Add(deleteItem);
+        }
 
         return flyout;
     }

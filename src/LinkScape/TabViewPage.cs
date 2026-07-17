@@ -14,8 +14,8 @@ class TabViewPage : Component
 {
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
     private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
-    private const double BrowserSurfaceInsetCollapsed = 8;
-    private const double BrowserSurfaceInsetExpanded = 10;
+    private const double BrowserSurfaceInsetCollapsed = 2;
+    private const double BrowserSurfaceInsetExpanded = 4;
     private const int CommandCenterBusyMinimumDurationMilliseconds = 220;
 
     private enum CommandCenterSection
@@ -208,6 +208,22 @@ class TabViewPage : Component
             _ = Task.Run(async () =>
             {
                 await Task.Delay(1800);
+
+                if (version == Volatile.Read(ref _commandCenterHighlightVersion))
+                {
+                    setIsCommandCenterHighlighted(false);
+                }
+            });
+        }
+
+        void PulseCommandCenterHighlight(int durationMilliseconds = 1800)
+        {
+            var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
+            setIsCommandCenterHighlighted(true);
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(durationMilliseconds);
 
                 if (version == Volatile.Read(ref _commandCenterHighlightVersion))
                 {
@@ -657,6 +673,93 @@ class TabViewPage : Component
             OpenUriInNewTab(url, dismissCommandCenter: false);
         }
 
+        void DeleteHistoryItem(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            PulseCommandCenterHighlight(CommandCenterBusyMinimumDurationMilliseconds);
+            setHistoryImportStatus("Deleting history item…");
+            setRecentHistory(recentHistory.Where(item => !string.Equals(item.Url, url, StringComparison.Ordinal)).ToArray());
+            setMostVisitedHistory(mostVisitedHistory.Where(item => !string.Equals(item.Url, url, StringComparison.Ordinal)).ToArray());
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    HistoryPersistenceService.DeleteUrl(url);
+                    setHistoryImportStatus("Deleted history item.");
+                }
+                catch
+                {
+                    setHistoryImportStatus("Deleting history item failed.");
+                }
+            });
+        }
+
+        void DeleteFavoriteItem(string favoriteId)
+        {
+            if (string.IsNullOrWhiteSpace(favoriteId))
+            {
+                return;
+            }
+
+            if (isCommandCenterBusy)
+            {
+                return;
+            }
+
+            PulseCommandCenterHighlight(CommandCenterBusyMinimumDurationMilliseconds);
+            setFavoritesImportStatus("Removing favorite…");
+            setFavoriteItems(favoriteItems.Where(item => !string.Equals(item.Id, favoriteId, StringComparison.Ordinal)).ToArray());
+
+            var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+            var changed = false;
+            var nextTabs = currentTabs
+                .Select(tab =>
+                {
+                    if (!string.Equals(tab.FavoriteId, favoriteId, StringComparison.Ordinal))
+                    {
+                        return tab;
+                    }
+
+                    changed = true;
+                    return tab with
+                    {
+                        FavoriteId = string.Empty,
+                        IsFavorite = false,
+                        DateTime = DateTime.Now
+                    };
+                })
+                .ToArray();
+
+            if (changed)
+            {
+                MarkTabsChanged(nextTabs);
+            }
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    FavoritesService.RemoveFavorite(favoriteId);
+
+                    setFavoritesImportStatus("Removed favorite.");
+                }
+                catch
+                {
+                    setFavoritesImportStatus("Removing favorite failed.");
+                }
+            });
+        }
+
         void NavigateActiveTab(string rawUrl)
         {
             var activeId = selectedTag;
@@ -1008,8 +1111,10 @@ class TabViewPage : Component
                 DeleteAllFavorites,
                 OpenHistoryItem,
                 OpenHistoryItemInNewTab,
+                DeleteHistoryItem,
                 OpenFavoriteItem,
                 OpenFavoriteItemInNewTab,
+                DeleteFavoriteItem,
                 ToggleCommandCenterByName,
                 ToggleCommandCenterExpanded,
                 isRailTabsExpanded,
@@ -1056,7 +1161,8 @@ class TabViewPage : Component
                 browserContent
                     .HAlign(HorizontalAlignment.Stretch)
                     .Flex(grow: 1, basis: 0)
-            ) with
+            ).CornerRadius(12)
+            with
             {
                 ColumnGap = 0
             })
