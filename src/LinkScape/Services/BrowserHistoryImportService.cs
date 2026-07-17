@@ -83,7 +83,7 @@ public static class BrowserHistoryImportService
         IReadOnlyList<BrowserHistoryImportSource> sources,
         int limitPerSource)
     {
-        var importedItems = new List<HistoryItem>();
+        var importedItems = new Dictionary<string, HistoryItem>(StringComparer.OrdinalIgnoreCase);
         var importedSources = new List<string>();
 
         foreach (var source in sources)
@@ -100,13 +100,42 @@ public static class BrowserHistoryImportService
                 continue;
             }
 
-            importedItems.AddRange(items);
+            foreach (var item in items)
+            {
+                var normalizedUrl = StoredUrlNormalizer.Normalize(item.Url);
+                if (string.IsNullOrWhiteSpace(normalizedUrl))
+                {
+                    continue;
+                }
+
+                var normalizedItem = item with
+                {
+                    Url = normalizedUrl,
+                    Title = string.IsNullOrWhiteSpace(item.Title) ? normalizedUrl : item.Title
+                };
+
+                if (importedItems.TryGetValue(normalizedUrl, out var existingItem))
+                {
+                    importedItems[normalizedUrl] = existingItem with
+                    {
+                        Title = string.IsNullOrWhiteSpace(normalizedItem.Title) ? existingItem.Title : normalizedItem.Title,
+                        FirstVisitedAt = existingItem.FirstVisitedAt <= normalizedItem.FirstVisitedAt ? existingItem.FirstVisitedAt : normalizedItem.FirstVisitedAt,
+                        LastVisitedAt = existingItem.LastVisitedAt >= normalizedItem.LastVisitedAt ? existingItem.LastVisitedAt : normalizedItem.LastVisitedAt,
+                        VisitCount = Math.Max(existingItem.VisitCount, normalizedItem.VisitCount)
+                    };
+                }
+                else
+                {
+                    importedItems[normalizedUrl] = normalizedItem;
+                }
+            }
+
             importedSources.Add($"{source.BrowserName} - {source.ProfileLabel}");
         }
 
         if (importedItems.Count > 0)
         {
-            HistoryPersistenceService.UpsertImportedHistory(importedItems);
+            HistoryPersistenceService.UpsertImportedHistory(importedItems.Values);
         }
 
         return new BrowserHistoryImportSummary(

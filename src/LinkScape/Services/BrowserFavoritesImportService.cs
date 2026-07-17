@@ -79,7 +79,7 @@ public static class BrowserFavoritesImportService
 
     private static BrowserFavoritesImportSummary ImportFavorites(IReadOnlyList<BrowserFavoritesImportSource> sources)
     {
-        var importedCount = 0;
+        var importedFavorites = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var importedSources = new List<string>();
 
         foreach (var source in sources)
@@ -98,16 +98,31 @@ public static class BrowserFavoritesImportService
 
             foreach (var favorite in favorites)
             {
-                FavoritesService.UpsertFavorite(CreateImportedFavoriteId(favorite.Url), favorite.Url, favorite.Title);
+                var normalizedUrl = StoredUrlNormalizer.Normalize(favorite.Url);
+                if (string.IsNullOrWhiteSpace(normalizedUrl))
+                {
+                    continue;
+                }
+
+                importedFavorites[normalizedUrl] = string.IsNullOrWhiteSpace(favorite.Title)
+                    ? normalizedUrl
+                    : favorite.Title;
             }
 
-            importedCount += favorites.Count;
             importedSources.Add($"{source.BrowserName} - {source.ProfileLabel}");
+        }
+
+        foreach (var importedFavorite in importedFavorites)
+        {
+            FavoritesService.UpsertFavorite(
+                CreateImportedFavoriteId(importedFavorite.Key),
+                importedFavorite.Key,
+                importedFavorite.Value);
         }
 
         return new BrowserFavoritesImportSummary(
             importedSources.Count,
-            importedCount,
+            importedFavorites.Count,
             importedSources);
     }
 

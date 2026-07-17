@@ -601,17 +601,19 @@ internal static class BrowserChrome
             //listView.ItemContainerTransitions = BrowserConstants.TabTransitions;    
             listView.IsItemClickEnabled = true;
             listView.BorderThickness = new Thickness(0);
+            listView.VerticalAlignment = VerticalAlignment.Stretch;
             listView.ContainerContentChanging -= OnTabListContainerContentChanging;
             listView.ContainerContentChanging += OnTabListContainerContentChanging;
-               Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollBarVisibility(
+            Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollBarVisibility(
                 listView,
                 isTabsCollapsed ? ScrollBarVisibility.Hidden : ScrollBarVisibility.Auto);
             Microsoft.UI.Xaml.Controls.ScrollViewer.SetHorizontalScrollBarVisibility(listView, ScrollBarVisibility.Disabled);
             Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollMode(listView, ScrollMode.Enabled);
             Microsoft.UI.Xaml.Controls.ScrollViewer.SetHorizontalScrollMode(listView, ScrollMode.Disabled);
-
             listView.ItemContainerStyle = GetTabItemContainerStyle(isTabsCollapsed);
-        });
+        })
+        .MinHeight(0)
+        .VAlign(VerticalAlignment.Stretch);
 
         if (isTabsCollapsed)
         {
@@ -635,11 +637,17 @@ internal static class BrowserChrome
                 .Flex(grow: 0, shrink: 0, basis: CompactTabsCardHeight).WithKey($"{selectedTab.Id}-compact")
             : BuildRailSectionCard(
                 "Open Tabs",
-                VStack(12,
-                    BuildActiveTabHeader(selectedTab, tabs.Length, isSelectedTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab),
+                (FlexColumn(
+                    BuildActiveTabHeader(selectedTab, tabs.Length, isSelectedTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab)
+                        .Flex(shrink: 0),
                     BuildExpandableTabsList(tabList, onMinimizeTabs)
                         .Flex(grow: 1, shrink: 1, basis: 0)
-                ).WithKey($"{selectedTab.Id}-expanded")
+                ) with
+                {
+                    RowGap = 12
+                })
+                .WithKey($"{selectedTab.Id}-expanded")
+                .MinHeight(0)
                 .Flex(grow: 1, shrink: 1, basis: 0))
                 .Flex(grow: 1, shrink: 1, basis: 0);
 
@@ -1045,6 +1053,7 @@ internal static class BrowserChrome
                     .CornerRadius(10)
                     .Background(BrowserConstants.LayerFillDefaultBrush)
                     .WithBorder(Theme.SurfaceStroke)
+                    .MinHeight(0)
                     .Flex(grow: 1, basis: 0)
             ) with
             {
@@ -1055,6 +1064,7 @@ internal static class BrowserChrome
         .CornerRadius(16)
         .Background(BrowserConstants.LayerFillAltBrush)
         .WithBorder(Theme.SurfaceStroke)
+        .MinHeight(0)
         .Margin(0, 0, 0, 6);
 
         if (fixedHeight is double height)
@@ -1201,6 +1211,7 @@ internal static class BrowserChrome
                 .Flex(grow: 1, shrink: 1, basis: 0)
                 .VAlign(VerticalAlignment.Stretch))
             .Padding(2, 2, 8, 2)
+            .MinHeight(0)
             .Flex(grow: 1, shrink: 1, basis: 0)
             .Set(border =>
             {

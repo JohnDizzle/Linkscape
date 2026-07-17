@@ -45,11 +45,34 @@ public static class FavoritesService
             throw new ArgumentException("A favorite URL is required.", nameof(url));
         }
 
-        var resolvedId = string.IsNullOrWhiteSpace(favoriteId)
-            ? Guid.NewGuid().ToString("N")
-            : favoriteId;
-        var existing = GetFavorite(resolvedId);
-        var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title.Trim();
+        var normalizedUrl = StoredUrlNormalizer.Normalize(url);
+        if (string.IsNullOrWhiteSpace(normalizedUrl))
+        {
+            throw new ArgumentException("A valid favorite URL is required.", nameof(url));
+        }
+
+        FavoriteItem? existing;
+        string resolvedId;
+
+        if (!string.IsNullOrWhiteSpace(favoriteId) && GetFavorite(favoriteId) is { } existingById)
+        {
+            resolvedId = favoriteId;
+            existing = existingById;
+        }
+        else if (GetFavoriteByUrl(normalizedUrl) is { } existingByUrl)
+        {
+            resolvedId = existingByUrl.Id;
+            existing = existingByUrl;
+        }
+        else
+        {
+            resolvedId = string.IsNullOrWhiteSpace(favoriteId)
+                ? Guid.NewGuid().ToString("N")
+                : favoriteId;
+            existing = null;
+        }
+
+        var safeTitle = string.IsNullOrWhiteSpace(title) ? normalizedUrl : title.Trim();
         var now = DateTime.Now;
 
         using var conn = new SqliteConnection(DbConnectionString);
@@ -65,7 +88,7 @@ public static class FavoritesService
                 UpdatedAt = excluded.UpdatedAt;
             """;
         cmd.Parameters.AddWithValue("$id", resolvedId);
-        cmd.Parameters.AddWithValue("$url", url);
+        cmd.Parameters.AddWithValue("$url", normalizedUrl);
         cmd.Parameters.AddWithValue("$title", safeTitle);
         cmd.Parameters.AddWithValue("$createdAt", (existing?.CreatedAt ?? now).ToString("O"));
         cmd.Parameters.AddWithValue("$updatedAt", now.ToString("O"));
@@ -74,7 +97,7 @@ public static class FavoritesService
         return GetFavorite(resolvedId)
             ?? new FavoriteItem(
                 resolvedId,
-                url,
+                normalizedUrl,
                 safeTitle,
                 existing?.CreatedAt ?? now,
                 now);
@@ -123,6 +146,19 @@ public static class FavoritesService
             LIMIT 1;
             """,
             command => command.Parameters.AddWithValue("$id", favoriteId))
+            .FirstOrDefault();
+    }
+
+    private static FavoriteItem? GetFavoriteByUrl(string url)
+    {
+        return QueryFavorites(
+            """
+            SELECT Id, Url, Title, CreatedAt, UpdatedAt
+            FROM Favorites
+            WHERE Url = $url
+            LIMIT 1;
+            """,
+            command => command.Parameters.AddWithValue("$url", url))
             .FirstOrDefault();
     }
 

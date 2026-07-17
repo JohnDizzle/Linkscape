@@ -54,6 +54,29 @@ public sealed class FavoritesServiceTests
     }
 
     [TestMethod]
+    public void UpsertFavorite_NormalizesUrl_AndMergesDuplicatesByNormalizedUrl()
+    {
+        FavoritesService.EnsureDatabase();
+
+        var created = FavoritesService.UpsertFavorite(
+            "fav-1",
+            "https://example.com/path?b=2&utm_source=newsletter&a=1#section",
+            "Original");
+        Thread.Sleep(20);
+        var merged = FavoritesService.UpsertFavorite(
+            "fav-2",
+            "https://example.com/path?a=1&b=2",
+            "Updated");
+
+        var items = FavoritesService.GetFavorites();
+
+        Assert.AreEqual(1, items.Count);
+        Assert.AreEqual(created.Id, merged.Id);
+        Assert.AreEqual("https://example.com/path?a=1&b=2", items[0].Url);
+        Assert.AreEqual("Updated", items[0].Title);
+    }
+
+    [TestMethod]
     public void RemoveFavorite_ReturnsExpectedResult()
     {
         FavoritesService.EnsureDatabase();

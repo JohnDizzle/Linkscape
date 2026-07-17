@@ -14,8 +14,8 @@
 src/LinkScape/LinkScape.Signing.props
 
 # history cleanup
-src/LinkScape/bin/
-src/LinkScape/obj/
 LinkScape_TemporaryKey.pfx
 src/LinkScape/LinkScape_TemporaryKey.pfx
 /src/LinkScape/AppPackages
+**/bin/
+**/obj/
