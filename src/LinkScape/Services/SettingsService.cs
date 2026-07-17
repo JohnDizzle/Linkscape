@@ -115,9 +115,12 @@ public static class SettingsService
 
     private static void EnsureDefaultSettings()
     {
-        const string key = "Developer";
-        const string value = "John M. Doyle";
+        EnsureDefaultSetting("Developer", "John M. Doyle");
+        EnsureDefaultSetting(LinkScape.Browser.BrowserConstants.SaveTabsSettingKey, "true");
+    }
 
+    private static void EnsureDefaultSetting(string key, string value)
+    {
         if (string.IsNullOrWhiteSpace(GetValueOrDefault(key, string.Empty)))
         {
             SetValue(key, value);

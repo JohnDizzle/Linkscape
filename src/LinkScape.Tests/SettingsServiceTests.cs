@@ -13,6 +13,7 @@ public sealed class SettingsServiceTests
         SettingsService.EnsureDatabase();
 
         Assert.AreEqual("John M. Doyle", SettingsService.GetValue("Developer"));
+        Assert.AreEqual("true", SettingsService.GetValue("browser.tabs.saveOnExit"));
     }
 
     [TestMethod]

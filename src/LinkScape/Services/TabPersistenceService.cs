@@ -42,6 +42,21 @@ public static class TabPersistenceService
         return val is null ? default : JsonSerializer.Deserialize<T>(val);
     }
 
+    public static bool RemoveTabs(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return false;
+        }
+
+        using var conn = new SqliteConnection(DbConnectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM KeyValue WHERE Key = $k";
+        cmd.Parameters.AddWithValue("$k", key);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
     // Update timestamp, optionally update URL, and optionally increment visited count for a tab with the given id.
     // newUrl: optional new url to write. urlChanged: indicates whether the URL actually changed (used to decide increment).
     public static void UpdateTabVisit(string key, string tabId, bool incrementVisitCount = true, string? newUrl = null, bool urlChanged = false)

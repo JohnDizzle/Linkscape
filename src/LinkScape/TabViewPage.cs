@@ -14,6 +14,7 @@ class TabViewPage : Component
 {
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
     private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
+    private const string SaveTabsSettingKey = BrowserConstants.SaveTabsSettingKey;
     private const double BrowserSurfaceInsetCollapsed = 2;
     private const double BrowserSurfaceInsetExpanded = 4;
     private const int CommandCenterBusyMinimumDurationMilliseconds = 220;
@@ -375,6 +376,21 @@ class TabViewPage : Component
                 UpdateBrowserSession(state => BrowserSessionStore.SetSelectedSearchProvider(
                     state,
                     BrowserSearchProviders.NormalizeProviderKey(value)));
+            }
+
+            if (string.Equals(key, SaveTabsSettingKey, StringComparison.Ordinal))
+            {
+                if (bool.TryParse(value, out var saveTabsEnabled) && !saveTabsEnabled)
+                {
+                    _saveTabsCts?.Cancel();
+                    _saveTabsCts?.Dispose();
+                    _saveTabsCts = null;
+                    ClearPersistedStartupTabs();
+                }
+                else
+                {
+                    ScheduleTabsSave(_latestTabs.Length > 0 ? _latestTabs : tabs, _latestSelectedTabId ?? selectedTag);
+                }
             }
         }
 
@@ -1312,6 +1328,11 @@ class TabViewPage : Component
 
     private static BrowserTab[] LoadStartupTabs()
     {
+        if (!IsSaveTabsEnabled())
+        {
+            return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+        }
+
         try
         {
             var persisted = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs");
@@ -1564,6 +1585,12 @@ class TabViewPage : Component
 
     private void FlushTabsSave()
     {
+        if (!IsSaveTabsEnabled())
+        {
+            ClearPersistedStartupTabs();
+            return;
+        }
+
         var selectedTabId = _latestSelectedTabId;
         var tabs = _latestTabs;
 
@@ -1588,6 +1615,15 @@ class TabViewPage : Component
 
     private void ScheduleTabsSave(BrowserTab[] tabs, string selectedTabId)
     {
+        if (!IsSaveTabsEnabled())
+        {
+            _saveTabsCts?.Cancel();
+            _saveTabsCts?.Dispose();
+            _saveTabsCts = null;
+            ClearPersistedStartupTabs();
+            return;
+        }
+
         _latestTabs = tabs;
         _latestSelectedTabId = selectedTabId;
 
@@ -1614,6 +1650,29 @@ class TabViewPage : Component
             }
         }, cts.Token);
     }
+
+    private static bool IsSaveTabsEnabled(IReadOnlyDictionary<string, string>? settingsSnapshot = null)
+    {
+        var configuredValue = settingsSnapshot is not null &&
+            settingsSnapshot.TryGetValue(SaveTabsSettingKey, out var snapshotValue)
+                ? snapshotValue
+                : SettingsService.GetValueOrDefault(SaveTabsSettingKey, "true");
+
+        return !bool.TryParse(configuredValue, out var isEnabled) || isEnabled;
+    }
+
+    private static void ClearPersistedStartupTabs()
+    {
+        try
+        {
+            TabPersistenceService.RemoveTabs("tabs");
+            TabPersistenceService.RemoveTabs("selectedTabId");
+        }
+        catch
+        {
+        }
+    }
+
     static BrowserTab[] SanitizeTabs(BrowserTab[] tabs)
     {
         return tabs

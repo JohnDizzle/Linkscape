@@ -121,4 +121,19 @@ public sealed class TabPersistenceServiceTests
         Assert.AreEqual("https://example.org", loaded[0].Url);
         Assert.AreEqual(5, loaded[0].VisitedCount);
     }
+
+    [TestMethod]
+    public void RemoveTabs_RemovesPersistedValue_AndReturnsExpectedResult()
+    {
+        TabPersistenceService.EnsureDatabase();
+        TabPersistenceService.SaveTabs("tabs", new[]
+        {
+            new TestTab("tab-1", "Example", "https://example.com", new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), 1)
+        });
+
+        Assert.IsFalse(TabPersistenceService.RemoveTabs(""));
+        Assert.IsTrue(TabPersistenceService.RemoveTabs("tabs"));
+        Assert.IsFalse(TabPersistenceService.RemoveTabs("tabs"));
+        Assert.IsNull(TabPersistenceService.LoadTabs<TestTab[]>("tabs"));
+    }
 }

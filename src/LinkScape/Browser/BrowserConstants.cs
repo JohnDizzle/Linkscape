@@ -8,6 +8,7 @@ namespace LinkScape.Browser;
 internal static class BrowserConstants
 {
     public const string HomeUrlSettingKey = "browser.home.url";
+    public const string SaveTabsSettingKey = "browser.tabs.saveOnExit";
     public const string HistoryOpenInNewTabSettingKey = "browser.history.openInNewTab";
     public const string FavoritesOpenInNewTabSettingKey = "browser.favorites.openInNewTab";
     public const string AddressBarOpenDifferentDomainInNewTabSettingKey = "browser.addressBar.openDifferentDomainInNewTab";

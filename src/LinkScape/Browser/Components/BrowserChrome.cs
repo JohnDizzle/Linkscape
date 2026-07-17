@@ -1772,6 +1772,7 @@ internal static class BrowserChrome
                 Value = entry.Value
             })
             .ToList();
+        var saveTabs = GetBooleanSetting(settingsSnapshot, BrowserConstants.SaveTabsSettingKey, true);
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
@@ -1803,6 +1804,11 @@ internal static class BrowserChrome
                 VStack(10,
                     TextBlock("Open behavior")
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    BuildBooleanSettingRow(
+                        "Restore tabs from last session",
+                        "When enabled, LinkScape saves open tabs and restores them on the next launch. When disabled, startup opens a fresh home page.",
+                        saveTabs,
+                        nextValue => onSaveSettingValue(BrowserConstants.SaveTabsSettingKey, nextValue ? "true" : "false")),
                     BuildBooleanSettingRow(
                         "History opens in new tab",
                         "History, Recent, and Most visited items open in a new tab by default.",
@@ -1887,11 +1893,11 @@ internal static class BrowserChrome
         .MinWidth(0);
     }
 
-    private static bool GetBooleanSetting(IReadOnlyDictionary<string, string> settingsSnapshot, string key)
+    private static bool GetBooleanSetting(IReadOnlyDictionary<string, string> settingsSnapshot, string key, bool defaultValue = false)
     {
-        return settingsSnapshot.TryGetValue(key, out var value) &&
-            bool.TryParse(value, out var enabled) &&
-            enabled;
+        return settingsSnapshot.TryGetValue(key, out var value) && bool.TryParse(value, out var enabled)
+            ? enabled
+            : defaultValue;
     }
 
     private static Element BuildBackdropBladeContent(
