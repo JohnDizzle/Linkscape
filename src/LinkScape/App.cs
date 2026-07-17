@@ -7,16 +7,26 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
 
+using Windows.Win32.UI.WindowsAndMessaging;
+
+if (!await LinkScape.ActivationRoutingService.InitializeAsync())
+{
+    return;
+}
+
 TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
-LinkScape.ActivationRoutingService.Initialize();
 const string WindowPositionXSettingKey = "window.position.x";
 const string WindowPositionYSettingKey = "window.position.y";
 const string WindowWidthSettingKey = "window.size.width";
 const string WindowHeightSettingKey = "window.size.height";
 const string WindowMaximizedSettingKey = "window.state.maximized";
+const int MinimumWindowX = 0;
+const int MinimumWindowY = 0;
+const int MinimumWindowWidth = 800;
+const int MinimumWindowHeight = 400;
 const int DefaultWindowWidth = 1200;
 const int DefaultWindowHeight = 800;
 
@@ -26,17 +36,19 @@ ReactorApp.Run<App>("LinkScape",
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(host.Window);
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
+        MainWindowActivation.Register(host.Window, appWindow);
         var restored = false;
 
         host.Window.Activated += (s, e) =>
         {
             if (restored || e.WindowActivationState == WindowActivationState.Deactivated)
-            {
+            {  
                 return;
             }
 
             restored = true;
             RestoreWindowPlacement(appWindow);
+            
         };
 
         host.Window.Closed += (_, _) => SaveWindowPlacement(appWindow);
@@ -49,16 +61,22 @@ static void RestoreWindowPlacement(AppWindow appWindow)
     var x = ReadIntSetting(WindowPositionXSettingKey);
     var y = ReadIntSetting(WindowPositionYSettingKey);
 
+    width = width < MinimumWindowWidth ? DefaultWindowWidth : width;
+    height = height < MinimumWindowHeight ? DefaultWindowHeight : height;
+    var hasValidPosition = x is not null &&
+        y is not null &&
+        IsValidWindowPosition(appWindow, x.Value, y.Value, width, height);
+
     try
     {
-        if (width > 0 && height > 0)
+        if (width >= MinimumWindowWidth && height >= MinimumWindowHeight)
         {
-            if (x is not null && y is not null)
+            if (hasValidPosition)
             {
                 appWindow.MoveAndResize(
                     new RectInt32(
-                        x.Value,
-                        y.Value,
+                        x!.Value,
+                        y!.Value,
                         width,
                         height));
             }
@@ -92,10 +110,16 @@ static void SaveWindowPlacement(AppWindow appWindow)
         var isMaximized = appWindow.Presenter is OverlappedPresenter presenter &&
             presenter.State == OverlappedPresenterState.Maximized;
 
-        SettingsService.SetValue(WindowPositionXSettingKey, position.X.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        SettingsService.SetValue(WindowPositionYSettingKey, position.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        SettingsService.SetValue(WindowWidthSettingKey, size.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        SettingsService.SetValue(WindowHeightSettingKey, size.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (size.Width >= MinimumWindowWidth &&
+            size.Height >= MinimumWindowHeight &&
+            IsValidWindowPosition(appWindow, position.X, position.Y, size.Width, size.Height))
+        {
+            SettingsService.SetValue(WindowPositionXSettingKey, position.X.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SettingsService.SetValue(WindowPositionYSettingKey, position.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SettingsService.SetValue(WindowWidthSettingKey, size.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SettingsService.SetValue(WindowHeightSettingKey, size.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
         SettingsService.SetValue(WindowMaximizedSettingKey, isMaximized ? "true" : "false");
     }
     catch
@@ -112,6 +136,102 @@ static int? ReadIntSetting(string key)
         out var value)
         ? value
         : null;
+}
+
+static bool IsValidWindowPosition(AppWindow appWindow, int x, int y, int width, int height)
+{
+    if (x < MinimumWindowX || y < MinimumWindowY)
+    {
+        return false;
+    }
+
+    try
+    {
+        var displayArea = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest);
+        var workArea = displayArea.WorkArea;
+        var visibleInset = 80;
+        var right = x + width;
+        var bottom = y + height;
+
+        return right > workArea.X + visibleInset &&
+            bottom > workArea.Y + visibleInset &&
+            x < workArea.X + workArea.Width - visibleInset &&
+            y < workArea.Y + workArea.Height - visibleInset;
+    }
+    catch
+    {
+        return true;
+    }
+}
+
+internal static class MainWindowActivation
+{
+    private const int MinimumRestoredWidth = 800;
+    private const int MinimumRestoredHeight = 400;
+    private const int DefaultRestoredWidth = 1200;
+    private const int DefaultRestoredHeight = 800;
+    private static readonly object SyncRoot = new();
+    private static Window? _window;
+    private static AppWindow? _appWindow;
+    private static nint _hwnd;
+
+    internal static void Register(Window window, AppWindow appWindow)
+    {
+        lock (SyncRoot)
+        {
+            _window = window;
+            _appWindow = appWindow;
+            _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        }
+    }
+
+    internal static void RestoreAndActivate()
+    {
+        Window? window;
+        AppWindow? appWindow;
+        nint hwnd;
+
+        lock (SyncRoot)
+        {
+            window = _window;
+            appWindow = _appWindow;
+            hwnd = _hwnd;
+        }
+
+        if (window is null || appWindow is null || hwnd == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var windowHandle = new HWND(hwnd);
+
+            if (appWindow.Presenter is OverlappedPresenter presenter &&
+                presenter.State != OverlappedPresenterState.Restored)
+            {
+                presenter.Restore();
+            }
+
+            if (PInvoke.IsIconic(windowHandle))
+            {
+                PInvoke.ShowWindow(windowHandle, SHOW_WINDOW_CMD.SW_RESTORE);
+            }
+
+            var size = appWindow.Size;
+
+            if (size.Width < MinimumRestoredWidth || size.Height < MinimumRestoredHeight)
+            {
+                appWindow.Resize(new SizeInt32(DefaultRestoredWidth, DefaultRestoredHeight));
+            }
+
+            window.Activate();
+            _ = PInvoke.SetForegroundWindow(windowHandle);
+        }
+        catch
+        {
+        }
+    }
 }
 
 class App : Component

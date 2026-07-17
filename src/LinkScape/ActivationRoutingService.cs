@@ -1,5 +1,6 @@
 using Microsoft.Windows.AppLifecycle;
 using System.Net;
+using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
 using Windows.Storage;
 
@@ -7,6 +8,7 @@ namespace LinkScape;
 
 internal static class ActivationRoutingService
 {
+    private const string MainInstanceKey = "main";
     private const string LinkScapeSchemePrefix = "link2scape://";
     private const string LinkScapeSchemePrefixAlt = "link2scape:";
     private static readonly object SyncRoot = new();
@@ -15,17 +17,33 @@ internal static class ActivationRoutingService
 
     internal static event Action? ActivationRequested;
 
-    internal static void Initialize()
+    internal static async Task<bool> InitializeAsync()
     {
         if (_initialized)
         {
-            return;
+            return true;
+        }
+
+        var appInstance = AppInstance.GetCurrent();
+        var activatedArgs = appInstance.GetActivatedEventArgs();
+        var mainInstance = AppInstance.FindOrRegisterForKey(MainInstanceKey);
+        var hasActivationTarget = TryGetActivationTarget(activatedArgs, out _);
+
+        if (!mainInstance.IsCurrent && hasActivationTarget)
+        {
+            await mainInstance.RedirectActivationToAsync(activatedArgs);
+            return false;
+        }
+
+        if (!mainInstance.IsCurrent)
+        {
+            return true;
         }
 
         _initialized = true;
-        var appInstance = AppInstance.GetCurrent();
-        TryStorePendingTarget(appInstance.GetActivatedEventArgs());
-        appInstance.Activated += OnAppActivated;
+        TryStorePendingTarget(activatedArgs);
+        mainInstance.Activated += OnAppActivated;
+        return true;
     }
 
     internal static bool TryConsumePendingTarget(out string target)

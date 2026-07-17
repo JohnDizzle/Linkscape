@@ -40,17 +40,6 @@
           }
         }
       },
-      "DesktopFlyouts.WinUI/1.4.0": {
-        "dependencies": {
-          "Microsoft.WindowsAppSDK": "2.2.0"
-        },
-        "runtime": {
-          "lib/net10.0-windows10.0.26100/DesktopFlyouts.Wasdk.dll": {
-            "assemblyVersion": "1.4.0.0",
-            "fileVersion": "1.4.0.0"
-          }
-        }
-      },
       "MessageFormat/8.0.0": {
         "runtime": {
           "lib/net10.0/Jeffijoe.MessageFormat.dll": {
@@ -1261,7 +1250,6 @@
       "LinkScape/1.0.0": {
         "dependencies": {
           "CommunityToolkit.Mvvm": "8.4.2",
-          "DesktopFlyouts.WinUI": "1.4.0",
           "Microsoft.Data.Sqlite": "10.0.9",
           "Microsoft.UI.Reactor": "0.1.0-preview.10",
           "Microsoft.WindowsAppSDK": "2.2.0",
@@ -1310,13 +1298,6 @@
       "sha512": "sha512-WadCzGEc2U+3e20avRLng4qNtt4zoOGWrdUISqJWrHe3/FSnrYjuM5Sb4yQb09LhkBXrrI4Zt3dLKgRMbItsrg==",
       "path": "communitytoolkit.mvvm/8.4.2",
       "hashPath": "communitytoolkit.mvvm.8.4.2.nupkg.sha512"
-    },
-    "DesktopFlyouts.WinUI/1.4.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-Jz4SbtEo2a+4dhyFfEM6rgRXhkO0oLtAYloQa7HAuegOuH27HQ1WcDrkjjaZk/Pvlzh6yg4QxIzmJcQPwtOHIQ==",
-      "path": "desktopflyouts.winui/1.4.0",
-      "hashPath": "desktopflyouts.winui.1.4.0.nupkg.sha512"
     },
     "MessageFormat/8.0.0": {
       "type": "package",

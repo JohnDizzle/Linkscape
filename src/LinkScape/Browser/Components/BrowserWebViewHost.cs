@@ -319,7 +319,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
             webView.NavigationStarting += (_, _) =>
             {
-                LinkScape.BrowserNoticeService.Clear();
+                BrowserNoticeService.Clear();
 
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
@@ -332,7 +332,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             {
                 if (!args.IsSuccess && IsNoNetworkFailure(args.WebErrorStatus))
                 {
-                    LinkScape.BrowserNoticeService.Show("No network connection. Check your internet access and try again.");
+                    BrowserNoticeService.Show("No network connection. Check your internet access and try again.");
                 }
 
                 SyncTabFromCore(completeLoading: true);
@@ -399,36 +399,27 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         });
     }
 
-    private static bool IsNoNetworkFailure(CoreWebView2WebErrorStatus status)
-    {
-        return status is
-            CoreWebView2WebErrorStatus.HostNameNotResolved or
-            CoreWebView2WebErrorStatus.ConnectionAborted or
-            CoreWebView2WebErrorStatus.ServerUnreachable;
-    }
-
     private void RefreshWebViewLayout()
     {
-        if (_webViewHost is null)
+        if (_activeWebView is null)
         {
             return;
         }
 
-        _webViewHost.DispatcherQueue.TryEnqueue(() =>
+        _activeWebView.DispatcherQueue.TryEnqueue(() =>
         {
-            _webViewHost.InvalidateMeasure();
-            _webViewHost.InvalidateArrange();
-            _webViewHost.UpdateLayout();
-
-            if (_activeWebView is null)
-            {
-                return;
-            }
-
             _activeWebView.InvalidateMeasure();
             _activeWebView.InvalidateArrange();
             _activeWebView.UpdateLayout();
         });
+    }
+
+    private static bool IsNoNetworkFailure(CoreWebView2WebErrorStatus status)
+    {
+        return status is
+            CoreWebView2WebErrorStatus.HostNameNotResolved or
+            CoreWebView2WebErrorStatus.CannotConnect or
+            CoreWebView2WebErrorStatus.ServerUnreachable;
     }
 
     private async Task PauseMediaInTabAsync(string tabId)

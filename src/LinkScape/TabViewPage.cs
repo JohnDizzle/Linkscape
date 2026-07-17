@@ -1338,6 +1338,7 @@ class TabViewPage : Component
         {
             if (ActivationRoutingService.TryConsumePendingTarget(out var target))
             {
+                global::MainWindowActivation.RestoreAndActivate();
                 _openActivatedTarget?.Invoke(target);
             }
         }
