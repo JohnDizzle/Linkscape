@@ -16,6 +16,7 @@ class TabViewPage : Component
     private const string HomeUrlSettingKey = BrowserConstants.HomeUrlSettingKey;
     private const double BrowserSurfaceInsetCollapsed = 8;
     private const double BrowserSurfaceInsetExpanded = 10;
+    private const int CommandCenterBusyMinimumDurationMilliseconds = 220;
 
     private enum CommandCenterSection
     {
@@ -42,6 +43,7 @@ class TabViewPage : Component
     private bool _activationListenerRegistered;
     private int _commandCenterBusyVersion;
     private int _commandCenterHighlightVersion;
+    private DateTime _commandCenterBusyStartedAtUtc;
     private BrowserSessionState _latestBrowserSession;
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
@@ -144,6 +146,17 @@ class TabViewPage : Component
             _latestSelectedTabId = _latestBrowserSession.SelectedTabId;
             setSession(_latestBrowserSession);
         }
+
+        void EnqueueUiTransition(Action transition)
+        {
+            if (_dispatcherQueue is not null)
+            {
+                _dispatcherQueue.TryEnqueue(() => transition());
+                return;
+            }
+
+            transition();
+        }
         
         void MarkTabsChanged(BrowserTab[] nextTabs)
         {
@@ -156,12 +169,7 @@ class TabViewPage : Component
         {
             var sectionName = section == CommandCenterSection.None ? string.Empty : section.ToString();
 
-            if (string.Equals(activeCommandCenterSection, sectionName, StringComparison.Ordinal))
-            {
-                UpdateBrowserSession(state => BrowserSessionStore.SetCommandCenterExpanded(state, false));
-            }
-
-            var nextSection = string.Equals(activeCommandCenterSection, sectionName, StringComparison.Ordinal)
+            var nextSection = section == CommandCenterSection.None
                 ? string.Empty
                 : sectionName;
 
@@ -170,12 +178,16 @@ class TabViewPage : Component
             switch (nextSection)
             {
                 case nameof(CommandCenterSection.History):
+                    RefreshHistoryState(busyText: "Loading history…");
+                    break;
                 case nameof(CommandCenterSection.Recent):
+                    RefreshHistoryState(busyText: "Loading recent items…");
+                    break;
                 case nameof(CommandCenterSection.MostVisited):
-                    RefreshHistoryState();
+                    RefreshHistoryState(busyText: "Loading most visited items…");
                     break;
                 case nameof(CommandCenterSection.Favorites):
-                    RefreshFavoritesState();
+                    RefreshFavoritesState(busyText: "Loading favorites…");
                     break;
             }
         }
@@ -292,11 +304,6 @@ class TabViewPage : Component
 
         void OpenUriInNewTab(string rawUrl, bool dismissCommandCenter = true)
         {
-            if (dismissCommandCenter)
-            {
-                DismissCommandCenter();
-            }
-
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
             if (currentTabs.Length >= MaxTabs)
@@ -316,6 +323,11 @@ class TabViewPage : Component
             UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, newTab.Id));
             _browserTitleBarController.SetAddressText(newTab.Url);
             ScheduleTabsSave(nextTabs, newTab.Id);
+
+            if (dismissCommandCenter)
+            {
+                EnqueueUiTransition(DismissCommandCenter);
+            }
         }
 
         _openActivatedTarget = target => OpenUriInNewTab(target, dismissCommandCenter: false);
@@ -357,6 +369,7 @@ class TabViewPage : Component
         int BeginCommandCenterWork(string busyText)
         {
             var version = Interlocked.Increment(ref _commandCenterBusyVersion);
+            _commandCenterBusyStartedAtUtc = DateTime.UtcNow;
             setIsCommandCenterBusy(true);
             setCommandCenterBusyText(busyText);
             return version;
@@ -366,6 +379,27 @@ class TabViewPage : Component
         {
             if (version != Volatile.Read(ref _commandCenterBusyVersion))
             {
+                return;
+            }
+
+            var elapsed = DateTime.UtcNow - _commandCenterBusyStartedAtUtc;
+            var remaining = TimeSpan.FromMilliseconds(CommandCenterBusyMinimumDurationMilliseconds) - elapsed;
+
+            if (remaining > TimeSpan.Zero)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(remaining);
+
+                    if (version != Volatile.Read(ref _commandCenterBusyVersion))
+                    {
+                        return;
+                    }
+
+                    setCommandCenterBusyText(string.Empty);
+                    setIsCommandCenterBusy(false);
+                });
+
                 return;
             }
 
@@ -380,9 +414,9 @@ class TabViewPage : Component
             setMostVisitedHistory(LoadMostVisitedHistoryItems());
         }
 
-        void RefreshHistoryState(string? filterOverride = null)
+        void RefreshHistoryState(string? filterOverride = null, string busyText = "Loading history…")
         {
-            var version = BeginCommandCenterWork("Loading history…");
+            var version = BeginCommandCenterWork(busyText);
 
             _ = Task.Run(() =>
             {
@@ -409,9 +443,9 @@ class TabViewPage : Component
             setFavoriteItems(LoadFavoriteItems(effectiveFilter));
         }
 
-        void RefreshFavoritesState(string? filterOverride = null)
+        void RefreshFavoritesState(string? filterOverride = null, string busyText = "Loading favorites…")
         {
-            var version = BeginCommandCenterWork("Loading favorites…");
+            var version = BeginCommandCenterWork(busyText);
 
             _ = Task.Run(() =>
             {
@@ -669,14 +703,27 @@ class TabViewPage : Component
             var currentUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTag)?.Url;
             var fallback = currentUrl ?? configuredHomeUrl;
             var target = BrowserUrl.Normalize(rawUrl, fallback, selectedSearchProviderKey);
+            var openDifferentDomainInNewTab = settingsSnapshot.TryGetValue(
+                BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey,
+                out var openDifferentDomainValue) &&
+                bool.TryParse(openDifferentDomainValue, out var isEnabled) &&
+                isEnabled;
+
+            if (openDifferentDomainInNewTab &&
+                !string.IsNullOrWhiteSpace(currentUrl) &&
+                BrowserUrl.TryNormalizeAbsoluteUrl(rawUrl, out var normalizedAbsoluteTarget) &&
+                !BrowserUrl.AreEqual(currentUrl, normalizedAbsoluteTarget) &&
+                !BrowserUrl.IsSameDomain(currentUrl, normalizedAbsoluteTarget))
+            {
+                OpenUriInNewTab(normalizedAbsoluteTarget, dismissCommandCenter: false);
+                return;
+            }
 
             NavigateActiveTab(target);
         }
 
         void AddTab()
         {
-            UpdateBrowserSession(BrowserSessionStore.MaximizeRailTabs);
-
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
 
             if (currentTabs.Length >= MaxTabs)
@@ -695,6 +742,7 @@ class TabViewPage : Component
             _browserTitleBarController.SetAddressText(newTab.Url);
 
             ScheduleTabsSave(nextTabs, newTab.Id);
+            EnqueueUiTransition(() => UpdateBrowserSession(BrowserSessionStore.MaximizeRailTabs));
 
             try
             {

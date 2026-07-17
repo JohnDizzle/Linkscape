@@ -10,6 +10,7 @@ internal static class BrowserConstants
     public const string HomeUrlSettingKey = "browser.home.url";
     public const string HistoryOpenInNewTabSettingKey = "browser.history.openInNewTab";
     public const string FavoritesOpenInNewTabSettingKey = "browser.favorites.openInNewTab";
+    public const string AddressBarOpenDifferentDomainInNewTabSettingKey = "browser.addressBar.openDifferentDomainInNewTab";
     public const string HomeUrl = "https://ntp.msn.com/edge/ntp?locale=en-US&title=New+tab";
 
     public const string GlyphMenu = "\uE700";

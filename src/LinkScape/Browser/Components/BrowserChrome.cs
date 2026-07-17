@@ -7,7 +7,7 @@ internal static class BrowserChrome
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
     private const string BackdropGradientPresetDefault = "Default";
-    private const int RailToggleDurationMilliseconds = 220;
+    private const int RailToggleDurationMilliseconds = 180;
     private const double RailHeaderHeight = 0;
     private const double CommandCenterBladeHeight = 300;
     private const double CommandCenterFooterHeight = 108;
@@ -20,13 +20,13 @@ internal static class BrowserChrome
     private const double CollapsedRailWidth = 56;
     private const double TabItemHoverScale = 1.04;
     private const double TabItemHorizontalInset = 4;
-    private const double ExpandedTabItemScrollbarInset = 14;
+    private const double SelectedTabBorderThickness = 1;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
     private static Style? _glassIconButtonStyle;
     private static Style? _glassCardStyle;
     private static Style? _collapsedTabGlassCardStyle;
-
+    
     public static double CollapsedRailWidthDefault { get; private set; } = 400; 
 
     internal sealed class SettingGridItem : IReactorKeyed
@@ -533,9 +533,11 @@ internal static class BrowserChrome
                 var isTabLoading = isLoading &&
                     string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
+                var isSelected = string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
+
                 return (isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(1)
-                    : BuildExpandedTabItem(tab, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
+                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(12)
+                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
             }) with
         {
             SelectedIndex = selectedIndex,
@@ -783,7 +785,7 @@ internal static class BrowserChrome
                 BuildRailSectionCard(
                 "Command Center",
                 BuildCommandCenterFooter(activeCommandCenterSection, onToggleCommandCenter, isCommandCenterBusy, commandCenterBusyText)
-                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight, isCommandCenterBusy || isCommandCenterHighlighted))
+                    .Height(CommandCenterFooterHeight), CommandCenterCardHeight))
             .MinHeight(0)
             .Flex(grow: isCommandCenterExpanded ? 1 : 0, shrink: 1, basis: 0);
     }
@@ -829,8 +831,8 @@ internal static class BrowserChrome
         Element content = activeCommandCenterSection switch
         {
             "History" => BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserNames, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
-            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
-            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
+            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
+            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserNames, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, isCommandCenterExpanded),
             "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
@@ -948,8 +950,7 @@ internal static class BrowserChrome
     private static Element BuildRailSectionCard(
         string title,
         Element content,
-        double? fixedHeight = null,
-        bool isBusy = false)
+        double? fixedHeight = null)
     {
         var card = Border(
             FlexColumn(
@@ -975,14 +976,7 @@ internal static class BrowserChrome
         .CornerRadius(16)
         .Background(BrowserConstants.LayerFillAltBrush)
         .WithBorder(Theme.SurfaceStroke)
-        .Margin(0, 0, 0, 6)
-        .Set(border =>
-        {
-            if (string.Equals(title, "Command Center", StringComparison.Ordinal))
-            {
-                ApplyCommandCenterBusyState(border, isBusy);
-            }
-        });
+        .Margin(0, 0, 0, 6);
 
         if (fixedHeight is double height)
         {
@@ -1108,11 +1102,11 @@ internal static class BrowserChrome
     {
         if (isLoading)
         {
-            ApplyTabLoadingBorderState(border, true);
+            ApplyTabItemBorderState(border, false, true);
             return;
         }
 
-        ApplyTabLoadingBorderState(border, false);
+        ApplyTabItemBorderState(border, false, false);
         border.BorderThickness = new Thickness(1);
         border.BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush;
     }
@@ -1274,8 +1268,9 @@ internal static class BrowserChrome
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
-        var historyItems = recentHistoryItems
-            .Select(item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, openInNewTabByDefault))
+        var historyItems = BuildGroupedHistoryItems(
+            recentHistoryItems,
+            item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, openInNewTabByDefault))
             .ToArray();
 
         return VStack(18,
@@ -1311,7 +1306,11 @@ internal static class BrowserChrome
                 .Padding(8)
                 .CornerRadius(8)
                 .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
-            historyItems.Length == 0
+            isImportRunning
+                ? BuildCommandCenterLoadingState(
+                    "Gathering history items…",
+                    BuildCommandCenterLoadingRows(4).ToArray())
+                : historyItems.Length == 0
                 ? Border(
                     TextBlock("No history items.")
                         .Opacity(0.7)
@@ -1326,9 +1325,69 @@ internal static class BrowserChrome
                 .MinWidth(0));
     }
 
+    private static IEnumerable<Element> BuildGroupedHistoryItems(
+        IReadOnlyList<HistoryItem> historyItems,
+        Func<HistoryItem, Element> buildItem)
+    {
+        string? previousGroup = null;
+
+        foreach (var historyItem in historyItems)
+        {
+            var groupLabel = GetHistoryGroupLabel(historyItem.LastVisitedAt);
+
+            if (!string.Equals(previousGroup, groupLabel, StringComparison.Ordinal))
+            {
+                previousGroup = groupLabel;
+                yield return BuildHistoryGroupHeader(groupLabel);
+            }
+
+            yield return buildItem(historyItem);
+        }
+    }
+
+    private static string GetHistoryGroupLabel(DateTime lastVisitedAt)
+    {
+        var localVisitedAt = lastVisitedAt.Kind == DateTimeKind.Unspecified
+            ? lastVisitedAt
+            : lastVisitedAt.ToLocalTime();
+        var today = DateTime.Today;
+
+        if (localVisitedAt.Date == today)
+        {
+            return "Today";
+        }
+
+        var firstDayOfWeek = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+        var currentWeekStart = today;
+
+        while (currentWeekStart.DayOfWeek != firstDayOfWeek)
+        {
+            currentWeekStart = currentWeekStart.AddDays(-1);
+        }
+
+        if (localVisitedAt.Date >= currentWeekStart)
+        {
+            return "This Week";
+        }
+
+        return localVisitedAt.ToString("MMMM yyyy", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    private static Element BuildHistoryGroupHeader(string title)
+    {
+        return Border(
+            TextBlock(title)
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
+                .Opacity(0.76)
+        )
+        .Padding(6, 12, 6, 6)
+        .HAlign(HorizontalAlignment.Stretch);
+    }
+
     private static Element BuildRecentBladeContent(
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<HistoryItem> recentHistoryItems,
+        bool isLoading,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         bool isCommandCenterExpanded)
@@ -1341,7 +1400,11 @@ internal static class BrowserChrome
         return VStack(10,
             TextBlock("Recent")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            recentItems.Length == 0
+            isLoading
+                ? BuildCommandCenterLoadingState(
+                    "Gathering recent items…",
+                    BuildCommandCenterLoadingRows(3).ToArray())
+                : recentItems.Length == 0
                 ? Border(
                     TextBlock("No recent items.")
                         .Opacity(0.7)
@@ -1359,6 +1422,7 @@ internal static class BrowserChrome
     private static Element BuildMostVisitedBladeContent(
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<HistoryItem> mostVisitedItems,
+        bool isLoading,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         bool isCommandCenterExpanded)
@@ -1391,7 +1455,11 @@ internal static class BrowserChrome
         return VStack(16,
             TextBlock("Most visited")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            rows.Count == 0
+            isLoading
+                ? BuildCommandCenterLoadingState(
+                    "Gathering most visited items…",
+                    BuildCommandCenterLoadingGrid(4).ToArray())
+                : rows.Count == 0
                 ? Border(
                     TextBlock("No most-visited items.")
                         .Opacity(0.7)
@@ -1456,7 +1524,11 @@ internal static class BrowserChrome
                 .Padding(8)
                 .CornerRadius(8)
                 .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
-            favoriteItems.Count == 0
+            isImportRunning
+                ? BuildCommandCenterLoadingState(
+                    "Gathering favorite items…",
+                    BuildCommandCenterLoadingRows(4).ToArray())
+                : favoriteItems.Count == 0
                 ? Border(
                     TextBlock("No favorites yet. Star a tab or import bookmarks from another browser.")
                         .Opacity(0.7)
@@ -1470,6 +1542,109 @@ internal static class BrowserChrome
                 .Padding(4, 0)
                 .HAlign(HorizontalAlignment.Stretch)
                 .MinWidth(0));
+    }
+
+    private static Element BuildCommandCenterLoadingState(string message, params Element[] placeholders)
+    {
+        return Border(
+            VStack(12,
+                HStack(8,
+                    ProgressRing()
+                        .Width(16)
+                        .Height(16)
+                        .IsActive(true),
+                    TextBlock(message)
+                        .Opacity(0.82)
+                        .TextWrapping(TextWrapping.Wrap)
+                ),
+                placeholders.Length == 0
+                    ? Border(null).IsVisible(false)
+                    : VStack(8, placeholders)
+                        .HAlign(HorizontalAlignment.Stretch)
+            )
+            .HAlign(HorizontalAlignment.Stretch)
+        )
+        .Padding(12)
+        .CornerRadius(12)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .HAlign(HorizontalAlignment.Stretch);
+    }
+
+    private static IEnumerable<Element> BuildCommandCenterLoadingRows(int count)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            yield return Border(
+                HStack(10,
+                    Border(null)
+                        .Width(24)
+                        .Height(24)
+                        .CornerRadius(6)
+                        .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+                    VStack(6,
+                        Border(null)
+                            .Width(index % 2 == 0 ? 196 : 164)
+                            .Height(10)
+                            .CornerRadius(999)
+                            .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+                        Border(null)
+                            .Width(index % 2 == 0 ? 138 : 116)
+                            .Height(8)
+                            .CornerRadius(999)
+                            .Background(BrowserConstants.LayerFillAltBrush)
+                    )
+                    .Flex(grow: 1, basis: 0)
+                )
+                .HAlign(HorizontalAlignment.Stretch)
+            )
+            .Padding(10, 8)
+            .CornerRadius(10)
+            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .WithBorder(Theme.SurfaceStroke)
+            .HAlign(HorizontalAlignment.Stretch);
+        }
+    }
+
+    private static IEnumerable<Element> BuildCommandCenterLoadingGrid(int cardCount)
+    {
+        var cards = new List<Element>();
+
+        for (var index = 0; index < cardCount; index++)
+        {
+            cards.Add(
+                Border(
+                    VStack(8,
+                        Border(null)
+                            .Width(28)
+                            .Height(28)
+                            .CornerRadius(8)
+                            .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+                        Border(null)
+                            .Width(index % 2 == 0 ? 126 : 112)
+                            .Height(10)
+                            .CornerRadius(999)
+                            .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+                        Border(null)
+                            .Width(index % 2 == 0 ? 98 : 86)
+                            .Height(8)
+                            .CornerRadius(999)
+                            .Background(BrowserConstants.LayerFillAltBrush)
+                    )
+                )
+                .Padding(12)
+                .CornerRadius(12)
+                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .WithBorder(Theme.SurfaceStroke)
+                .Flex(grow: 1, basis: 0));
+        }
+
+        for (var index = 0; index < cards.Count; index += 2)
+        {
+            yield return HStack(8,
+                cards[index],
+                cards[index + 1]);
+        }
     }
 
     private static Element BuildSettingsBladeContent(
@@ -1489,6 +1664,7 @@ internal static class BrowserChrome
             .ToList();
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
+        var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
 
         return VStack(10,
             TextBlock("Settings")
@@ -1526,7 +1702,12 @@ internal static class BrowserChrome
                         "Favorites open in new tab",
                         "Favorite items open in a new tab by default.",
                         favoritesOpenInNewTab,
-                        nextValue => onSaveSettingValue(BrowserConstants.FavoritesOpenInNewTabSettingKey, nextValue ? "true" : "false"))
+                        nextValue => onSaveSettingValue(BrowserConstants.FavoritesOpenInNewTabSettingKey, nextValue ? "true" : "false")),
+                    BuildBooleanSettingRow(
+                        "Address bar opens different domains in new tab",
+                        "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
+                        addressBarOpenDifferentDomainInNewTab,
+                        nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))
                 )
             )
             .Padding(10)
@@ -1566,7 +1747,7 @@ internal static class BrowserChrome
         Action<bool> onChanged)
     {
         return Border(
-            HStack(12,
+            (FlexRow(
                 VStack(2,
                     TextBlock(title)
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
@@ -1574,17 +1755,26 @@ internal static class BrowserChrome
                         .TextWrapping(TextWrapping.Wrap)
                         .Opacity(0.72)
                 )
+                .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
                 Button(value ? "On" : "Off", () => onChanged(!value))
                     .Background(value ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerFillDefaultBrush)
                     .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
                     .CornerRadius(999)
                     .Padding(12, 6)
-                    .MinWidth(56).AutomationName("Toggle " + title + " setting")
-            )
+                    .MinWidth(56)
+                    .AutomationName("Toggle " + title + " setting")
+                    .Flex(shrink: 0)
+            ) with
+            {
+                ColumnGap = 12
+            })
+            .HAlign(HorizontalAlignment.Stretch)
         )
         .Padding(8)
-        .WithBorder(Theme.SurfaceStroke);
+        .WithBorder(Theme.SurfaceStroke)
+        .HAlign(HorizontalAlignment.Stretch)
+        .MinWidth(0);
     }
 
     private static bool GetBooleanSetting(IReadOnlyDictionary<string, string> settingsSnapshot, string key)
@@ -1781,19 +1971,20 @@ internal static class BrowserChrome
 
     private static Element BuildCollapsedTabItem(
         BrowserTab tab,
+        bool isSelected,
         bool isLoading,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab)
     {
         return Border(
-            BuildTabIcon(tab, isLoading, useTileChrome: false)
+            BuildTabIcon(tab, isLoading, useTileChrome: false).CornerRadius(10).WithKey("CollapsedTabIcon" + tab.Id)
                 .HAlign(HorizontalAlignment.Center)
-                .VAlign(VerticalAlignment.Center)
+                .VAlign(VerticalAlignment.Center).CornerRadius(8)
         )
         .Width(CollapsedTabItemHeight)
         .Height(CollapsedTabItemHeight)
-        .Padding(8)
+        .Padding()
         .Set(border => border.Style = GetCollapsedTabGlassCardStyle())
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
@@ -1801,7 +1992,7 @@ internal static class BrowserChrome
         {
             border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
-            ApplyTabLoadingBorderState(border, IsTabCreationLoading(tab, isLoading));
+            ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
     }
 
@@ -1809,6 +2000,7 @@ internal static class BrowserChrome
 
     private static Element BuildExpandedTabItem(
         BrowserTab tab,
+        bool isSelected,
         bool isLoading,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
@@ -1854,7 +2046,7 @@ internal static class BrowserChrome
         {
             border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
-            ApplyTabLoadingBorderState(border, IsTabCreationLoading(tab, isLoading));
+            ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
     }
 
@@ -1863,7 +2055,7 @@ internal static class BrowserChrome
         return isLoading || string.Equals(tab.Title, "Loading...", StringComparison.Ordinal);
     }
 
-    private static void ApplyTabLoadingBorderState(Microsoft.UI.Xaml.Controls.Border border, bool isLoading)
+    private static void ApplyTabItemBorderState(Microsoft.UI.Xaml.Controls.Border border, bool isSelected, bool isLoading)
     {
         if (!isLoading)
         {
@@ -1873,8 +2065,10 @@ internal static class BrowserChrome
                 border.Tag = null;
             }
 
-            border.BorderThickness = new Thickness(0);
-            border.ClearValue(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty);
+            border.BorderThickness = isSelected ? new Thickness(SelectedTabBorderThickness) : new Thickness(0);
+            border.BorderBrush = isSelected
+                ? BrowserConstants.AccentFillColorTertiaryBrush
+                : null;
             return;
         }
 
@@ -2277,7 +2471,7 @@ internal static class BrowserChrome
                 new Setter(Microsoft.UI.Xaml.Controls.Border.BackgroundProperty, new SolidColorBrush(Microsoft.UI.Colors.Transparent)),
                 new Setter(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
                 new Setter(Microsoft.UI.Xaml.Controls.Border.BorderThicknessProperty, new Thickness(1)),
-                new Setter(Microsoft.UI.Xaml.Controls.Border.CornerRadiusProperty, new CornerRadius(18))
+                new Setter(Microsoft.UI.Xaml.Controls.Border.CornerRadiusProperty, new CornerRadius(20))
             }
         };
     }

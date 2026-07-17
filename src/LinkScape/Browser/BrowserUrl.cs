@@ -21,6 +21,19 @@ internal static class BrowserUrl
         return BuildSearchUrl(input, providerKey);
     }
 
+    public static bool TryNormalizeAbsoluteUrl(string raw, out string normalizedUrl)
+    {
+        var input = (raw ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            normalizedUrl = string.Empty;
+            return false;
+        }
+
+        return TryNormalizeAbsoluteUrlCore(input, out normalizedUrl);
+    }
+
     public static bool AreEqual(string? left, string? right)
     {
         if (string.IsNullOrWhiteSpace(left) && string.IsNullOrWhiteSpace(right))
@@ -46,6 +59,13 @@ internal static class BrowserUrl
             StringComparison.OrdinalIgnoreCase) == 0;
     }
 
+    public static bool IsSameDomain(string? left, string? right)
+    {
+        return TryGetComparableHost(left, out var leftHost) &&
+            TryGetComparableHost(right, out var rightHost) &&
+            string.Equals(leftHost, rightHost, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string GetDomainFaviconUrl(string url)
     {
         if (Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
@@ -57,7 +77,7 @@ internal static class BrowserUrl
         return "https://www.google.com/s2/favicons?sz=32&domain=bing.com";
     }
 
-    private static bool TryNormalizeAbsoluteUrl(string input, out string normalizedUrl)
+    private static bool TryNormalizeAbsoluteUrlCore(string input, out string normalizedUrl)
     {
         normalizedUrl = string.Empty;
 
@@ -90,6 +110,19 @@ internal static class BrowserUrl
         }
 
         return false;
+    }
+
+    private static bool TryGetComparableHost(string? url, out string host)
+    {
+        host = string.Empty;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        host = uri.IsFile ? uri.LocalPath : uri.IdnHost;
+        return !string.IsNullOrWhiteSpace(host);
     }
 
     private static bool LooksLikeUrl(string input)
