@@ -1,5 +1,7 @@
 # LinkScape
 
+(Microsof Store)[https://apps.microsoft.com/detail/9NLNN451LC7T?hl=en-us&gl=US&ocid=pdpshare]
+
 LinkScape is a WinUI 3 desktop browser-style app built on .NET 10 and Microsoft UI Reactor.
 
 It includes a tabbed browsing shell, a command center rail, persistent history and favorites, configurable search providers, and customizable acrylic backdrop presets.
