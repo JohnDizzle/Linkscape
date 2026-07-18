@@ -1,7 +1,7 @@
 # LinkScape
 <img width="1920" height="1080" alt="Screenshot (284)" src="https://github.com/user-attachments/assets/4a94c741-53d8-4ef9-8bf9-aeb2ded72a22" />
 
-[Microsof Store](https://apps.microsoft.com/detail/9NLNN451LC7T?hl=en-us&gl=US&ocid=pdpshare)
+[Microsoft Store](https://apps.microsoft.com/detail/9NLNN451LC7T?hl=en-us&gl=US&ocid=pdpshare)
 
 LinkScape is a WinUI 3 desktop browser-style app built on .NET 10 and Microsoft UI Reactor.
 
@@ -32,6 +32,97 @@ It includes a tabbed browsing shell, a command center rail, persistent history a
 - Search provider selection
 - Acrylic backdrop gradient presets
 - Windows desktop packaging via MSIX
+
+## Design System and UX Direction
+
+LinkScape follows a desktop-first, keyboard-friendly design with a focus on clarity, speed, and personalization.
+
+### Design Principles
+
+- **Clarity first**: obvious layout, clear labels, predictable behavior
+- **Low friction**: common actions should require minimal clicks
+- **Progressive density**: compact when needed, detailed when expanded
+- **Accessible by default**: keyboard navigation, readable contrast, semantic labels
+- **Personal feel**: themes and acrylic presets without sacrificing usability
+
+### Visual Language
+
+- **Spacing scale**: 4, 8, 12, 16, 24, 32
+- **Corner radii**:
+  - Small controls: 6
+  - Cards/panels: 10
+  - Dialogs/surfaces: 12
+- **Elevation**:
+  - Flat by default
+  - Subtle emphasis for hover/active states
+- **Typography**:
+  - Title
+  - Section heading
+  - Body
+  - Caption/meta
+
+### Theming
+
+LinkScape supports customizable acrylic presets. Recommended built-in preset names:
+
+- Midnight
+- Frost
+- Sunset
+- Graphite
+
+Each theme should define:
+
+- Primary accent
+- Surface/background layers
+- Border/subtle separator color
+- High-contrast text and icon color pairs
+
+### Information Architecture
+
+Left rail organization:
+
+1. **Top**: Tab actions and quick creation
+2. **Middle**: Main destinations (History, Top Sites, Favorites, etc.)
+3. **Bottom**: Settings and app-level actions
+
+Command Center sections should be clearly differentiated by purpose:
+
+- **History**: chronological navigation history
+- **Top Sites**: most visited destinations
+- **Recent Tabs**: recently active tab sessions
+- **Favorites**: saved/pinned destinations
+
+### Interaction Guidelines
+
+- Always show visible keyboard focus
+- Keep icon-only controls labeled with tooltips and accessible names
+- Preserve discoverability in compact rail mode
+- Use non-blocking loading for heavy sections (history/favorites)
+- Prefer immediate shell rendering and async data hydration
+
+### Accessibility Baseline
+
+- Ensure contrast compliance for text over acrylic backdrops
+- Provide semantic names for tab close buttons, section headers, and rail controls
+- Maintain comfortable hit targets for pointer and touch
+- Support full keyboard traversal for primary navigation paths
+
+### UX Roadmap (Design)
+
+**Now**
+- Improve hierarchy and spacing consistency
+- Clarify section naming (`History`, `Top Sites`, `Recent Tabs`, `Favorites`)
+- Add polished empty states
+
+**Next**
+- Add first-run hints/onboarding cards
+- Add tab pinning and quick tab recovery affordances
+- Improve compact rail discoverability
+
+**Later**
+- Advanced tab grouping
+- Optional command customization
+- Expanded personalization presets
 
 ## Project Structure
 
