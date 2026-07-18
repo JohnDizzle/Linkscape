@@ -26,7 +26,6 @@ class TabViewPage : Component
         History,
         Recent,
         MostVisited,
-        Settings,
         Backdrop,
         Favorites,
         Chat
@@ -196,30 +195,6 @@ class TabViewPage : Component
                     RefreshFavoritesState(busyText: "Loading favorites…");
                     break;
             }
-        }
-
-        void ShowCommandCenterSettingsFromTitleBar()
-        {
-            UpdateBrowserSession(state =>
-            {
-                var nextState = BrowserSessionStore.SetTabsCollapsed(state, false);
-                nextState = BrowserSessionStore.SetRailTabsExpanded(nextState, true);
-                nextState = BrowserSessionStore.SetActiveCommandCenterSection(nextState, nameof(CommandCenterSection.Settings));
-                return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
-            });
-
-            var version = Interlocked.Increment(ref _commandCenterHighlightVersion);
-            setIsCommandCenterHighlighted(true);
-
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(1800);
-
-                if (version == Volatile.Read(ref _commandCenterHighlightVersion))
-                {
-                    setIsCommandCenterHighlighted(false);
-                }
-            });
         }
 
         void ImportBrowserHistoryByProfile(string browserName, string profileName)
@@ -1162,6 +1137,7 @@ class TabViewPage : Component
                 _browserTitleBarController,
                 selectedTab,
                 configuredHomeUrl,
+                settingsSnapshot,
                 isTabsCollapsed,
                 canGoBack,
                 canGoForward,
@@ -1179,7 +1155,7 @@ class TabViewPage : Component
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
                 ToggleFavorite,
-                ShowCommandCenterSettingsFromTitleBar,
+                SaveSettingValue,
                 AddTab,
                 CloseActiveTab));
 

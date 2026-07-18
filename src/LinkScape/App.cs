@@ -246,7 +246,7 @@ internal static class MainWindowActivation
 class App : Component
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
-    private const int StartupSplashDurationMilliseconds = 2000;
+    private const int StartupSplashDurationMilliseconds = 800;
     private static readonly object UnhandledExceptionSyncRoot = new();
     private static bool _unhandledExceptionHandlerRegistered;
     private bool _errorListenerRegistered;

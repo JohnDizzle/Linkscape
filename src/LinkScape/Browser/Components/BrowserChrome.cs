@@ -58,6 +58,7 @@ internal static class BrowserChrome
         BrowserTab selectedTab,
         string addressText,
         string homeUrl,
+        IReadOnlyDictionary<string, string> settingsSnapshot,
         bool isTabsCollapsed,
         bool canGoBack,
         bool canGoForward,
@@ -74,7 +75,7 @@ internal static class BrowserChrome
         Action<string> onSelectSearchProvider,
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
-        Action onShowCommandCenterSettings,
+        Action<string, string> onSaveSettingValue,
         Action onAddTab,
         Action onCloseTab)
     {
@@ -106,11 +107,12 @@ internal static class BrowserChrome
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
                 IconButton(
                     BrowserConstants.GlyphSettings,
-                    onShowCommandCenterSettings,
-                    "Command center settings",
+                    () => { },
+                    "Settings",
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true)
+                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue))
             ) with
             {
                 ColumnGap = 8
@@ -910,7 +912,6 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
-            "Settings" => BuildSettingsBladeContent(settingsSnapshot, onSaveSettingValue),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
             _ => Border(null)
@@ -982,7 +983,6 @@ internal static class BrowserChrome
                     BuildCommandCenterButton("MostVisited", activeCommandCenterSection, onToggleCommandCenter, "Most visited")
                 ),
                 HStack(8,
-                    BuildCommandCenterButton("Settings", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Favorites", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Chat", activeCommandCenterSection, onToggleCommandCenter, "Chat")
@@ -1002,6 +1002,239 @@ internal static class BrowserChrome
         .Padding(2)
         .Background(BrowserConstants.CardBackgroundFillColorDefaultBrush)
         .Height(CommandCenterFooterHeight);
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Flyout CreateSettingsFlyout(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, string> onSaveSettingValue)
+    {
+        var homeUrl = settingsSnapshot.TryGetValue(BrowserConstants.HomeUrlSettingKey, out var configuredHomeUrl)
+            ? BrowserUrl.Normalize(configuredHomeUrl, BrowserConstants.HomeUrl)
+            : BrowserConstants.HomeUrl;
+        var saveTabs = GetBooleanSetting(settingsSnapshot, BrowserConstants.SaveTabsSettingKey, true);
+        var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
+        var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
+        var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+
+        var content = new StackPanel
+        {
+            Spacing = 10,
+            Width = 420,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Settings",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = @"Current values from Documents\LinkScapeCache\settings.db.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.76
+                },
+                CreateSettingsFlyoutCard(
+                    new TextBlock
+                    {
+                        Text = "Home page",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = homeUrl,
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    new TextBlock
+                    {
+                        Text = "The Home button, new tabs, and replacing the last closed tab use this URL. Use the title bar button to capture the current page.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.68
+                    },
+                    CreateSettingsFlyoutActionButton(
+                        "Reset home to default",
+                        () => onSaveSettingValue(BrowserConstants.HomeUrlSettingKey, BrowserConstants.HomeUrl))),
+                CreateSettingsFlyoutCard(
+                    new TextBlock
+                    {
+                        Text = "Open behavior",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    CreateSettingsFlyoutToggle(
+                        "Restore tabs from last session",
+                        "When enabled, LinkScape saves open tabs and restores them on the next launch. When disabled, startup opens a fresh home page.",
+                        saveTabs,
+                        nextValue => onSaveSettingValue(BrowserConstants.SaveTabsSettingKey, nextValue ? "true" : "false")),
+                    CreateSettingsFlyoutToggle(
+                        "History opens in new tab",
+                        "History, Recent, and Most visited items open in a new tab by default.",
+                        historyOpenInNewTab,
+                        nextValue => onSaveSettingValue(BrowserConstants.HistoryOpenInNewTabSettingKey, nextValue ? "true" : "false")),
+                    CreateSettingsFlyoutToggle(
+                        "Favorites open in new tab",
+                        "Favorite items open in a new tab by default.",
+                        favoritesOpenInNewTab,
+                        nextValue => onSaveSettingValue(BrowserConstants.FavoritesOpenInNewTabSettingKey, nextValue ? "true" : "false")),
+                    CreateSettingsFlyoutToggle(
+                        "Address bar opens different domains in new tab",
+                        "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
+                        addressBarOpenDifferentDomainInNewTab,
+                        nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
+                CreateSettingsFlyoutSettingsList(settingsSnapshot)
+            }
+        };
+
+        return new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight,
+            Content = new ScrollViewer
+            {
+                Content = content,
+                MaxHeight = 520,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollMode = ScrollMode.Enabled,
+                HorizontalScrollMode = ScrollMode.Disabled
+            }
+        };
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Border CreateSettingsFlyoutCard(params UIElement[] children)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8
+        };
+
+        foreach (var child in children)
+        {
+            panel.Children.Add(child);
+        }
+
+        return new Microsoft.UI.Xaml.Controls.Border
+        {
+            Padding = new Thickness(10),
+            BorderBrush = LinkScape.Browser.BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            Child = panel
+        };
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Button CreateSettingsFlyoutActionButton(string label, Action onClick)
+    {
+        var button = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = label,
+            Padding = new Thickness(12, 6, 12, 6),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(999)
+        };
+
+        button.Click += (_, _) => onClick();
+        return button;
+    }
+
+    private static UIElement CreateSettingsFlyoutToggle(
+        string title,
+        string description,
+        bool value,
+        Action<bool> onChanged)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 4
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = description,
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.72
+        });
+
+        var toggle = new ToggleSwitch
+        {
+            IsOn = value,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            OnContent = "On",
+            OffContent = "Off"
+        };
+
+        toggle.Toggled += (_, _) => onChanged(toggle.IsOn);
+        panel.Children.Add(toggle);
+
+        return panel;
+    }
+
+    private static UIElement CreateSettingsFlyoutSettingsList(IReadOnlyDictionary<string, string> settingsSnapshot)
+    {
+        var settingsItems = settingsSnapshot
+            .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (settingsItems.Count == 0)
+        {
+            return new Microsoft.UI.Xaml.Controls.Border
+            {
+                Padding = new Thickness(8, 4, 8, 4),
+                Child = new TextBlock
+                {
+                    Text = "No settings were found.",
+                    Opacity = 0.7
+                }
+            };
+        }
+
+        var rows = new StackPanel
+        {
+            Spacing = 8
+        };
+
+        foreach (var item in settingsItems)
+        {
+            rows.Children.Add(new Microsoft.UI.Xaml.Controls.Border
+            {
+                Padding = new Thickness(8),
+                BorderBrush = LinkScape.Browser.BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                BorderThickness = new Thickness(1),
+                Child = new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = item.Key,
+                            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        new TextBlock
+                        {
+                            Text = string.IsNullOrWhiteSpace(item.Value) ? "(empty)" : item.Value,
+                            TextWrapping = TextWrapping.Wrap,
+                            Opacity = 0.76
+                        }
+                    }
+                }
+            });
+        }
+
+        return new ScrollViewer
+        {
+            Content = rows,
+            Height = 220,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollMode = ScrollMode.Enabled,
+            HorizontalScrollMode = ScrollMode.Disabled
+        };
     }
 
     private static Element BuildCommandCenterButton(
@@ -1274,7 +1507,7 @@ internal static class BrowserChrome
                             .Flex(grow: 1, basis: 0),
                             HStack(4,
                                 IconButton(BrowserConstants.GlyphRefresh, () => onReloadTab(tab.Id), "Reload active tab", buttonSize: 28, iconSize: 13),
-                                IconButton(BrowserConstants.GlyphClose, () => onCloseTab(tab.Id), "Close active tab", buttonSize: 28, iconSize: 13)
+                                IconButton(BrowserConstants.GlyphTrash, () => onCloseTab(tab.Id), "Close active tab", buttonSize: 28, iconSize: 13)
                             ).Flex(shrink: 0)
                         ) with
                         {
@@ -2140,11 +2373,33 @@ internal static class BrowserChrome
                 .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
                 Border(
-                    InfoBadge(tab.VisitedCount)
+                    (FlexColumn(
+                        Border(
+                            InfoBadge(tab.VisitedCount)
+                                .HAlign(HorizontalAlignment.Right)
+                                .VAlign(VerticalAlignment.Top)
+                        )
                         .HAlign(HorizontalAlignment.Right)
-                        .VAlign(VerticalAlignment.Center)
+                        .Flex(shrink: 0),
+                        Border(null)
+                            .Flex(grow: 1, basis: 0),
+                        IconButton(
+                            BrowserConstants.GlyphTrash,
+                            () => onCloseTab(tab.Id),
+                            "Close tab",
+                            buttonSize: 24,
+                            iconSize: 10,
+                            useGlass: true)
+                            .HAlign(HorizontalAlignment.Right)
+                            .VAlign(VerticalAlignment.Bottom)
+                            .Flex(shrink: 0)
+                    ) with
+                    {
+                        RowGap = 4
+                    })
+                    .VAlign(VerticalAlignment.Stretch)
                 )
-                .Width(26)
+                .Width(28)
                 .HAlign(HorizontalAlignment.Right)
                 .Flex(shrink: 0)
             ) with
