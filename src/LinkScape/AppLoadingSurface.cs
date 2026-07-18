@@ -6,13 +6,13 @@ namespace LinkScape;
 
 internal static class AppLoadingSurface
 {
-    private const string StoreLogoAssetPath = "ms-appx:///Assets/StoreLogo.scale-100.png";
+    private const string StoreLogoAssetPath = "ms-appx:///Assets/StoreLogo.png";
     private const string SilverLinkAssetPath = "ms-appx:///Assets/LoadingLink.silver.svg";
 
     public static Element Build()
     {
         return FlexColumn(
-            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),
+            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/StoreLogo.png"),
             Border(
                 VStack(28,
                     BuildBrandHeader(),
