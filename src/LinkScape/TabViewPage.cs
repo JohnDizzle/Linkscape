@@ -3,6 +3,7 @@ using LinkScape.Browser.State;
 using LinkScape.Models;
 using Browser.Components;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Controls;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -634,8 +635,18 @@ class TabViewPage : Component
             });
         }
 
-        void DeleteAllHistory()
+        async void DeleteAllHistory()
         {
+            var confirmed = await ConfirmDestructiveActionAsync(
+                "Delete all history?",
+                "This permanently removes all saved browsing history from LinkScape.",
+                "Delete history");
+
+            if (!confirmed)
+            {
+                return;
+            }
+
             HistoryPersistenceService.ClearHistory();
             setHistoryImportStatus("Deleted all history.");
             RefreshHistoryState();
@@ -705,8 +716,18 @@ class TabViewPage : Component
             });
         }
 
-        void DeleteAllFavorites()
+        async void DeleteAllFavorites()
         {
+            var confirmed = await ConfirmDestructiveActionAsync(
+                "Delete all favorites?",
+                "This permanently removes all saved favorites from LinkScape and clears favorite markers from open tabs.",
+                "Delete favorites");
+
+            if (!confirmed)
+            {
+                return;
+            }
+
             FavoritesService.ClearFavorites();
             var nextTabs = tabs
                 .Select(tab => tab with
@@ -1550,6 +1571,27 @@ class TabViewPage : Component
 
         _shutdownSaveRegistered = true;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => FlushTabsSave();
+    }
+
+    private static async Task<bool> ConfirmDestructiveActionAsync(string title, string message, string primaryButtonText)
+    {
+        var xamlRoot = global::MainWindowActivation.GetXamlRoot();
+        if (xamlRoot is null)
+        {
+            return false;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primaryButtonText,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close
+        };
+
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
     private void RegisterActivationListener()

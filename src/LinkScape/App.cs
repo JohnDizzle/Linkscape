@@ -233,6 +233,14 @@ internal static class MainWindowActivation
             // logerror("Failed to restore and activate main window", ex);
         }
     }
+
+    internal static Microsoft.UI.Xaml.XamlRoot? GetXamlRoot()
+    {
+        lock (SyncRoot)
+        {
+            return _window?.Content?.XamlRoot;
+        }
+    }
 }
 
 class App : Component
