@@ -1247,7 +1247,6 @@ class TabViewPage : Component
             new BrowserWebViewHostProps(
                 _browserWebViewHostController,
                 selectedTab,
-                isCommandCenterOpen,
                 () =>
                 {
                     _browserTitleBarController.SetAddressText(selectedTab.Url);
@@ -1264,48 +1263,6 @@ class TabViewPage : Component
                 nextAddress => _browserTitleBarController.SetAddressText(nextAddress, preserveUserEdit: true),
                 SetLoadingIfNeeded,
                 () => RefreshHistoryState()));
-
-        var chatOverlay = Border(
-            Border(
-                FlexColumn(
-                    FlexRow(
-                        Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphBack, 14), DismissCommandCenter)
-                            .AutomationName("Back from chat")
-                            .Width(34)
-                            .Height(34)
-                            .Padding(0)
-                            .CornerRadius(17)
-                            .Background(BrowserConstants.LayerFillDefaultBrush),
-                        TextBlock("AI Browser Assistant")
-                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
-                            .VAlign(VerticalAlignment.Center)
-                            .Flex(grow: 1, basis: 0)) with
-                    {
-                        ColumnGap = 10
-                    },
-                    Component<CommandCenterChatPanel>()
-                        .Flex(grow: 1, basis: 0)) with
-                {
-                    RowGap = 12
-                })
-                .Padding(12)
-                .CornerRadius(18)
-                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
-                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
-                .Backdrop(BackdropKind.AcrylicThin)
-                .VAlign(VerticalAlignment.Stretch)
-                .HAlign(HorizontalAlignment.Stretch)
-        )
-            .Width(520)
-            .Padding(1)
-            .CornerRadius(18)
-            .Background(BrowserConstants.CardBackgroundFillColorDefaultBrush)
-            .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
-            .Margin(12)
-            .IsVisible(isChatBladeOpen)
-            .Set(border => border.Transitions = BrowserConstants.TabTransitions)
-            .HAlign(HorizontalAlignment.Left)
-            .VAlign(VerticalAlignment.Stretch);
 
         var browserSurface = Border(
             Grid(
@@ -1331,8 +1288,7 @@ class TabViewPage : Component
                 {
                     ColumnGap = 0
                 })
-                .Grid(row: 0, column: 0),
-                chatOverlay.Grid(row: 0, column: 0)
+                .Grid(row: 0, column: 0)
             )
             .CornerRadius(12)
         )
@@ -1342,14 +1298,55 @@ class TabViewPage : Component
         .CornerRadius(12)
         .Flex(grow: 1, basis: 0);
 
-        return FlexColumn(
-            titleBar,
-            BuildBrowserNoticeBanner(browserNotice),
+        var chatOverlay = Border(
+            FlexColumn(
+                FlexRow(
+                    TextBlock("AI Browser Assistant")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
+                        .VAlign(VerticalAlignment.Center)
+                        .Flex(grow: 1, basis: 0),
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 12), DismissCommandCenter)
+                        .AutomationName("Close chat")
+                        .Width(34)
+                        .Height(34)
+                        .Padding(0)
+                        .CornerRadius(17)
+                        .Background(BrowserConstants.LayerFillDefaultBrush)) with
+                {
+                    ColumnGap = 10
+                },
+                Component<CommandCenterChatPanel>()
+                    .Flex(grow: 1, basis: 0)) with
+            {
+                RowGap = 12
+            })
+            .Width(520)
+            .Padding(12)
+            .Margin(12)
+            .CornerRadius(18)
+            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
+            .IsVisible(isChatBladeOpen)
+            .HAlign(HorizontalAlignment.Right)
+            .VAlign(VerticalAlignment.Stretch)
+            .Grid(row: 0, column: 0);
+
+        var mainContent = Grid(
+            [GridSize.Star()],
+            [GridSize.Star()],
             FlexRow(
                 tabRail,
                 browserSurface
-            ).Backdrop(BackdropKind.Transparent)
-           .Flex(grow: 1, basis: 0)
+            )
+            .Backdrop(BackdropKind.Transparent)
+            .Grid(row: 0, column: 0),
+            chatOverlay)
+            .Flex(grow: 1, basis: 0);
+
+        return FlexColumn(
+            titleBar,
+            BuildBrowserNoticeBanner(browserNotice),
+            mainContent
         );
     }
 

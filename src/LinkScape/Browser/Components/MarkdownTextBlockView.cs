@@ -18,8 +18,11 @@ internal sealed class MarkdownTextBlockView : Component<MarkdownTextBlockViewPro
             .Set(host =>
             {
                 var markdownTextBlock = GetMarkdownTextBlock();
-                host.Child = markdownTextBlock;
-                host.DispatcherQueue.TryEnqueue(() => host.Child = GetMarkdownTextBlock());
+
+                if (!ReferenceEquals(host.Child, markdownTextBlock))
+                {
+                    host.Child = markdownTextBlock;
+                }
             })
             .Padding(2)
             .HAlign(HorizontalAlignment.Stretch)

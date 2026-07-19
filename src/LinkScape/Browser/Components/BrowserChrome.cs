@@ -2214,11 +2214,6 @@ internal static class BrowserChrome
     }
     
     
-    private static Element BuildChatBladeContent()
-    {
-        return Component<CommandCenterChatPanel>();
-    }
-
     private static Element BuildLocalToolCard(string name, string description)
     {
         return Border(

@@ -43,7 +43,6 @@ internal sealed class BrowserWebViewHostController
 internal sealed record BrowserWebViewHostProps(
     BrowserWebViewHostController Controller,
     BrowserTab SelectedTab,
-    bool IsCommandCenterOpen,
     Action OnHostTapped,
     Action<string, Func<BrowserTab, BrowserTab>> UpdateTab,
     Action<string> OpenUriInNewTab,
@@ -381,16 +380,19 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     {
         host.DispatcherQueue.TryEnqueue(() =>
         {
+            if (host.Child == webView)
+            {
+                webView.Visibility = Visibility.Visible;
+                return;
+            }
+
             if (webView.Parent is Microsoft.UI.Xaml.Controls.Border previousHost &&
                 previousHost != host)
             {
                 previousHost.Child = null;
             }
 
-            if (host.Child != webView)
-            {
-                host.Child = webView;
-            }
+            host.Child = webView;
 
             webView.Visibility = Visibility.Visible;
             webView.InvalidateMeasure();
