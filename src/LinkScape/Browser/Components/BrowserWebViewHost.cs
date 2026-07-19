@@ -395,7 +395,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             webView.Visibility = Visibility.Visible;
             webView.InvalidateMeasure();
             webView.InvalidateArrange();
-            webView.UpdateLayout();
+
+            if (webView.IsLoaded)
+            {
+                webView.UpdateLayout();
+            }
         });
     }
 
@@ -410,7 +414,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         {
             _activeWebView.InvalidateMeasure();
             _activeWebView.InvalidateArrange();
-            _activeWebView.UpdateLayout();
+
+            if (_activeWebView.IsLoaded)
+            {
+                _activeWebView.UpdateLayout();
+            }
         });
     }
 

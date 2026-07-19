@@ -128,6 +128,7 @@ class TabViewPage : Component
         var (browserNotice, setBrowserNotice) = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
         var selectedSearchProviderKey = session.SelectedSearchProviderKey;
         var isCommandCenterOpen = session.IsCommandCenterOpen;
+        var isChatBladeOpen = string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal);
         var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot);
 
         RegisterBrowserNoticeListener(setBrowserNotice);
@@ -178,7 +179,18 @@ class TabViewPage : Component
                 ? string.Empty
                 : sectionName;
 
-            UpdateBrowserSession(state => BrowserSessionStore.SetActiveCommandCenterSection(state, nextSection));
+            UpdateBrowserSession(state =>
+            {
+                var nextState = BrowserSessionStore.SetActiveCommandCenterSection(state, nextSection);
+
+                if (string.Equals(nextSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal))
+                {
+                    nextState = BrowserSessionStore.SetCommandCenterExpanded(nextState, true);
+                    nextState = BrowserSessionStore.SetRailTabsExpanded(nextState, false);
+                }
+
+                return nextState;
+            });
 
             switch (nextSection)
             {
@@ -284,6 +296,25 @@ class TabViewPage : Component
         void DismissCommandCenter()
         {
             UpdateBrowserSession(BrowserSessionStore.DismissCommandCenter);
+        }
+
+        void ToggleChatBlade()
+        {
+            UpdateBrowserSession(state =>
+            {
+                if (string.Equals(state.ActiveCommandCenterSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal))
+                {
+                    return BrowserSessionStore.DismissCommandCenter(state);
+                }
+
+                var nextState = BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.Chat));
+                return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
+            });
+        }
+
+        void CompactCommandCenterForBrowsing()
+        {
+            UpdateBrowserSession(BrowserSessionStore.CompactCommandCenterForBrowsing);
         }
 
         void ToggleCommandCenterExpanded()
@@ -1145,6 +1176,8 @@ class TabViewPage : Component
                 {
                     UpdateBrowserSession(state => BrowserSessionStore.SetTabsCollapsed(state, !isTabsCollapsed));
                 },
+                isChatBladeOpen,
+                ToggleChatBlade,
                 () => _browserWebViewHostController.GoBack(),
                 () => _browserWebViewHostController.Reload(),
                 () => _browserWebViewHostController.GoForward(),
@@ -1219,9 +1252,9 @@ class TabViewPage : Component
                 {
                     _browserTitleBarController.SetAddressText(selectedTab.Url);
 
-                    if (isCommandCenterOpen)
+                    if (isCommandCenterOpen && isCommandCenterExpanded)
                     {
-                        DismissCommandCenter();
+                        CompactCommandCenterForBrowsing();
                     }
                 },
                 UpdateTab,
@@ -1232,27 +1265,76 @@ class TabViewPage : Component
                 SetLoadingIfNeeded,
                 () => RefreshHistoryState()));
 
+        var chatOverlay = Border(
+            Border(
+                FlexColumn(
+                    FlexRow(
+                        Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphBack, 14), DismissCommandCenter)
+                            .AutomationName("Back from chat")
+                            .Width(34)
+                            .Height(34)
+                            .Padding(0)
+                            .CornerRadius(17)
+                            .Background(BrowserConstants.LayerFillDefaultBrush),
+                        TextBlock("AI Browser Assistant")
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
+                            .VAlign(VerticalAlignment.Center)
+                            .Flex(grow: 1, basis: 0)) with
+                    {
+                        ColumnGap = 10
+                    },
+                    Component<CommandCenterChatPanel>()
+                        .Flex(grow: 1, basis: 0)) with
+                {
+                    RowGap = 12
+                })
+                .Padding(12)
+                .CornerRadius(18)
+                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+                .Backdrop(BackdropKind.AcrylicThin)
+                .VAlign(VerticalAlignment.Stretch)
+                .HAlign(HorizontalAlignment.Stretch)
+        )
+            .Width(520)
+            .Padding(1)
+            .CornerRadius(18)
+            .Background(BrowserConstants.CardBackgroundFillColorDefaultBrush)
+            .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
+            .Margin(12)
+            .IsVisible(isChatBladeOpen)
+            .Set(border => border.Transitions = BrowserConstants.TabTransitions)
+            .HAlign(HorizontalAlignment.Left)
+            .VAlign(VerticalAlignment.Stretch);
+
         var browserSurface = Border(
-            (FlexRow(
-                Border(
-                    Border(null)
-                        .Width(1)
-                        .Background(Theme.SurfaceStroke)
-                        .Opacity(isTabsCollapsed ? 0.16 : 0.36)
-                        .HAlign(HorizontalAlignment.Right)
-                        .VAlign(VerticalAlignment.Stretch)
-                )
-                .Width(isTabsCollapsed ? BrowserSurfaceInsetCollapsed : BrowserSurfaceInsetExpanded)
-                .VAlign(VerticalAlignment.Stretch).CornerRadius(14)
-                .Flex(shrink: 0),
-                browserContent
-                    .HAlign(HorizontalAlignment.Stretch)
-                    .Flex(grow: 1, basis: 0)
-            ).CornerRadius(12)
-            with
-            {
-                ColumnGap = 0
-            })
+            Grid(
+                [GridSize.Star()],
+                [GridSize.Star()],
+                (FlexRow(
+                    Border(
+                        Border(null)
+                            .Width(1)
+                            .Background(Theme.SurfaceStroke)
+                            .Opacity(isTabsCollapsed ? 0.16 : 0.36)
+                            .HAlign(HorizontalAlignment.Right)
+                            .VAlign(VerticalAlignment.Stretch)
+                    )
+                    .Width(isTabsCollapsed ? BrowserSurfaceInsetCollapsed : BrowserSurfaceInsetExpanded)
+                    .VAlign(VerticalAlignment.Stretch).CornerRadius(14)
+                    .Flex(shrink: 0),
+                    browserContent
+                        .HAlign(HorizontalAlignment.Stretch)
+                        .Flex(grow: 1, basis: 0)
+                ).CornerRadius(12)
+                with
+                {
+                    ColumnGap = 0
+                })
+                .Grid(row: 0, column: 0),
+                chatOverlay.Grid(row: 0, column: 0)
+            )
+            .CornerRadius(12)
         )
         .HAlign(HorizontalAlignment.Stretch)
         .VAlign(VerticalAlignment.Stretch)

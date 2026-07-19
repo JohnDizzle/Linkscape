@@ -13,6 +13,7 @@ internal static class BrowserChrome
     private const double CommandCenterFooterHeight = 108;
     private const double CommandCenterCardHeight = 150;
     private const double CompactTabsCardHeight = 84;
+    private const double ExpandedCommandCenterRailWidth = 560;
     private const double ActiveTabHeaderMinHeight = 134;
     private const double RailSectionSpacing = 14;
     private const double ExpandedTabItemHeight = 68;
@@ -63,6 +64,8 @@ internal static class BrowserChrome
         bool canGoBack,
         bool canGoForward,
         Action onToggleTabs,
+        bool isChatOpen,
+        Action onToggleChat,
         Action onBack,
         Action onRefresh,
         Action onForward,
@@ -82,6 +85,14 @@ internal static class BrowserChrome
         return Border(
             (FlexRow(
                 IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
+                IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true)
+                    .Set(button =>
+                    {
+                        if (isChatOpen)
+                        {
+                            button.Background = BrowserConstants.AccentFillColorTertiaryBrush;
+                        }
+                    }),
                 IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
@@ -571,14 +582,19 @@ internal static class BrowserChrome
     {
         var selectedTab = tabs.FirstOrDefault(tab => string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal)) ?? tabs[0];
         var isSelectedTabLoading = isLoading && string.Equals(selectedTab.Id, selectedTabId, StringComparison.Ordinal);
+        var railCommandCenterSection = string.Equals(activeCommandCenterSection, "Chat", StringComparison.Ordinal)
+            ? string.Empty
+            : activeCommandCenterSection;
         var collapsedCommandCenterHeight = CommandCenterCardHeight;
 
-        if (!string.IsNullOrWhiteSpace(activeCommandCenterSection))
+        if (!string.IsNullOrWhiteSpace(railCommandCenterSection))
         {
             collapsedCommandCenterHeight += CommandCenterBladeHeight + 4;
         }
 
-        var railWidth = isTabsCollapsed ? CollapsedRailWidth : CollapsedRailWidthDefault ;
+        var railWidth = isTabsCollapsed
+            ? CollapsedRailWidth
+            : isCommandCenterExpanded ? ExpandedCommandCenterRailWidth : CollapsedRailWidthDefault;
 
         var tabList = (ListView<BrowserTab>(
             tabs,
@@ -660,7 +676,7 @@ internal static class BrowserChrome
                     .IsVisible(false),
                 openTabsCard,
                 BuildCommandCenterHost(
-                    activeCommandCenterSection,
+                    railCommandCenterSection,
                     isCommandCenterExpanded,
                     mostVisitedItems,
                     recentHistoryItems,
@@ -913,7 +929,6 @@ internal static class BrowserChrome
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
-            "Chat" => BuildPlaceholderBladeContent("Chat", "Chat agent entry point is reserved for a later step."),
             _ => Border(null)
         };
 
@@ -930,14 +945,7 @@ internal static class BrowserChrome
                         buttonSize: 24,
                         iconSize: 8,
                         useGlass: true)
-                    .Margin(2, 0, 2, 0),
-                    IconButton(
-                        BrowserConstants.GlyphClose,
-                        onDismissCommandCenter,
-                        "Dismiss command center blade",
-                        buttonSize: 24,
-                        iconSize: 8,
-                        useGlass: true)
+                    .Margin(2, 0, 2, 0)
                 ).HAlign(HorizontalAlignment.Right),
                 ScrollViewer(content)
                     .Set(scrollViewer =>
@@ -984,8 +992,7 @@ internal static class BrowserChrome
                 ),
                 HStack(8,
                     BuildCommandCenterButton("Favorites", activeCommandCenterSection, onToggleCommandCenter),
-                    BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter),
-                    BuildCommandCenterButton("Chat", activeCommandCenterSection, onToggleCommandCenter, "Chat")
+                    BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter)
                 ),
                 isCommandCenterBusy
                     ? HStack(8,
@@ -2207,7 +2214,43 @@ internal static class BrowserChrome
     }
     
     
-   private static Element BuildPlaceholderBladeContent(string title, string message)
+    private static Element BuildChatBladeContent()
+    {
+        return Component<CommandCenterChatPanel>();
+    }
+
+    private static Element BuildLocalToolCard(string name, string description)
+    {
+        return Border(
+            VStack(4,
+                TextBlock(name)
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                TextBlock(description)
+                    .TextWrapping(TextWrapping.Wrap)
+                    .Opacity(0.82)))
+            .Padding(10)
+            .CornerRadius(10)
+            .Background(BrowserConstants.LayerFillDefaultBrush)
+            .WithBorder(Theme.SurfaceStroke);
+    }
+
+    private static Element BuildReactorReferenceSearchResult(ReactorReferenceSearchResult result)
+    {
+        return Border(
+            VStack(2,
+                TextBlock($"{result.RelativePath}:{result.LineNumber}")
+                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                TextBlock(result.Preview)
+                    .TextWrapping(TextWrapping.Wrap)
+                    .Opacity(0.82)))
+            .Padding(8)
+            .CornerRadius(8)
+            .Background(BrowserConstants.LayerFillAltBrush)
+            .WithBorder(Theme.SurfaceStroke);
+    }
+
+    private static Element BuildPlaceholderBladeContent(string title, string message)
     {
         return VStack(8,
             TextBlock(title)

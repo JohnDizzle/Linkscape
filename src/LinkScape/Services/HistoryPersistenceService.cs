@@ -98,6 +98,23 @@ public static class HistoryPersistenceService
             command => command.Parameters.AddWithValue("$limit", limit));
     }
 
+    public static IReadOnlyList<HistoryItem> GetTodayHistory(int limit = 100)
+    {
+        return QueryHistory(
+            """
+            SELECT Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount
+            FROM HistoryItems
+            WHERE LastVisitedAt >= $today
+            ORDER BY LastVisitedAt DESC
+            LIMIT $limit;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$today", DateTime.Today.ToString("O"));
+                command.Parameters.AddWithValue("$limit", limit);
+            });
+    }
+
     public static IReadOnlyList<HistoryItem> GetMostVisited(int limit = 12)
     {
         return QueryHistory(

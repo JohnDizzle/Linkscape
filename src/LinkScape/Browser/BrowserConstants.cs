@@ -30,6 +30,7 @@ internal static class BrowserConstants
     public const string GlyphChevronUp = "\uE70E";
     public const string GlyphChevronDown = "\uE70D";
     public const string GlyphMagnifyGlass = "\uE721";
+    public const string GlyphChat = "\uE8F2";
     public static FontFamily TextFontFamily => new("Segoe UI");
     public static FontFamily IconFontFamily => new("Segoe Fluent Icons");
     public static Brush LayerFillDefaultBrush => GetBrush("LayerFillColorDefaultBrush");

@@ -40,6 +40,13 @@ internal static class BrowserSessionStore
         };
     }
 
+    public static BrowserSessionState CompactCommandCenterForBrowsing(BrowserSessionState state) =>
+        state with
+        {
+            IsCommandCenterExpanded = false,
+            IsRailTabsExpanded = true
+        };
+
     public static BrowserSessionState MaximizeRailTabs(BrowserSessionState state) =>
         state with
         {
