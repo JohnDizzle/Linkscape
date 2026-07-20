@@ -8,6 +8,7 @@ namespace Browser.Components;
 
 internal sealed record CommandCenterChatPanelProps(
     Action<string> OnOpenLinkInNewTab,
+    Action OnOpenAiKeyDialog,
     Func<CommandCenterChatContext> GetChatContext);
 
 internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelProps>
@@ -176,10 +177,25 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .Background(ChatSurfaceBrush)
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
 
+        var provider = LinkerAiCredentialService.SelectedProvider;
+        var keyButtonText = LinkerAiCredentialService.HasAnyApiKey()
+            ? provider.DisplayName
+            : "Add key";
+
         return FlexColumn(
-            TextBlock("Ask about history, favorites, saved tabs, collections, browser data, or the local MCP tool catalog.")
-                .TextWrapping(TextWrapping.Wrap)
-                .Opacity(0.78),
+            FlexRow(
+                TextBlock("Ask about history, favorites, saved tabs, collections, browser data, or the local MCP tool catalog.")
+                    .TextWrapping(TextWrapping.Wrap)
+                    .Opacity(0.78)
+                    .Flex(grow: 1, basis: 0),
+                Button(keyButtonText, Props.OnOpenAiKeyDialog)
+                    .AutomationName("Add Linker provider key")
+                    .ToolTip("Add or update a Linker provider API key")
+                    .Padding(10, 4)
+                    .CornerRadius(999)) with
+            {
+                ColumnGap = 8
+            },
             quickPrompts,
             Border(
                 ScrollViewer(messageList)

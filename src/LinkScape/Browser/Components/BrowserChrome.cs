@@ -67,6 +67,7 @@ internal static class BrowserChrome
         Action onOpenCollections,
         bool isChatOpen,
         Action onToggleChat,
+        Action onOpenAiKeyDialog,
         Action onBack,
         Action onRefresh,
         Action onForward,
@@ -126,7 +127,7 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true)
-                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue))
+                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue, onOpenAiKeyDialog))
             ) with
             {
                 ColumnGap = 8
@@ -1151,7 +1152,8 @@ internal static class BrowserChrome
 
     private static Microsoft.UI.Xaml.Controls.Flyout CreateSettingsFlyout(
         IReadOnlyDictionary<string, string> settingsSnapshot,
-        Action<string, string> onSaveSettingValue)
+        Action<string, string> onSaveSettingValue,
+        Action onOpenAiKeyDialog)
     {
         var homeUrl = settingsSnapshot.TryGetValue(BrowserConstants.HomeUrlSettingKey, out var configuredHomeUrl)
             ? BrowserUrl.Normalize(configuredHomeUrl, BrowserConstants.HomeUrl)
@@ -1164,6 +1166,8 @@ internal static class BrowserChrome
         settingsSnapshot.TryGetValue(TabCollectionService.StartupModeSettingKey, out var startupMode);
         settingsSnapshot.TryGetValue(TabCollectionService.StartupCollectionSettingKey, out var startupCollectionId);
         var openCollectionOnStartup = string.Equals(startupMode, TabCollectionService.StartupModeCollection, StringComparison.OrdinalIgnoreCase);
+        var selectedProvider = LinkerAiCredentialService.SelectedProvider;
+        var anyAiKeySaved = LinkerAiCredentialService.HasAnyApiKey();
 
         var content = new StackPanel
         {
@@ -1247,6 +1251,30 @@ internal static class BrowserChrome
                         "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
+                CreateSettingsFlyoutCard(
+                    new TextBlock
+                    {
+                        Text = "Linker provider key",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = anyAiKeySaved
+                            ? $"Saved provider: {selectedProvider.DisplayName}. The key is stored in Windows Credential Manager, not settings.db."
+                            : "No provider key is saved. Add one when you want Linker to answer questions outside the local browser tools.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutActionButton(
+                        anyAiKeySaved ? "Update provider key" : "Add provider key",
+                        onOpenAiKeyDialog),
+                    CreateSettingsFlyoutActionButton(
+                        $"Remove {selectedProvider.DisplayName} key",
+                        () =>
+                        {
+                            LinkerAiCredentialService.DeleteApiKey(selectedProvider.Id);
+                            onSaveSettingValue(LinkerAiCredentialService.ConfiguredSettingKey, LinkerAiCredentialService.HasAnyApiKey() ? "true" : "false");
+                        })),
                 CreateSettingsFlyoutSettingsList(settingsSnapshot)
             }
         };

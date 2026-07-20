@@ -68,6 +68,11 @@ public static class CommandCenterChatService
             return new CommandCenterChatResponse(result.Message, !result.Succeeded, [result]);
         }
 
+        if (LinkerAiCredentialService.HasAnyApiKey())
+        {
+            return await LinkerAiChatService.SubmitAsync(prompt, context, cancellationToken);
+        }
+
         return BuildUnsupportedPromptResponse(prompt);
     }
 
@@ -214,10 +219,11 @@ public static class CommandCenterChatService
         builder.AppendLine("- **Collections**: list/show collections, add the current page, remove the current page, or choose a startup collection");
         builder.AppendLine("- **Local MCP tools**: type `mcp status` or `tools` to see the current tool catalog");
         builder.AppendLine();
-        builder.AppendLine("### Not connected yet");
+        builder.AppendLine("### Add a provider key for full chat");
         builder.AppendLine();
-        builder.AppendLine("- General Q&A, weather, news, and web search are not connected to a model or API key yet.");
-        builder.AppendLine("- Later, LinkScape can add an API key setting for common questions.");
+        builder.AppendLine("**Want Linker to behave more like a chat agent? Add a provider key from the Linker panel or Settings.**");
+        builder.AppendLine();
+        builder.AppendLine("After that, Linker will still try local browser tools first, then use your selected provider for general questions.");
 
         return new CommandCenterChatResponse(
             builder.ToString().TrimEnd(),

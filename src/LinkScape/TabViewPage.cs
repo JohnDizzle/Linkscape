@@ -430,6 +430,192 @@ class TabViewPage : Component
             SaveSettingValue(HomeUrlSettingKey, currentUrl);
         }
 
+        async void ShowLinkerProviderKeyDialog()
+        {
+            var xamlRoot = global::MainWindowActivation.GetXamlRoot();
+            if (xamlRoot is null)
+            {
+                BrowserNoticeService.Show("Linker cannot open the key dialog until the main window is ready.");
+                return;
+            }
+
+            var providers = LinkerAiCredentialService.Providers;
+            var selectedProvider = LinkerAiCredentialService.SelectedProvider;
+            var providerPicker = new ComboBox
+            {
+                Header = "Provider",
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            for (var index = 0; index < providers.Count; index++)
+            {
+                var provider = providers[index];
+                providerPicker.Items.Add(new ComboBoxItem
+                {
+                    Content = provider.DisplayName,
+                    Tag = provider.Id
+                });
+
+                if (string.Equals(provider.Id, selectedProvider.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    providerPicker.SelectedIndex = index;
+                }
+            }
+
+            if (providerPicker.SelectedIndex < 0)
+            {
+                providerPicker.SelectedIndex = 0;
+            }
+
+            var passwordBox = new PasswordBox
+            {
+                Header = "API key",
+                PlaceholderText = "Paste your provider key",
+                PasswordRevealMode = PasswordRevealMode.Peek
+            };
+
+            var endpointBox = new TextBox
+            {
+                Header = "Endpoint",
+                Text = LinkerAiCredentialService.GetConfiguredEndpoint(selectedProvider.Id),
+                PlaceholderText = selectedProvider.EndpointPlaceholder,
+                Visibility = selectedProvider.RequiresEndpoint ? Visibility.Visible : Visibility.Collapsed
+            };
+
+            var deploymentBox = new TextBox
+            {
+                Header = "Deployment / bot",
+                Text = LinkerAiCredentialService.GetConfiguredDeployment(selectedProvider.Id),
+                PlaceholderText = selectedProvider.DeploymentPlaceholder,
+                Visibility = selectedProvider.RequiresDeployment ? Visibility.Visible : Visibility.Collapsed
+            };
+
+            var description = new TextBlock
+            {
+                Text = selectedProvider.Description,
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.78
+            };
+
+            providerPicker.SelectionChanged += (_, _) =>
+            {
+                if (providerPicker.SelectedItem is not ComboBoxItem item ||
+                    item.Tag is not string providerId)
+                {
+                    return;
+                }
+
+                var provider = LinkerAiCredentialService.GetProvider(providerId);
+                description.Text = provider.Description;
+                endpointBox.Text = LinkerAiCredentialService.GetConfiguredEndpoint(provider.Id);
+                endpointBox.PlaceholderText = provider.EndpointPlaceholder;
+                endpointBox.Visibility = provider.RequiresEndpoint ? Visibility.Visible : Visibility.Collapsed;
+                deploymentBox.Text = LinkerAiCredentialService.GetConfiguredDeployment(provider.Id);
+                deploymentBox.PlaceholderText = provider.DeploymentPlaceholder;
+                deploymentBox.Visibility = provider.RequiresDeployment ? Visibility.Visible : Visibility.Collapsed;
+            };
+
+            var content = new StackPanel
+            {
+                Spacing = 12,
+                Width = 420,
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 10,
+                        Children =
+                        {
+                            new Image
+                            {
+                                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri("ms-appx:///Assets/StoreLogo.png")),
+                                Width = 34,
+                                Height = 34
+                            },
+                            new StackPanel
+                            {
+                                Spacing = 2,
+                                Children =
+                                {
+                                    new TextBlock
+                                    {
+                                        Text = "Linker provider key",
+                                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                                    },
+                                    new TextBlock
+                                    {
+                                        Text = "Local browser tools stay on device. A provider key lets Linker answer broader questions when local tools are not enough.",
+                                        TextWrapping = TextWrapping.Wrap,
+                                        Opacity = 0.72
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    providerPicker,
+                    description,
+                    passwordBox,
+                    endpointBox,
+                    deploymentBox,
+                    new TextBlock
+                    {
+                        Text = "The key is stored with Windows Credential Manager. LinkScape only keeps the selected provider and non-secret options in settings.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.68
+                    }
+                }
+            };
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "Connect Linker",
+                Content = content,
+                PrimaryButtonText = "Save & test",
+                SecondaryButtonText = "Save",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result is not ContentDialogResult.Primary and not ContentDialogResult.Secondary)
+            {
+                return;
+            }
+
+            if (providerPicker.SelectedItem is not ComboBoxItem selectedItem ||
+                selectedItem.Tag is not string selectedProviderId)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(passwordBox.Password))
+            {
+                await ShowLinkerProviderResultDialogAsync("Key not saved", "Paste an API key before saving.");
+                return;
+            }
+
+            LinkerAiCredentialService.SaveCredential(
+                selectedProviderId,
+                passwordBox.Password,
+                endpointBox.Text,
+                deploymentBox.Text);
+            settingsSnapshot.Set(SettingsService.Dump());
+
+            if (result == ContentDialogResult.Secondary)
+            {
+                BrowserNoticeService.Show($"{LinkerAiCredentialService.GetProvider(selectedProviderId).DisplayName} key saved for Linker.");
+                return;
+            }
+
+            var testResult = await LinkerAiCredentialService.TestProviderAsync(selectedProviderId);
+            await ShowLinkerProviderResultDialogAsync(
+                testResult.Succeeded ? "Key works" : "Key test failed",
+                testResult.Message);
+            settingsSnapshot.Set(SettingsService.Dump());
+        }
+
         void OpenUriInNewTab(string rawUrl, bool dismissCommandCenter = true)
         {
             var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
@@ -1357,6 +1543,7 @@ class TabViewPage : Component
                 OpenCollectionsExpanded,
                 isChatBladeOpen,
                 ToggleChatBlade,
+                ShowLinkerProviderKeyDialog,
                 () => _browserWebViewHostController.GoBack(),
                 () => _browserWebViewHostController.Reload(),
                 () => _browserWebViewHostController.GoForward(),
@@ -1512,6 +1699,7 @@ class TabViewPage : Component
                 Component<CommandCenterChatPanel, CommandCenterChatPanelProps>(
                     new CommandCenterChatPanelProps(
                         url => OpenUriInNewTab(url, dismissCommandCenter: false),
+                        ShowLinkerProviderKeyDialog,
                         () => new CommandCenterChatContext(selectedTab.Url, selectedTab.Title)))
                     .Flex(grow: 1, basis: 0)) with
             {
@@ -1904,6 +2092,31 @@ class TabViewPage : Component
         };
 
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private static async Task ShowLinkerProviderResultDialogAsync(string title, string message)
+    {
+        var xamlRoot = global::MainWindowActivation.GetXamlRoot();
+        if (xamlRoot is null)
+        {
+            BrowserNoticeService.Show(message);
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = title,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap
+            },
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close
+        };
+
+        await dialog.ShowAsync();
     }
 
     private void RegisterActivationListener()
