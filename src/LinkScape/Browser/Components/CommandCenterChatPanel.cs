@@ -1,4 +1,5 @@
 using LinkScape.Browser;
+using Microsoft.UI.Dispatching;
 
 namespace Browser.Components;
 
@@ -7,8 +8,13 @@ internal sealed class CommandCenterChatPanel : Component
     private const string StoreLogoAssetPath = "ms-appx:///Assets/StoreLogo.png";
     private const double MessageFontSize = 15;
     private const double MetaFontSize = 12;
+    private const double AssistantBubbleMaxWidth = 480;
+    private const double UserBubbleMaxWidth = 320;
 
     private sealed record ChatPanelMessage(string Text, bool IsUser, bool IsError = false, bool IsThinking = false);
+
+    private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+    private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
 
     public override Element Render()
     {
@@ -20,6 +26,23 @@ internal sealed class CommandCenterChatPanel : Component
                 false)
         ], threadSafe: true);
         var isSending = UseState(false, threadSafe: true);
+
+        void SetMessages(IReadOnlyList<ChatPanelMessage> nextMessages)
+        {
+            void ApplyMessages()
+            {
+                messages.Set(nextMessages);
+                ScrollMessagesToBottom();
+            }
+
+            if (_dispatcherQueue is not null && !_dispatcherQueue.HasThreadAccess)
+            {
+                _dispatcherQueue.TryEnqueue(ApplyMessages);
+                return;
+            }
+
+            ApplyMessages();
+        }
 
         void ApplyPrompt(string value)
         {
@@ -45,7 +68,7 @@ internal sealed class CommandCenterChatPanel : Component
                 ])
                 .ToArray();
 
-            messages.Set(pendingMessages);
+            SetMessages(pendingMessages);
 
             try
             {
@@ -54,12 +77,20 @@ internal sealed class CommandCenterChatPanel : Component
                 var answer = string.IsNullOrWhiteSpace(response.Text)
                     ? "The chat service returned an empty answer. Check the MCP trace for the selected tool response."
                     : response.Text;
-                messages.Set([..pendingMessages.Where(message => !message.IsThinking), new ChatPanelMessage(answer, false, response.IsError)]);
+                SetMessages(
+                    pendingMessages
+                        .Where(message => !message.IsThinking)
+                        .Append(new ChatPanelMessage(answer, false, response.IsError))
+                        .ToArray());
             }
             catch (Exception ex)
             {
                 LocalMcpDiagnostics.Trace("ChatUI", $"Submit failed: {ex}");
-                messages.Set([..pendingMessages.Where(message => !message.IsThinking), new ChatPanelMessage($"Unable to answer: {ex.Message}", false, true)]);
+                SetMessages(
+                    pendingMessages
+                        .Where(message => !message.IsThinking)
+                        .Append(new ChatPanelMessage($"Unable to answer: {ex.Message}", false, true))
+                        .ToArray());
             }
             finally
             {
@@ -69,7 +100,7 @@ internal sealed class CommandCenterChatPanel : Component
 
         void ClearChat()
         {
-            messages.Set(
+            SetMessages(
             [
                 new ChatPanelMessage("## Linker is ready\nSession cleared. Ask about history, favorites, or today's activity.", false)
             ]);
@@ -124,6 +155,12 @@ internal sealed class CommandCenterChatPanel : Component
             quickPrompts,
             Border(
                 ScrollViewer(messageList)
+                    .Set(scrollViewer =>
+                    {
+                        _messagesScrollViewer = scrollViewer;
+                        scrollViewer.HorizontalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Disabled;
+                        scrollViewer.HorizontalScrollMode = Microsoft.UI.Xaml.Controls.ScrollMode.Disabled;
+                    })
                     .Padding(10)
                     .MinHeight(0)
                     .Flex(grow: 1, basis: 0))
@@ -138,6 +175,22 @@ internal sealed class CommandCenterChatPanel : Component
         };
     }
 
+    private void ScrollMessagesToBottom()
+    {
+        var scrollViewer = _messagesScrollViewer;
+
+        if (scrollViewer is null)
+        {
+            return;
+        }
+
+        scrollViewer.DispatcherQueue.TryEnqueue(() =>
+        {
+            scrollViewer.UpdateLayout();
+            scrollViewer.ChangeView(null, scrollViewer.ScrollableHeight, null, disableAnimation: false);
+        });
+    }
+
     private static Element BuildMessageBubble(ChatPanelMessage message)
     {
         Element messageContent = message.IsUser
@@ -146,8 +199,12 @@ internal sealed class CommandCenterChatPanel : Component
                 .FontSize(MessageFontSize)
             : message.IsThinking
                 ? CreateThinkingIndicator()
-            : Component<MarkdownTextBlockView, MarkdownTextBlockViewProps>(
-                new MarkdownTextBlockViewProps(message.Text, message.IsError));
+            : Border(Markdown(message.Text)
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .MaxWidth(AssistantBubbleMaxWidth - 24))
+                .Padding(0)
+                .HAlign(HorizontalAlignment.Stretch)
+                .MaxWidth(AssistantBubbleMaxWidth - 24);
 
         var content = FlexColumn(
             FlexRow(
@@ -171,7 +228,7 @@ internal sealed class CommandCenterChatPanel : Component
             .Background(message.IsUser ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
-            .MaxWidth(message.IsUser ? 320 : double.PositiveInfinity);
+            .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth);
     }
 
     private static Element CreateThinkingIndicator()
@@ -219,8 +276,24 @@ internal sealed class CommandCenterChatPanel : Component
 
     private static Element CreateAvatarPill(bool isUser)
     {
+        if (!isUser)
+        {
+            return Border(
+                Image(StoreLogoAssetPath)
+                    .AutomationName("Linker")
+                    .Width(18)
+                    .Height(18)
+                    .HAlign(HorizontalAlignment.Center)
+                    .VAlign(VerticalAlignment.Center))
+                .Width(24)
+                .Height(24)
+                .CornerRadius(12)
+                .Background(BrowserConstants.LayerFillDefaultBrush)
+                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
+        }
+
         return Border(
-            TextBlock(isUser ? "U" : "L")
+            TextBlock("U")
                 .FontSize(11)
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.Bold)
                 .HAlign(HorizontalAlignment.Center)
@@ -235,6 +308,7 @@ internal sealed class CommandCenterChatPanel : Component
     private static ButtonElement CreatePromptPill(string label, Action onClick)
     {
         return Button(label, onClick)
+            .AutomationName(label)
             .Padding(12, 6)
             .CornerRadius(999)
             .Background(BrowserConstants.LayerFillDefaultBrush)

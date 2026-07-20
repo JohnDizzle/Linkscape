@@ -75,6 +75,22 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
 
+    protected override bool ShouldUpdate(BrowserWebViewHostProps? oldProps, BrowserWebViewHostProps? newProps)
+    {
+        if (oldProps is null || newProps is null)
+        {
+            return true;
+        }
+
+        return !ReferenceEquals(oldProps.Controller, newProps.Controller) ||
+            !string.Equals(oldProps.SelectedTab.Id, newProps.SelectedTab.Id, StringComparison.Ordinal) ||
+            !string.Equals(oldProps.SelectedTab.Url, newProps.SelectedTab.Url, StringComparison.Ordinal) ||
+            !string.Equals(oldProps.SelectedTab.Title, newProps.SelectedTab.Title, StringComparison.Ordinal) ||
+            oldProps.SelectedTab.IsFavorite != newProps.SelectedTab.IsFavorite ||
+            oldProps.SelectedTab.ScrollX != newProps.SelectedTab.ScrollX ||
+            oldProps.SelectedTab.ScrollY != newProps.SelectedTab.ScrollY;
+    }
+
     public override Element Render()
     {
         _tabSnapshotsById[Props.SelectedTab.Id] = Props.SelectedTab;
