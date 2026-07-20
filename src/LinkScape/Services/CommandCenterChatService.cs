@@ -30,6 +30,7 @@ public static class CommandCenterChatService
 
     public static async Task<CommandCenterChatResponse> SubmitAsync(
         string prompt,
+        CommandCenterChatContext? context = null,
         CancellationToken cancellationToken = default)
     {
         prompt = prompt?.Trim() ?? string.Empty;
@@ -46,7 +47,7 @@ public static class CommandCenterChatService
 
         if (IsBrowserDataPrompt(prompt))
         {
-            return await SubmitBrowserDataPromptAsync(prompt, cancellationToken);
+            return await SubmitBrowserDataPromptAsync(prompt, context, cancellationToken);
         }
 
         if (IsReactorReferencePrompt(prompt))
@@ -127,6 +128,7 @@ public static class CommandCenterChatService
 
     private static async Task<CommandCenterChatResponse> SubmitBrowserDataPromptAsync(
         string prompt,
+        CommandCenterChatContext? context,
         CancellationToken cancellationToken)
     {
         if (!BrowserDataToolService.TrySelectToolName(prompt, out var toolName))
@@ -139,6 +141,16 @@ public static class CommandCenterChatService
             ["prompt"] = prompt,
             ["query"] = prompt
         };
+
+        if (!string.IsNullOrWhiteSpace(context?.ActiveUrl))
+        {
+            arguments["activeUrl"] = context.ActiveUrl;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context?.ActiveTitle))
+        {
+            arguments["activeTitle"] = context.ActiveTitle;
+        }
 
         var mcpResult = await WindowsMcpClientService.InvokeToolAsync(toolName, arguments, cancellationToken);
         if (mcpResult.Succeeded)
@@ -178,6 +190,8 @@ public static class CommandCenterChatService
         prompt.Contains("history", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("favorite", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("bookmark", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("collection", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("collections", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("active", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("visited", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("browser", StringComparison.OrdinalIgnoreCase) ||
@@ -197,6 +211,7 @@ public static class CommandCenterChatService
         builder.AppendLine("- **Browser history**: today, recent activity, most visited sites, active pages");
         builder.AppendLine("- **Favorites**: summarize saved favorites or search bookmarks");
         builder.AppendLine("- **Tabs**: summarize the saved tab session and selected/restored tabs");
+        builder.AppendLine("- **Collections**: list collections, summarize them, add the current page, or choose a startup collection");
         builder.AppendLine("- **Local MCP tools**: type `mcp status` or `tools` to see the current tool catalog");
         builder.AppendLine();
         builder.AppendLine("### Not connected yet");

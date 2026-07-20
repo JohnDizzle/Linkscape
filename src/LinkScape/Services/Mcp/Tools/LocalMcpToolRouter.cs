@@ -24,6 +24,11 @@ public static class LocalMcpToolRouter
             BrowserDataToolService.FavoritesSummaryToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSearchToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.TabsSummaryToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsListToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsSummaryToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsAddItemToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsRenameToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsSetStartupToolName => InvokeBrowserTool(toolName, arguments),
             _ => new ChatToolResult(toolName, false, $"Local MCP tool '{toolName}' is not registered.")
         };
     }

@@ -23,6 +23,7 @@ internal static class TestCacheScope
         ResetDatabase("history.db", "DROP TABLE IF EXISTS HistoryItems;");
         ResetDatabase("favorites.db", "DROP TABLE IF EXISTS Favorites;");
         ResetDatabase("settings.db", "DROP TABLE IF EXISTS Settings;");
+        ResetDatabase("tabCollections.db", "DROP TABLE IF EXISTS TabCollectionItems; DROP TABLE IF EXISTS TabCollections;");
     }
 
     private static void ResetDatabase(string databaseFileName, string resetSql)

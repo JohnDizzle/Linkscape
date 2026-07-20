@@ -28,6 +28,7 @@ class TabViewPage : Component
         MostVisited,
         Backdrop,
         Favorites,
+        Collections,
         Chat
     }
 
@@ -110,6 +111,10 @@ class TabViewPage : Component
         var mostVisitedHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var favoritesFilter = UseState(string.Empty);
         var favoriteItems = UseState(Array.Empty<FavoriteItem>(), threadSafe: true);
+        var tabCollections = UseState(Array.Empty<TabCollection>(), threadSafe: true);
+        var collectionItems = UseState(Array.Empty<TabCollectionItem>(), threadSafe: true);
+        var collectionName = UseState("Personal", threadSafe: true);
+        var collectionStatus = UseState(string.Empty, threadSafe: true);
         var favoritesImportStatus = UseState(string.Empty, threadSafe: true);
         var historyImportStatus = UseState(string.Empty, threadSafe: true);
         var isCommandCenterBusy = UseState(false, threadSafe: true);
@@ -353,6 +358,11 @@ class TabViewPage : Component
             }
 
             ToggleCommandCenter(section);
+
+            if (section == CommandCenterSection.Collections)
+            {
+                RefreshCollectionState();
+            }
         }
 
         void SetDefaultSearchProvider(string providerKey)
@@ -577,6 +587,96 @@ class TabViewPage : Component
             favoriteItems.Set(LoadFavoriteItems(nextFilter));
         }
 
+        void SetCollectionStateFromDatabase(string? collectionNameOverride = null)
+        {
+            var collections = TabCollectionService.GetCollections().ToArray();
+            var effectiveName = collectionNameOverride ?? collectionName.Value;
+
+            if (string.IsNullOrWhiteSpace(effectiveName))
+            {
+                effectiveName = collections.FirstOrDefault()?.Name ?? "Personal";
+            }
+
+            tabCollections.Set(collections);
+            collectionName.Set(effectiveName);
+            collectionItems.Set(TabCollectionService.GetItems(effectiveName).ToArray());
+        }
+
+        void RefreshCollectionState(string? collectionNameOverride = null, string busyText = "Loading collections...")
+        {
+            var version = BeginCommandCenterWork(busyText);
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    SetCollectionStateFromDatabase(collectionNameOverride);
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
+        }
+
+        void ApplyCollectionName(string nextName)
+        {
+            collectionName.Set(nextName);
+            collectionItems.Set(TabCollectionService.GetItems(nextName).ToArray());
+        }
+
+        void CreateCollection()
+        {
+            try
+            {
+                var collection = TabCollectionService.UpsertCollection(collectionName.Value);
+                collectionStatus.Set($"Collection '{collection.Name}' is ready.");
+                RefreshCollectionState(collection.Name);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
+        void AddCurrentTabToCollection()
+        {
+            try
+            {
+                var selectedTab = (_latestTabs.Length > 0 ? _latestTabs : tabs)
+                    .FirstOrDefault(tab => string.Equals(tab.Id, selectedTag, StringComparison.Ordinal));
+
+                if (selectedTab is null)
+                {
+                    collectionStatus.Set("No active tab is available.");
+                    return;
+                }
+
+                var item = TabCollectionService.AddOrUpdateItem(collectionName.Value, selectedTab.Url, selectedTab.Title);
+                collectionStatus.Set($"Added '{item.Title}' to {collectionName.Value}.");
+                RefreshCollectionState(collectionName.Value);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
+        void SetStartupCollection()
+        {
+            try
+            {
+                TabCollectionService.SetStartupCollection(collectionName.Value);
+                collectionStatus.Set($"LinkScape will open '{collectionName.Value}' on startup.");
+                settingsSnapshot.Set(SettingsService.Dump());
+                RefreshCollectionState(collectionName.Value);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
         void ImportBrowserHistory()
         {
             if (isCommandCenterBusy.Value)
@@ -788,6 +888,26 @@ class TabViewPage : Component
             OpenUriInNewTab(url, dismissCommandCenter: false);
         }
 
+        void OpenCollectionItem(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            NavigateActiveTab(url);
+        }
+
+        void OpenCollectionItemInNewTab(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            OpenUriInNewTab(url, dismissCommandCenter: false);
+        }
+
         void DeleteHistoryItem(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
@@ -873,6 +993,25 @@ class TabViewPage : Component
                     favoritesImportStatus.Set("Removing favorite failed.");
                 }
             });
+        }
+
+        void RemoveCollectionItem(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            try
+            {
+                TabCollectionService.RemoveItem(collectionName.Value, url);
+                collectionStatus.Set("Removed item from collection.");
+                RefreshCollectionState(collectionName.Value);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
         }
 
         void NavigateActiveTab(string rawUrl)
@@ -1211,6 +1350,10 @@ class TabViewPage : Component
                 historyImportStatus.Value,
                 historyImportBrowserProfiles.Value,
                 favoriteItems.Value,
+                tabCollections.Value,
+                collectionItems.Value,
+                collectionName.Value,
+                collectionStatus.Value,
                 favoritesFilter.Value,
                 favoritesImportStatus.Value,
                 favoritesImportBrowserProfiles.Value,
@@ -1221,6 +1364,10 @@ class TabViewPage : Component
                 SaveSettingValue,
                 ApplyHistoryFilter,
                 ApplyFavoritesFilter,
+                ApplyCollectionName,
+                CreateCollection,
+                AddCurrentTabToCollection,
+                SetStartupCollection,
                 ImportBrowserHistory,
                 ImportBrowserHistoryByName,
                 ImportBrowserHistoryByProfile,
@@ -1235,6 +1382,9 @@ class TabViewPage : Component
                 OpenFavoriteItem,
                 OpenFavoriteItemInNewTab,
                 DeleteFavoriteItem,
+                OpenCollectionItem,
+                OpenCollectionItemInNewTab,
+                RemoveCollectionItem,
                 ToggleCommandCenterByName,
                 ToggleCommandCenterExpanded,
                 isRailTabsExpanded,
@@ -1301,7 +1451,7 @@ class TabViewPage : Component
         var chatOverlay = Border(
             FlexColumn(
                 FlexRow(
-                    TextBlock("AI Browser Assistant")
+                    TextBlock("Linker")
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
                         .VAlign(VerticalAlignment.Center)
                         .Flex(grow: 1, basis: 0),
@@ -1316,7 +1466,9 @@ class TabViewPage : Component
                     ColumnGap = 10
                 },
                 Component<CommandCenterChatPanel, CommandCenterChatPanelProps>(
-                    new CommandCenterChatPanelProps(url => OpenUriInNewTab(url, dismissCommandCenter: false)))
+                    new CommandCenterChatPanelProps(
+                        url => OpenUriInNewTab(url, dismissCommandCenter: false),
+                        () => new CommandCenterChatContext(selectedTab.Url, selectedTab.Title)))
                     .Flex(grow: 1, basis: 0)) with
             {
                 RowGap = 12
@@ -1405,6 +1557,12 @@ class TabViewPage : Component
 
     private static BrowserTab[] LoadStartupTabs()
     {
+        var collectionTabs = LoadStartupCollectionTabs();
+        if (collectionTabs.Length > 0)
+        {
+            return collectionTabs;
+        }
+
         if (!IsSaveTabsEnabled())
         {
             return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
@@ -1436,6 +1594,33 @@ class TabViewPage : Component
         }
 
         return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+    }
+
+    private static BrowserTab[] LoadStartupCollectionTabs()
+    {
+        try
+        {
+            var startupCollection = TabCollectionService.GetStartupCollection();
+            if (startupCollection is null)
+            {
+                return [];
+            }
+
+            var items = TabCollectionService.GetItems(startupCollection.Id);
+            return items
+                .Take(MaxTabs)
+                .Select((item, index) =>
+                    BrowserTab.CreateNew(index + 1, item.Url, visitCount: 0) with
+                    {
+                        Title = item.Title,
+                        Order = index
+                    })
+                .ToArray();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     private static BrowserTab[] AddActivatedStartupTab(

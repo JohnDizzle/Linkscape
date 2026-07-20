@@ -17,6 +17,7 @@ public static class LocalMcpServerService
         HistoryPersistenceService.EnsureDatabase();
         SettingsService.EnsureDatabase();
         FavoritesService.EnsureDatabase();
+        TabCollectionService.EnsureDatabase();
 
         await RunAsync(
             Console.OpenStandardInput(),
@@ -163,6 +164,29 @@ public static class LocalMcpServerService
                 ["description"] = "Favorites title or URL search text."
             };
             required.Add("query");
+        }
+        else if (toolName.StartsWith("browser.collections.", StringComparison.OrdinalIgnoreCase))
+        {
+            properties["collection"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Collection name or id."
+            };
+            properties["url"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "URL to add or remove from a collection."
+            };
+            properties["title"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Optional title for a collection item."
+            };
+            properties["prompt"] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = "Original chat prompt associated with the request."
+            };
         }
         else
         {

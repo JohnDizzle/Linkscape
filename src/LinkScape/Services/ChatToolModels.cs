@@ -12,3 +12,7 @@ public sealed record ChatToolStatus(
     string ToolName,
     bool IsAvailable,
     string Message);
+
+public sealed record CommandCenterChatContext(
+    string? ActiveUrl = null,
+    string? ActiveTitle = null);

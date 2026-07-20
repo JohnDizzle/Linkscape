@@ -6,7 +6,9 @@ using Microsoft.UI.Reactor.Markdown;
 
 namespace Browser.Components;
 
-internal sealed record CommandCenterChatPanelProps(Action<string> OnOpenLinkInNewTab);
+internal sealed record CommandCenterChatPanelProps(
+    Action<string> OnOpenLinkInNewTab,
+    Func<CommandCenterChatContext> GetChatContext);
 
 internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelProps>
 {
@@ -83,7 +85,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
             try
             {
-                var response = await CommandCenterChatService.SubmitAsync(text);
+                var response = await CommandCenterChatService.SubmitAsync(text, GetChatContext());
                 LocalMcpDiagnostics.Trace("ChatUI", $"Response received. IsError={response.IsError}, TextLength={response.Text?.Length ?? 0}");
                 var answer = string.IsNullOrWhiteSpace(response.Text)
                     ? "The chat service returned an empty answer. Check the MCP trace for the selected tool response."
@@ -120,6 +122,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         var quickPrompts = FlexRow(
             CreatePromptPill("Today", () => ApplyPrompt("history tell me today's active sites")),
             CreatePromptPill("Favorites", () => ApplyPrompt("summarize my favorites")),
+            CreatePromptPill("Tabs", () => ApplyPrompt("summarize my saved tabs")),
             CreatePromptPill("Most visited", () => ApplyPrompt("what sites are most active in my history")),
             CreatePromptPill("Tools", () => ApplyPrompt("mcp status"))) with
         {
@@ -162,6 +165,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                         {
                             "history tell me today's active sites",
                             "summarize my favorites",
+                            "summarize my saved tabs",
                             "what sites are most active in my history",
                             "mcp status"
                         }
@@ -179,7 +183,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
 
         return FlexColumn(
-            TextBlock("Ask about history, favorites, today's activity, browser data, or the local MCP tool catalog.")
+            TextBlock("Ask about history, favorites, saved tabs, collections, browser data, or the local MCP tool catalog.")
                 .TextWrapping(TextWrapping.Wrap)
                 .Opacity(0.78),
             quickPrompts,
@@ -254,13 +258,11 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             : message.IsThinking
                 ? CreateThinkingIndicator()
             : Border(Markdown(message.Text, new MarkdownOptions
-                {
-                    LinkBuilder = (children, uri) =>
-                        Button(FlexRow(children), () => OpenMarkdownLink(uri))
-                            .TextLink()
-                            .Padding(0)
-                            .AutomationName($"Open {uri}")
-                })
+                    {
+                        LinkBuilder = (children, uri) =>
+                            Button(GetMarkdownLinkText(children, uri), () => OpenMarkdownLink(uri)).AutomationName("Linker url" + uri.AbsoluteUri)
+                                .TextLink()
+                    })
                     .HAlign(HorizontalAlignment.Stretch)
                     .MaxWidth(AssistantBubbleMaxWidth - 24))
                 .Padding(0)
@@ -301,6 +303,40 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             Props.OnOpenLinkInNewTab(target);
         }
     }
+
+    private static string GetMarkdownLinkText(IReadOnlyList<Element> children, Uri uri)
+    {
+        var text = string.Join(string.Empty, children.Select(ExtractElementText));
+
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        return uri.IsAbsoluteUri && !string.IsNullOrWhiteSpace(uri.Host)
+            ? uri.Host
+            : uri.ToString();
+    }
+
+    private static string ExtractElementText(Element element)
+    {
+        var elementType = element.GetType();
+
+        foreach (var propertyName in new[] { "Text", "Content", "Label" })
+        {
+            var property = elementType.GetProperty(propertyName);
+            var value = property?.GetValue(element);
+            if (value is string text && !string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private CommandCenterChatContext GetChatContext() =>
+        Props.GetChatContext();
 
     private static Element CreateThinkingIndicator()
     {
