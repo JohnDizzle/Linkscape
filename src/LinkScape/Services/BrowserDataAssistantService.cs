@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using LinkScape.Models;
 
 public sealed record BrowserDataAssistantResult(
@@ -41,6 +42,56 @@ public static class BrowserDataAssistantService
     public static BrowserDataAssistantResult BuildMostVisitedHistoryReport()
     {
         return BuildHistoryReport("Most visited browser pages", HistoryPersistenceService.GetMostVisited(25));
+    }
+
+    public static BrowserDataAssistantResult BuildHistorySearchReport(string prompt)
+    {
+        var query = ExtractHistorySearchQuery(prompt);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new BrowserDataAssistantResult("## History search\nTell me what to search for, like `show me history with \"microsoft\"` or `history starts with microsoft`.");
+        }
+
+        var startsWith = prompt.Contains("starts with", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("start with", StringComparison.OrdinalIgnoreCase);
+        var items = HistoryPersistenceService.SearchHistory(query, startsWith, 100);
+        var mode = startsWith ? "starts with" : "contains";
+
+        return BuildHistoryReport(
+            $"History where title or URL {mode} '{query}'",
+            items,
+            items.Count == 0 ? "No matching active history items were found." : null);
+    }
+
+    public static BrowserDataAssistantResult BuildHistoryPeriodReport(string prompt)
+    {
+        if (!TryExtractHistoryPeriod(prompt, out var startedAt, out var endedAt, out var label))
+        {
+            return new BrowserDataAssistantResult("## History period\nTell me a month or year, like `history for this month`, `history for June`, or `history for 2025`.");
+        }
+
+        var items = HistoryPersistenceService.GetHistoryBetween(startedAt, endedAt, 200);
+        return BuildHistoryReport(
+            $"History for {label}",
+            items,
+            items.Count == 0 ? $"No active history items were found for {label}." : null);
+    }
+
+    public static BrowserDataAssistantResult BuildHistoryArchiveReport(string prompt)
+    {
+        if (!TryExtractHistoryPeriod(prompt, out var startedAt, out var endedAt, out var label))
+        {
+            return new BrowserDataAssistantResult("## Archive history\nTell me what to archive, like `archive history for June` or `archive history for 2025`.");
+        }
+
+        var summary = HistoryPersistenceService.ArchiveHistoryBetween(startedAt, endedAt, label);
+        return new BrowserDataAssistantResult($"""
+            ## History archived
+
+            - Period: **{EscapeMarkdown(summary.Period)}**
+            - Items archived: **{summary.ArchivedItemCount}**
+            - Range: {summary.StartedAt:g} to {summary.EndedAt:g}
+            """.Trim());
     }
 
     public static BrowserDataAssistantResult BuildFavoritesSummaryReport()
@@ -136,6 +187,11 @@ public static class BrowserDataAssistantService
     public static BrowserDataAssistantResult BuildCollectionSummaryReport(string collectionNameOrPrompt)
     {
         var collectionName = ExtractCollectionName(collectionNameOrPrompt);
+        if (string.IsNullOrWhiteSpace(collectionName))
+        {
+            return BuildCollectionsListReport();
+        }
+
         var collection = TabCollectionService.GetCollection(collectionName) ?? TabCollectionService.GetCollectionByName(collectionName);
 
         if (collection is null)
@@ -194,6 +250,45 @@ public static class BrowserDataAssistantService
             - Site: {EscapeMarkdown(GetHost(item.Url))}
             - Items in collection: **{TabCollectionService.GetItems(item.CollectionId).Count}**
             """.Trim());
+    }
+
+    public static BrowserDataAssistantResult BuildRemoveCollectionItemReport(string collectionNameOrPrompt, string url)
+    {
+        var collectionName = ExtractCollectionName(collectionNameOrPrompt);
+        if (string.IsNullOrWhiteSpace(collectionName))
+        {
+            return new BrowserDataAssistantResult("## Collection name needed\nTell me which collection to use, like `remove current page from collection personal`.");
+        }
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return new BrowserDataAssistantResult("## No page to remove\nI need a URL or the current active page context before I can remove an item from a collection.");
+        }
+
+        var collection = TabCollectionService.GetCollection(collectionName) ?? TabCollectionService.GetCollectionByName(collectionName);
+        if (collection is null)
+        {
+            return new BrowserDataAssistantResult($"## Collection not found\nI could not find `{EscapeMarkdown(collectionName)}`.");
+        }
+
+        var beforeItems = TabCollectionService.GetItems(collection.Id);
+        var removedItem = beforeItems.FirstOrDefault(item => string.Equals(item.Url, url, StringComparison.OrdinalIgnoreCase));
+        var removed = TabCollectionService.RemoveItem(collection.Id, url);
+        var afterCount = TabCollectionService.GetItems(collection.Id).Count;
+
+        return removed
+            ? new BrowserDataAssistantResult($"""
+                ## Removed from {EscapeMarkdown(collection.Name)}
+
+                - Item: **{MarkdownLink(removedItem?.Title ?? url, removedItem?.Url ?? url)}**
+                - Items in collection: **{afterCount}**
+                """.Trim())
+            : new BrowserDataAssistantResult($"""
+                ## Item was not in {EscapeMarkdown(collection.Name)}
+
+                - URL checked: **{MarkdownLink(url, url)}**
+                - Items in collection: **{afterCount}**
+                """.Trim());
     }
 
     public static BrowserDataAssistantResult BuildRenameCollectionReport(string currentNameOrPrompt, string nextName)
@@ -498,6 +593,105 @@ public static class BrowserDataAssistantService
         prompt.Contains("favorite", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("bookmark", StringComparison.OrdinalIgnoreCase);
 
+    private static string ExtractHistorySearchQuery(string prompt)
+    {
+        prompt = prompt?.Trim() ?? string.Empty;
+        var quoted = Regex.Match(prompt, "\"(?<query>[^\"]+)\"");
+        if (quoted.Success)
+        {
+            return quoted.Groups["query"].Value.Trim();
+        }
+
+        var startsWith = Regex.Match(prompt, @"\bstarts?\s+with\s+(?<query>.+)$", RegexOptions.IgnoreCase);
+        if (startsWith.Success)
+        {
+            return CleanHistorySearchQuery(startsWith.Groups["query"].Value);
+        }
+
+        var anythingWith = Regex.Match(prompt, @"\b(anything\s+with|with|named?|search(?:\s+for)?|find)\s+(?<query>.+)$", RegexOptions.IgnoreCase);
+        if (anythingWith.Success)
+        {
+            return CleanHistorySearchQuery(anythingWith.Groups["query"].Value);
+        }
+
+        return CleanHistorySearchQuery(prompt);
+    }
+
+    private static string CleanHistorySearchQuery(string value)
+    {
+        value = Regex.Replace(value ?? string.Empty, @"\b(show|me|anything|history|browser|with|in|the|name|named|title|url|that|contains|starts|start)\b", string.Empty, RegexOptions.IgnoreCase);
+        return Regex.Replace(value, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '!', '?', '"', '\'');
+    }
+
+    private static bool TryExtractHistoryPeriod(string prompt, out DateTime startedAt, out DateTime endedAt, out string label)
+    {
+        prompt = prompt?.Trim() ?? string.Empty;
+        var now = DateTime.Now;
+        startedAt = DateTime.MinValue;
+        endedAt = DateTime.MinValue;
+        label = string.Empty;
+
+        if (prompt.Contains("this month", StringComparison.OrdinalIgnoreCase))
+        {
+            startedAt = new DateTime(now.Year, now.Month, 1);
+            endedAt = startedAt.AddMonths(1);
+            label = startedAt.ToString("MMMM yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        if (prompt.Contains("last month", StringComparison.OrdinalIgnoreCase))
+        {
+            endedAt = new DateTime(now.Year, now.Month, 1);
+            startedAt = endedAt.AddMonths(-1);
+            label = startedAt.ToString("MMMM yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        if (prompt.Contains("this year", StringComparison.OrdinalIgnoreCase))
+        {
+            startedAt = new DateTime(now.Year, 1, 1);
+            endedAt = startedAt.AddYears(1);
+            label = startedAt.ToString("yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        if (prompt.Contains("last year", StringComparison.OrdinalIgnoreCase))
+        {
+            startedAt = new DateTime(now.Year - 1, 1, 1);
+            endedAt = startedAt.AddYears(1);
+            label = startedAt.ToString("yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        var monthMatch = Regex.Match(
+            prompt,
+            @"\b(?<month>january|february|march|april|may|june|july|august|september|october|november|december)\b(?:\s+(?<year>20\d{2}))?",
+            RegexOptions.IgnoreCase);
+        if (monthMatch.Success)
+        {
+            var month = DateTime.ParseExact(monthMatch.Groups["month"].Value, "MMMM", CultureInfo.InvariantCulture).Month;
+            var year = monthMatch.Groups["year"].Success
+                ? int.Parse(monthMatch.Groups["year"].Value, CultureInfo.InvariantCulture)
+                : now.Year;
+            startedAt = new DateTime(year, month, 1);
+            endedAt = startedAt.AddMonths(1);
+            label = startedAt.ToString("MMMM yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        var yearMatch = Regex.Match(prompt, @"\b(?<year>20\d{2})\b");
+        if (yearMatch.Success)
+        {
+            var year = int.Parse(yearMatch.Groups["year"].Value, CultureInfo.InvariantCulture);
+            startedAt = new DateTime(year, 1, 1);
+            endedAt = startedAt.AddYears(1);
+            label = startedAt.ToString("yyyy", CultureInfo.CurrentCulture);
+            return true;
+        }
+
+        return false;
+    }
+
     private static string GetHost(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri)
@@ -543,6 +737,12 @@ public static class BrowserDataAssistantService
             return string.Empty;
         }
 
+        var knownCollection = FindCollectionNameInPrompt(value);
+        if (!string.IsNullOrWhiteSpace(knownCollection))
+        {
+            return knownCollection;
+        }
+
         var match = Regex.Match(value, @"\bcollections?\s+(?<name>.+)$", RegexOptions.IgnoreCase);
         if (match.Success)
         {
@@ -550,6 +750,19 @@ public static class BrowserDataAssistantService
         }
 
         return CleanCollectionName(value);
+    }
+
+    private static string FindCollectionNameInPrompt(string value)
+    {
+        foreach (var collection in TabCollectionService.GetCollections())
+        {
+            if (Regex.IsMatch(value, $@"\b{Regex.Escape(collection.Name)}\b", RegexOptions.IgnoreCase))
+            {
+                return collection.Name;
+            }
+        }
+
+        return string.Empty;
     }
 
     private static (string CurrentName, string NextName) ExtractRenameCollectionNames(string value)
@@ -563,7 +776,7 @@ public static class BrowserDataAssistantService
 
     private static string CleanCollectionName(string value)
     {
-        value = Regex.Replace(value ?? string.Empty, @"\b(add|save|put|current|page|active|to|in|into|the|my|set|startup|launch|open|on|collection|collections|summary|show|list|rename|edit)\b", string.Empty, RegexOptions.IgnoreCase);
+        value = Regex.Replace(value ?? string.Empty, @"\b(add|save|put|remove|delete|current|page|active|from|to|in|into|inside|the|my|me|what|whats|what's|are|is|set|startup|launch|open|on|collection|collections|summary|show|list|rename|edit)\b", string.Empty, RegexOptions.IgnoreCase);
         return Regex.Replace(value, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '!', '?', '"', '\'');
     }
 

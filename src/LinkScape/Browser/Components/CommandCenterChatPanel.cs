@@ -25,11 +25,13 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
     private FrameworkElement? _messagesBottomAnchor;
     private int _scrollRequestVersion;
+    private static readonly SolidColorBrush ChatSurfaceBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF0, 0x27, 0x27, 0x29));
+    private static readonly SolidColorBrush AssistantBubbleBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF5, 0x2E, 0x2E, 0x31));
 
     public override Element Render()
     {
         var prompt = UseState(string.Empty);
-        var arePromptSuggestionsOpen = UseState(true);
+        var arePromptSuggestionsOpen = UseState(false);
         var messages = UseState<IReadOnlyList<ChatPanelMessage>>(
         [
             new ChatPanelMessage(
@@ -123,6 +125,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             CreatePromptPill("Today", () => ApplyPrompt("history tell me today's active sites")),
             CreatePromptPill("Favorites", () => ApplyPrompt("summarize my favorites")),
             CreatePromptPill("Tabs", () => ApplyPrompt("summarize my saved tabs")),
+            CreatePromptPill("Collections", () => ApplyPrompt("show my collections")),
             CreatePromptPill("Most visited", () => ApplyPrompt("what sites are most active in my history")),
             CreatePromptPill("Tools", () => ApplyPrompt("mcp status"))) with
         {
@@ -156,20 +159,11 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                         prompt.Set(value);
                         arePromptSuggestionsOpen.Set(false);
                     })
-                    .IsSuggestionListOpen(arePromptSuggestionsOpen.Value && !isSending.Value)
+                    .IsSuggestionListOpen(false)
                     .Flex(grow: 1, basis: 0) with
                 {
                     PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about history, favorites, today, active sites, or mcp status...",
-                    Suggestions = arePromptSuggestionsOpen.Value && string.IsNullOrWhiteSpace(prompt.Value)
-                        ? new[]
-                        {
-                            "history tell me today's active sites",
-                            "summarize my favorites",
-                            "summarize my saved tabs",
-                            "what sites are most active in my history",
-                            "mcp status"
-                        }
-                        : []
+                    Suggestions = []
                 },
                 Button(isSending.Value ? "..." : "Ask", SubmitPrompt).AutomationName("CommandCenterChatSubmit")
                     .IsEnabled(!isSending.Value),
@@ -179,7 +173,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             })
             .Padding(8)
             .CornerRadius(12)
-            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .Background(ChatSurfaceBrush)
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
 
         return FlexColumn(
@@ -199,7 +193,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                     .MinHeight(0)
                     .Flex(grow: 1, basis: 0))
                 .CornerRadius(14)
-                .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .Background(ChatSurfaceBrush)
                 .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
                 .MinHeight(0)
                 .Flex(grow: 1, basis: 0),
@@ -288,7 +282,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         return Border(content)
             .Padding(message.IsUser ? 10 : 12)
             .CornerRadius(message.IsUser ? 18 : 16)
-            .Background(message.IsUser ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .Background(message.IsUser ? BrowserConstants.AccentFillColorTertiaryBrush : AssistantBubbleBrush)
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
             .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth);

@@ -11,6 +11,12 @@ public sealed record HistoryItem(
     string IReactorKeyed.Key => Url;
 }
 
+public sealed record HistoryArchiveSummary(
+    string Period,
+    DateTime StartedAt,
+    DateTime EndedAt,
+    int ArchivedItemCount);
+
 public static class HistoryPersistenceService
 {
     private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("history.db");
@@ -38,6 +44,20 @@ public static class HistoryPersistenceService
 
             CREATE INDEX IF NOT EXISTS IX_HistoryItems_VisitCount
             ON HistoryItems(VisitCount DESC, LastVisitedAt DESC);
+
+            CREATE TABLE IF NOT EXISTS HistoryArchiveItems(
+                Url TEXT NOT NULL,
+                Title TEXT NOT NULL,
+                FirstVisitedAt TEXT NOT NULL,
+                LastVisitedAt TEXT NOT NULL,
+                VisitCount INTEGER NOT NULL DEFAULT 1,
+                ArchivePeriod TEXT NOT NULL,
+                ArchivedAt TEXT NOT NULL,
+                PRIMARY KEY(Url, ArchivePeriod)
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_HistoryArchiveItems_Period
+            ON HistoryArchiveItems(ArchivePeriod, LastVisitedAt DESC);
             """;
 
         cmd.ExecuteNonQuery();
@@ -146,6 +166,94 @@ public static class HistoryPersistenceService
                 command.Parameters.AddWithValue("$query", search);
                 command.Parameters.AddWithValue("$limit", limit);
             });
+    }
+
+    public static IReadOnlyList<HistoryItem> SearchHistory(string? query, bool startsWith, int limit = 100)
+    {
+        var safeQuery = (query ?? string.Empty).Trim();
+        var search = startsWith ? $"{safeQuery}%" : $"%{safeQuery}%";
+
+        return QueryHistory(
+            """
+            SELECT Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount
+            FROM HistoryItems
+            WHERE $query = '%%'
+                OR Url LIKE $query
+                OR Title LIKE $query
+            ORDER BY LastVisitedAt DESC
+            LIMIT $limit;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$query", search);
+                command.Parameters.AddWithValue("$limit", limit);
+            });
+    }
+
+    public static IReadOnlyList<HistoryItem> GetHistoryBetween(DateTime startedAt, DateTime endedAt, int limit = 200)
+    {
+        return QueryHistory(
+            """
+            SELECT Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount
+            FROM HistoryItems
+            WHERE LastVisitedAt >= $startedAt
+                AND LastVisitedAt < $endedAt
+            ORDER BY LastVisitedAt DESC
+            LIMIT $limit;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$startedAt", startedAt.ToString("O"));
+                command.Parameters.AddWithValue("$endedAt", endedAt.ToString("O"));
+                command.Parameters.AddWithValue("$limit", limit);
+            });
+    }
+
+    public static HistoryArchiveSummary ArchiveHistoryBetween(DateTime startedAt, DateTime endedAt, string period)
+    {
+        var archivePeriod = string.IsNullOrWhiteSpace(period)
+            ? $"{startedAt:yyyy-MM-dd}_{endedAt:yyyy-MM-dd}"
+            : period.Trim();
+        var archivedAt = DateTime.Now;
+
+        using var conn = new SqliteConnection(DbConnectionString);
+        conn.Open();
+        using var transaction = conn.BeginTransaction();
+
+        using var insert = conn.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            INSERT INTO HistoryArchiveItems(Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount, ArchivePeriod, ArchivedAt)
+            SELECT Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount, $period, $archivedAt
+            FROM HistoryItems
+            WHERE LastVisitedAt >= $startedAt
+                AND LastVisitedAt < $endedAt
+            ON CONFLICT(Url, ArchivePeriod) DO UPDATE SET
+                Title = excluded.Title,
+                FirstVisitedAt = excluded.FirstVisitedAt,
+                LastVisitedAt = excluded.LastVisitedAt,
+                VisitCount = excluded.VisitCount,
+                ArchivedAt = excluded.ArchivedAt;
+            """;
+        insert.Parameters.AddWithValue("$period", archivePeriod);
+        insert.Parameters.AddWithValue("$archivedAt", archivedAt.ToString("O"));
+        insert.Parameters.AddWithValue("$startedAt", startedAt.ToString("O"));
+        insert.Parameters.AddWithValue("$endedAt", endedAt.ToString("O"));
+        var archivedCount = insert.ExecuteNonQuery();
+
+        using var delete = conn.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = """
+            DELETE FROM HistoryItems
+            WHERE LastVisitedAt >= $startedAt
+                AND LastVisitedAt < $endedAt;
+            """;
+        delete.Parameters.AddWithValue("$startedAt", startedAt.ToString("O"));
+        delete.Parameters.AddWithValue("$endedAt", endedAt.ToString("O"));
+        delete.ExecuteNonQuery();
+
+        transaction.Commit();
+        return new HistoryArchiveSummary(archivePeriod, startedAt, endedAt, archivedCount);
     }
 
     public static void UpsertImportedHistory(IEnumerable<HistoryItem> items)

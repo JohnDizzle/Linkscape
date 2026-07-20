@@ -3,12 +3,16 @@ public static class BrowserDataToolService
     public const string HistoryTodayToolName = "browser.history.today";
     public const string HistoryRecentToolName = "browser.history.recent";
     public const string HistoryMostVisitedToolName = "browser.history.mostVisited";
+    public const string HistorySearchToolName = "browser.history.search";
+    public const string HistoryPeriodToolName = "browser.history.period";
+    public const string HistoryArchiveToolName = "browser.history.archive";
     public const string FavoritesSummaryToolName = "browser.favorites.summary";
     public const string FavoritesSearchToolName = "browser.favorites.search";
     public const string TabsSummaryToolName = "browser.tabs.summary";
     public const string CollectionsListToolName = "browser.collections.list";
     public const string CollectionsSummaryToolName = "browser.collections.summary";
     public const string CollectionsAddItemToolName = "browser.collections.addItem";
+    public const string CollectionsRemoveItemToolName = "browser.collections.removeItem";
     public const string CollectionsRenameToolName = "browser.collections.rename";
     public const string CollectionsSetStartupToolName = "browser.collections.setStartup";
 
@@ -17,12 +21,16 @@ public static class BrowserDataToolService
         new(HistoryTodayToolName, true, "Summarizes today's browser history activity."),
         new(HistoryRecentToolName, true, "Summarizes recent browser history activity."),
         new(HistoryMostVisitedToolName, true, "Summarizes most visited browser history entries."),
+        new(HistorySearchToolName, true, "Searches browser history by title or URL, including starts-with matching."),
+        new(HistoryPeriodToolName, true, "Shows browser history for a month, year, or explicit date period."),
+        new(HistoryArchiveToolName, true, "Archives browser history for a month or year into the archive table."),
         new(FavoritesSummaryToolName, true, "Summarizes saved favorites."),
         new(FavoritesSearchToolName, true, "Searches saved favorites by title or URL."),
         new(TabsSummaryToolName, true, "Summarizes saved/restored browser tabs and the selected tab."),
         new(CollectionsListToolName, true, "Lists saved tab collections."),
         new(CollectionsSummaryToolName, true, "Summarizes a saved tab collection."),
         new(CollectionsAddItemToolName, true, "Adds a URL or the active page to a tab collection."),
+        new(CollectionsRemoveItemToolName, true, "Removes a URL or the active page from a tab collection."),
         new(CollectionsRenameToolName, true, "Renames a tab collection."),
         new(CollectionsSetStartupToolName, true, "Sets the collection LinkScape should open on startup.")
     ];
@@ -38,6 +46,9 @@ public static class BrowserDataToolService
             HistoryTodayToolName => BrowserDataAssistantService.BuildTodayHistoryReport(),
             HistoryRecentToolName => BrowserDataAssistantService.BuildRecentHistoryReport(),
             HistoryMostVisitedToolName => BrowserDataAssistantService.BuildMostVisitedHistoryReport(),
+            HistorySearchToolName => BrowserDataAssistantService.BuildHistorySearchReport(GetArgument(arguments, "query", "prompt")),
+            HistoryPeriodToolName => BrowserDataAssistantService.BuildHistoryPeriodReport(GetArgument(arguments, "period", "query", "prompt")),
+            HistoryArchiveToolName => BrowserDataAssistantService.BuildHistoryArchiveReport(GetArgument(arguments, "period", "query", "prompt")),
             FavoritesSummaryToolName => BrowserDataAssistantService.BuildFavoritesSummaryReport(),
             FavoritesSearchToolName => BrowserDataAssistantService.BuildFavoritesSearchReport(arguments.TryGetValue("query", out var query) ? query : string.Empty),
             TabsSummaryToolName => BrowserDataAssistantService.BuildTabsSummaryReport(),
@@ -47,6 +58,9 @@ public static class BrowserDataToolService
                 GetArgument(arguments, "collection", "query", "prompt"),
                 GetArgument(arguments, "url", "activeUrl"),
                 GetArgument(arguments, "title", "activeTitle")),
+            CollectionsRemoveItemToolName => BrowserDataAssistantService.BuildRemoveCollectionItemReport(
+                GetArgument(arguments, "collection", "query", "prompt"),
+                GetArgument(arguments, "url", "activeUrl")),
             CollectionsRenameToolName => BrowserDataAssistantService.BuildRenameCollectionReport(
                 GetArgument(arguments, "collection", "currentName", "prompt"),
                 GetArgument(arguments, "nextName", "newName")),
@@ -72,6 +86,14 @@ public static class BrowserDataToolService
 
         if (IsCollectionPrompt(prompt))
         {
+            if (prompt.Contains("remove", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("delete", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("take out", StringComparison.OrdinalIgnoreCase))
+            {
+                toolName = CollectionsRemoveItemToolName;
+                return true;
+            }
+
             if (prompt.Contains("add", StringComparison.OrdinalIgnoreCase) ||
                 prompt.Contains("save", StringComparison.OrdinalIgnoreCase) ||
                 prompt.Contains("put", StringComparison.OrdinalIgnoreCase))
@@ -97,7 +119,12 @@ public static class BrowserDataToolService
             }
 
             if (prompt.Contains("list", StringComparison.OrdinalIgnoreCase) ||
-                prompt.Contains("show all", StringComparison.OrdinalIgnoreCase))
+                prompt.Contains("show all", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("show my collection", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("show collections", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("my collections", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("what are", StringComparison.OrdinalIgnoreCase) ||
+                prompt.Contains("what collections", StringComparison.OrdinalIgnoreCase))
             {
                 toolName = CollectionsListToolName;
                 return true;
@@ -135,6 +162,24 @@ public static class BrowserDataToolService
             return false;
         }
 
+        if (prompt.Contains("archive", StringComparison.OrdinalIgnoreCase))
+        {
+            toolName = HistoryArchiveToolName;
+            return true;
+        }
+
+        if (IsHistoryPeriodPrompt(prompt))
+        {
+            toolName = HistoryPeriodToolName;
+            return true;
+        }
+
+        if (IsHistorySearchPrompt(prompt))
+        {
+            toolName = HistorySearchToolName;
+            return true;
+        }
+
         if (prompt.Contains("most", StringComparison.OrdinalIgnoreCase) ||
             prompt.Contains("top", StringComparison.OrdinalIgnoreCase))
         {
@@ -161,7 +206,38 @@ public static class BrowserDataToolService
         prompt.Contains("activity", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("active site", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("recent site", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("anything with", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("starts with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("page", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHistorySearchPrompt(string prompt) =>
+        prompt.Contains("anything with", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("starts with", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("start with", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("with \"", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("named", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("name", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("search", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("find", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHistoryPeriodPrompt(string prompt) =>
+        prompt.Contains("this month", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("this year", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("last month", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("last year", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("january", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("february", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("march", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("april", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("may", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("june", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("july", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("august", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("september", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("october", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("november", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("december", StringComparison.OrdinalIgnoreCase) ||
+        System.Text.RegularExpressions.Regex.IsMatch(prompt, @"\b20\d{2}\b");
 
     private static bool IsTabPrompt(string prompt) =>
         prompt.Contains("tab", StringComparison.OrdinalIgnoreCase) ||

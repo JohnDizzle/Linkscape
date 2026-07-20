@@ -31,6 +31,9 @@ internal static class BrowserSessionStore
     public static BrowserSessionState SetRailTabsExpanded(BrowserSessionState state, bool isRailTabsExpanded) =>
         state with { IsRailTabsExpanded = isRailTabsExpanded };
 
+    public static BrowserSessionState SetChatOpen(BrowserSessionState state, bool isChatOpen) =>
+        state with { IsChatOpen = isChatOpen };
+
     public static BrowserSessionState DismissCommandCenter(BrowserSessionState state)
     {
         return state with

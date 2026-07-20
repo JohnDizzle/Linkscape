@@ -12,7 +12,8 @@ internal sealed record BrowserSessionState(
     string SelectedSearchProviderKey,
     string ActiveCommandCenterSection,
     bool IsCommandCenterExpanded,
-    bool IsRailTabsExpanded)
+    bool IsRailTabsExpanded,
+    bool IsChatOpen)
 {
     public bool IsCommandCenterOpen => !string.IsNullOrWhiteSpace(ActiveCommandCenterSection);
 
@@ -30,5 +31,6 @@ internal sealed record BrowserSessionState(
             SelectedSearchProviderKey: selectedSearchProviderKey,
             ActiveCommandCenterSection: string.Empty,
             IsCommandCenterExpanded: false,
-            IsRailTabsExpanded: true);
+            IsRailTabsExpanded: true,
+            IsChatOpen: false);
 }

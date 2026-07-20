@@ -22,6 +22,8 @@ internal static class BrowserConstants
     public const string GlyphFavorite = "\uE735";
     public const string GlyphFavoriteOutline = "\uE734";
     public const string GlyphAdd = "\uE710";
+    public const string GlyphCollections = "\uE8A9";
+    public const string GlyphTabs = "\uE8A9";
     public const string GlyphClose = "\uE711";
     public const string GlyphTrash = "\uE74D";
     public const string GlyphRefresh = "\uE72C";

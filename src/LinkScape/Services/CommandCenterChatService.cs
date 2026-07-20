@@ -211,7 +211,7 @@ public static class CommandCenterChatService
         builder.AppendLine("- **Browser history**: today, recent activity, most visited sites, active pages");
         builder.AppendLine("- **Favorites**: summarize saved favorites or search bookmarks");
         builder.AppendLine("- **Tabs**: summarize the saved tab session and selected/restored tabs");
-        builder.AppendLine("- **Collections**: list collections, summarize them, add the current page, or choose a startup collection");
+        builder.AppendLine("- **Collections**: list/show collections, add the current page, remove the current page, or choose a startup collection");
         builder.AppendLine("- **Local MCP tools**: type `mcp status` or `tools` to see the current tool catalog");
         builder.AppendLine();
         builder.AppendLine("### Not connected yet");

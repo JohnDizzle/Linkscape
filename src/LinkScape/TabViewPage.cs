@@ -107,12 +107,16 @@ class TabViewPage : Component
         var canGoForward = session.Value.CanGoForward;
         var isLoading = session.Value.IsLoading;
         var historyFilter = UseState(string.Empty);
+        var historyLimit = UseState(50);
         var recentHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var mostVisitedHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var favoritesFilter = UseState(string.Empty);
         var favoriteItems = UseState(Array.Empty<FavoriteItem>(), threadSafe: true);
         var tabCollections = UseState(Array.Empty<TabCollection>(), threadSafe: true);
         var collectionItems = UseState(Array.Empty<TabCollectionItem>(), threadSafe: true);
+        var collectionMembership = UseState<IReadOnlyDictionary<string, string[]>>(
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase),
+            threadSafe: true);
         var collectionName = UseState("Personal", threadSafe: true);
         var collectionStatus = UseState(string.Empty, threadSafe: true);
         var favoritesImportStatus = UseState(string.Empty, threadSafe: true);
@@ -133,7 +137,7 @@ class TabViewPage : Component
         var browserNotice = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
         var selectedSearchProviderKey = session.Value.SelectedSearchProviderKey;
         var isCommandCenterOpen = session.Value.IsCommandCenterOpen;
-        var isChatBladeOpen = string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal);
+        var isChatBladeOpen = session.Value.IsChatOpen;
         var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot.Value);
 
         RegisterBrowserNoticeListener(browserNotice.Set);
@@ -187,12 +191,6 @@ class TabViewPage : Component
             UpdateBrowserSession(state =>
             {
                 var nextState = BrowserSessionStore.SetActiveCommandCenterSection(state, nextSection);
-
-                if (string.Equals(nextSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal))
-                {
-                    nextState = BrowserSessionStore.SetCommandCenterExpanded(nextState, true);
-                    nextState = BrowserSessionStore.SetRailTabsExpanded(nextState, false);
-                }
 
                 return nextState;
             });
@@ -305,16 +303,12 @@ class TabViewPage : Component
 
         void ToggleChatBlade()
         {
-            UpdateBrowserSession(state =>
-            {
-                if (string.Equals(state.ActiveCommandCenterSection, nameof(CommandCenterSection.Chat), StringComparison.Ordinal))
-                {
-                    return BrowserSessionStore.DismissCommandCenter(state);
-                }
+            UpdateBrowserSession(state => BrowserSessionStore.SetChatOpen(state, !state.IsChatOpen));
+        }
 
-                var nextState = BrowserSessionStore.SetActiveCommandCenterSection(state, nameof(CommandCenterSection.Chat));
-                return BrowserSessionStore.SetCommandCenterExpanded(nextState, false);
-            });
+        void CloseChatBlade()
+        {
+            UpdateBrowserSession(state => BrowserSessionStore.SetChatOpen(state, false));
         }
 
         void CompactCommandCenterForBrowsing()
@@ -363,6 +357,19 @@ class TabViewPage : Component
             {
                 RefreshCollectionState();
             }
+        }
+
+        void OpenCollectionsExpanded()
+        {
+            UpdateBrowserSession(state =>
+            {
+                var nextState = BrowserSessionStore.SetTabsCollapsed(state, false);
+                nextState = BrowserSessionStore.SetActiveCommandCenterSection(nextState, nameof(CommandCenterSection.Collections));
+                nextState = BrowserSessionStore.SetCommandCenterExpanded(nextState, true);
+                return BrowserSessionStore.SetRailTabsExpanded(nextState, false);
+            });
+
+            RefreshCollectionState();
         }
 
         void SetDefaultSearchProvider(string providerKey)
@@ -531,7 +538,7 @@ class TabViewPage : Component
         void SetHistoryStateFromDatabase(string? filterOverride = null)
         {
             var effectiveFilter = filterOverride ?? historyFilter.Value;
-            recentHistory.Set(LoadRecentHistoryItems(effectiveFilter));
+            recentHistory.Set(LoadRecentHistoryItems(effectiveFilter, historyLimit.Value));
             mostVisitedHistory.Set(LoadMostVisitedHistoryItems());
         }
 
@@ -555,7 +562,15 @@ class TabViewPage : Component
         void ApplyHistoryFilter(string nextFilter)
         {
             historyFilter.Set(nextFilter);
-            recentHistory.Set(LoadRecentHistoryItems(nextFilter));
+            historyLimit.Set(50);
+            recentHistory.Set(LoadRecentHistoryItems(nextFilter, 50));
+        }
+
+        void LoadMoreHistory()
+        {
+            var nextLimit = Math.Min(historyLimit.Value + 100, 2500);
+            historyLimit.Set(nextLimit);
+            recentHistory.Set(LoadRecentHistoryItems(historyFilter.Value, nextLimit));
         }
 
         void SetFavoritesStateFromDatabase(string? filterOverride = null)
@@ -600,6 +615,7 @@ class TabViewPage : Component
             tabCollections.Set(collections);
             collectionName.Set(effectiveName);
             collectionItems.Set(TabCollectionService.GetItems(effectiveName).ToArray());
+            collectionMembership.Set(BuildCollectionMembership(collections));
         }
 
         void RefreshCollectionState(string? collectionNameOverride = null, string busyText = "Loading collections...")
@@ -654,6 +670,29 @@ class TabViewPage : Component
 
                 var item = TabCollectionService.AddOrUpdateItem(collectionName.Value, selectedTab.Url, selectedTab.Title);
                 collectionStatus.Set($"Added '{item.Title}' to {collectionName.Value}.");
+                RefreshCollectionState(collectionName.Value);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
+        void AddUrlToCollection(string targetCollectionName, string url, string title)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            try
+            {
+                var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title;
+                var item = TabCollectionService.AddOrUpdateItem(targetCollectionName, url, safeTitle);
+                var collection = TabCollectionService.GetCollection(item.CollectionId);
+                var resolvedCollectionName = collection?.Name ?? targetCollectionName;
+
+                collectionStatus.Set($"Added '{item.Title}' to {resolvedCollectionName}.");
                 RefreshCollectionState(collectionName.Value);
             }
             catch (Exception ex)
@@ -1315,6 +1354,7 @@ class TabViewPage : Component
                 {
                     UpdateBrowserSession(state => BrowserSessionStore.SetTabsCollapsed(state, !isTabsCollapsed));
                 },
+                OpenCollectionsExpanded,
                 isChatBladeOpen,
                 ToggleChatBlade,
                 () => _browserWebViewHostController.GoBack(),
@@ -1347,11 +1387,13 @@ class TabViewPage : Component
                 mostVisitedHistory.Value,
                 recentHistory.Value,
                 historyFilter.Value,
+                historyLimit.Value,
                 historyImportStatus.Value,
                 historyImportBrowserProfiles.Value,
                 favoriteItems.Value,
                 tabCollections.Value,
                 collectionItems.Value,
+                collectionMembership.Value,
                 collectionName.Value,
                 collectionStatus.Value,
                 favoritesFilter.Value,
@@ -1363,10 +1405,12 @@ class TabViewPage : Component
                 settingsSnapshot.Value,
                 SaveSettingValue,
                 ApplyHistoryFilter,
+                LoadMoreHistory,
                 ApplyFavoritesFilter,
                 ApplyCollectionName,
                 CreateCollection,
                 AddCurrentTabToCollection,
+                AddUrlToCollection,
                 SetStartupCollection,
                 ImportBrowserHistory,
                 ImportBrowserHistoryByName,
@@ -1455,7 +1499,7 @@ class TabViewPage : Component
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
                         .VAlign(VerticalAlignment.Center)
                         .Flex(grow: 1, basis: 0),
-                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 12), DismissCommandCenter)
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 12), CloseChatBlade)
                         .AutomationName("Close chat")
                         .Width(34)
                         .Height(34)
@@ -1477,7 +1521,7 @@ class TabViewPage : Component
             .Padding(12)
             .Margin(12)
             .CornerRadius(18)
-            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xF2, 0x23, 0x23, 0x26)))
             .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
             .IsVisible(isChatBladeOpen)
             .HAlign(HorizontalAlignment.Right)
@@ -1640,6 +1684,33 @@ class TabViewPage : Component
 
         var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
         return BrowserTabActions.Add(currentTabs, normalizedTarget, out activatedTab, visitCount: 1);
+    }
+
+    private static IReadOnlyDictionary<string, string[]> BuildCollectionMembership(IReadOnlyList<TabCollection> collections)
+    {
+        var membership = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var collection in collections)
+        {
+            foreach (var item in TabCollectionService.GetItems(collection.Id))
+            {
+                if (!membership.TryGetValue(item.Url, out var collectionNames))
+                {
+                    collectionNames = [];
+                    membership[item.Url] = collectionNames;
+                }
+
+                if (!collectionNames.Contains(collection.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    collectionNames.Add(collection.Name);
+                }
+            }
+        }
+
+        return membership.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray(),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static BrowserTab[] ReconcileTabsWithPersistedFavorites(BrowserTab[] tabs)

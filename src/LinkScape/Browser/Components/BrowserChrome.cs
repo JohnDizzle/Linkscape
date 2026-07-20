@@ -64,6 +64,7 @@ internal static class BrowserChrome
         bool canGoBack,
         bool canGoForward,
         Action onToggleTabs,
+        Action onOpenCollections,
         bool isChatOpen,
         Action onToggleChat,
         Action onBack,
@@ -85,6 +86,7 @@ internal static class BrowserChrome
         return Border(
             (FlexRow(
                 IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
+                IconButton(BrowserConstants.GlyphCollections, onOpenCollections, "Open collections", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true)
                     .Set(button =>
                     {
@@ -105,6 +107,7 @@ internal static class BrowserChrome
                 IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
                 Button("Set home", onSetCurrentPageAsHome)
                     .AutomationName("Set current page as home")
+                    .ToolTip("Set current page as home")
                     .Height(32)
                     .Padding(10, 0)
                     .CornerRadius(16),
@@ -400,6 +403,7 @@ internal static class BrowserChrome
             .Padding(2),
             () => { })
             .AutomationName("Search provider")
+            .ToolTip("Search provider")
             .Width(30)
             .Height(30)
             .Padding(0)
@@ -408,6 +412,23 @@ internal static class BrowserChrome
 
     private static MenuFlyout CreateTabContextFlyout(
         BrowserTab tab,
+        Action<string> onToggleFavoriteTab,
+        Action<string> onCloseTab,
+        Action<string> onReloadTab)
+    {
+        return CreateTabContextFlyout(
+            tab,
+            [],
+            null,
+            onToggleFavoriteTab,
+            onCloseTab,
+            onReloadTab);
+    }
+
+    private static MenuFlyout CreateTabContextFlyout(
+        BrowserTab tab,
+        IReadOnlyList<TabCollection> tabCollections,
+        Action<string, string, string>? onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab)
@@ -426,6 +447,37 @@ internal static class BrowserChrome
         };
         reloadItem.Click += (_, _) => onReloadTab(tab.Id);
 
+        var addToCollectionItem = new MenuFlyoutSubItem
+        {
+            Text = "Add to collection"
+        };
+        var collections = tabCollections
+            .Where(collection => !string.IsNullOrWhiteSpace(collection.Name))
+            .OrderBy(collection => collection.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (onAddUrlToCollection is null || collections.Length == 0)
+        {
+            addToCollectionItem.Items.Add(new MenuFlyoutItem
+            {
+                Text = "Create a collection first",
+                IsEnabled = false
+            });
+        }
+        else
+        {
+            foreach (var collection in collections)
+            {
+                var collectionName = collection.Name;
+                var item = new MenuFlyoutItem
+                {
+                    Text = collectionName
+                };
+                item.Click += (_, _) => onAddUrlToCollection(collectionName, tab.Url, tab.Title);
+                addToCollectionItem.Items.Add(item);
+            }
+        }
+
         var closeItem = new MenuFlyoutItem
         {
             Text = "Close"
@@ -434,6 +486,7 @@ internal static class BrowserChrome
 
         flyout.Items.Add(favoriteItem);
         flyout.Items.Add(reloadItem);
+        flyout.Items.Add(addToCollectionItem);
         flyout.Items.Add(closeItem);
 
         return flyout;
@@ -545,11 +598,13 @@ internal static class BrowserChrome
     IReadOnlyList<HistoryItem> mostVisitedItems,
     IReadOnlyList<HistoryItem> recentHistoryItems,
     string historyFilter,
+    int historyLimit,
     string historyImportStatus,
     IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
     IReadOnlyList<FavoriteItem> favoriteItems,
     IReadOnlyList<TabCollection> tabCollections,
     IReadOnlyList<TabCollectionItem> collectionItems,
+    IReadOnlyDictionary<string, string[]> collectionMembership,
     string collectionName,
     string collectionStatus,
     string favoritesFilter,
@@ -561,10 +616,12 @@ internal static class BrowserChrome
     IReadOnlyDictionary<string, string> settingsSnapshot,
     Action<string, string> onSaveSettingValue,
     Action<string> onHistoryFilterChanged,
+    Action onLoadMoreHistory,
     Action<string> onFavoritesFilterChanged,
     Action<string> onCollectionNameChanged,
     Action onCreateCollection,
     Action onAddCurrentTabToCollection,
+    Action<string, string, string> onAddUrlToCollection,
     Action onSetStartupCollection,
     Action onImportHistory,
     Action<string> onImportBrowserHistory,
@@ -617,8 +674,8 @@ internal static class BrowserChrome
                 var isSelected = string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
                 return (isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(12)
-                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
+                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(12)
+                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, GetCollectionNames(collectionMembership, tab.Url), tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
             }) with
         {
             SelectedIndex = selectedIndex,
@@ -692,11 +749,13 @@ internal static class BrowserChrome
                     mostVisitedItems,
                     recentHistoryItems,
                     historyFilter,
+                    historyLimit,
                     historyImportStatus,
                     historyImportBrowserProfiles,
                     favoriteItems,
                     tabCollections,
                     collectionItems,
+                    collectionMembership,
                     collectionName,
                     collectionStatus,
                     favoritesFilter,
@@ -708,10 +767,12 @@ internal static class BrowserChrome
                     settingsSnapshot,
                     onSaveSettingValue,
                     onHistoryFilterChanged,
+                    onLoadMoreHistory,
                     onFavoritesFilterChanged,
                     onCollectionNameChanged,
                     onCreateCollection,
                     onAddCurrentTabToCollection,
+                    onAddUrlToCollection,
                     onSetStartupCollection,
                     onImportHistory,
                     onImportBrowserHistory,
@@ -819,11 +880,13 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> mostVisitedItems,
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
+        int historyLimit,
         string historyImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
         IReadOnlyList<TabCollection> tabCollections,
         IReadOnlyList<TabCollectionItem> collectionItems,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
         string collectionName,
         string collectionStatus,
         string favoritesFilter,
@@ -835,10 +898,12 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action<string> onHistoryFilterChanged,
+        Action onLoadMoreHistory,
         Action<string> onFavoritesFilterChanged,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
         Action onAddCurrentTabToCollection,
+        Action<string, string, string> onAddUrlToCollection,
         Action onSetStartupCollection,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
@@ -867,11 +932,13 @@ internal static class BrowserChrome
             mostVisitedItems,
             recentHistoryItems,
             historyFilter,
+            historyLimit,
             historyImportStatus,
             historyImportBrowserProfiles,
             favoriteItems,
             tabCollections,
             collectionItems,
+            collectionMembership,
             collectionName,
             collectionStatus,
             favoritesFilter,
@@ -882,10 +949,12 @@ internal static class BrowserChrome
             settingsSnapshot,
             onSaveSettingValue,
             onHistoryFilterChanged,
+            onLoadMoreHistory,
             onFavoritesFilterChanged,
             onCollectionNameChanged,
             onCreateCollection,
             onAddCurrentTabToCollection,
+            onAddUrlToCollection,
             onSetStartupCollection,
             onImportHistory,
             onImportBrowserHistory,
@@ -930,11 +999,13 @@ internal static class BrowserChrome
         IReadOnlyList<HistoryItem> mostVisitedItems,
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
+        int historyLimit,
         string historyImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
         IReadOnlyList<TabCollection> tabCollections,
         IReadOnlyList<TabCollectionItem> collectionItems,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
         string collectionName,
         string collectionStatus,
         string favoritesFilter,
@@ -945,10 +1016,12 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action<string> onHistoryFilterChanged,
+        Action onLoadMoreHistory,
         Action<string> onFavoritesFilterChanged,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
         Action onAddCurrentTabToCollection,
+        Action<string, string, string> onAddUrlToCollection,
         Action onSetStartupCollection,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
@@ -979,10 +1052,10 @@ internal static class BrowserChrome
 
         Element content = activeCommandCenterSection switch
         {
-            "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyImportStatus, historyImportBrowserProfiles, isCommandCenterBusy, onHistoryFilterChanged, onImportHistory, onImportBrowserHistory, onImportBrowserHistoryProfile, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
-            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
-            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, isCommandCenterExpanded),
-            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, isCommandCenterExpanded),
+            "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyLimit, historyImportStatus, historyImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onHistoryFilterChanged, onLoadMoreHistory, onImportHistory, onImportBrowserHistory, onImportBrowserHistoryProfile, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
+            "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
+            "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
+            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
@@ -1001,7 +1074,15 @@ internal static class BrowserChrome
                         buttonSize: 24,
                         iconSize: 8,
                         useGlass: true)
-                    .Margin(2, 0, 2, 0)
+                    .Margin(2, 0, 0, 0),
+                    IconButton(
+                        BrowserConstants.GlyphClose,
+                        onDismissCommandCenter,
+                        "Close command center blade",
+                        buttonSize: 24,
+                        iconSize: 8,
+                        useGlass: true)
+                    .Margin(0, 0, 2, 0)
                 ).HAlign(HorizontalAlignment.Right),
                 ScrollViewer(content)
                     .Set(scrollViewer =>
@@ -1079,6 +1160,10 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var startupCollections = TabCollectionService.GetCollections();
+        settingsSnapshot.TryGetValue(TabCollectionService.StartupModeSettingKey, out var startupMode);
+        settingsSnapshot.TryGetValue(TabCollectionService.StartupCollectionSettingKey, out var startupCollectionId);
+        var openCollectionOnStartup = string.Equals(startupMode, TabCollectionService.StartupModeCollection, StringComparison.OrdinalIgnoreCase);
 
         var content = new StackPanel
         {
@@ -1129,6 +1214,24 @@ internal static class BrowserChrome
                         "When enabled, LinkScape saves open tabs and restores them on the next launch. When disabled, startup opens a fresh home page.",
                         saveTabs,
                         nextValue => onSaveSettingValue(BrowserConstants.SaveTabsSettingKey, nextValue ? "true" : "false")),
+                    CreateSettingsFlyoutToggle(
+                        "Open collection on startup",
+                        "When enabled, LinkScape opens the selected collection instead of the last saved tab session.",
+                        openCollectionOnStartup,
+                        nextValue =>
+                        {
+                            if (nextValue && string.IsNullOrWhiteSpace(startupCollectionId) && startupCollections.Count > 0)
+                            {
+                                onSaveSettingValue(TabCollectionService.StartupCollectionSettingKey, startupCollections[0].Id);
+                            }
+
+                            onSaveSettingValue(TabCollectionService.StartupModeSettingKey, nextValue ? TabCollectionService.StartupModeCollection : "tabs");
+                        }),
+                    CreateSettingsFlyoutCollectionPicker(
+                        startupCollections,
+                        startupCollectionId,
+                        openCollectionOnStartup,
+                        onSaveSettingValue),
                     CreateSettingsFlyoutToggle(
                         "History opens in new tab",
                         "History, Recent, and Most visited items open in a new tab by default.",
@@ -1233,6 +1336,84 @@ internal static class BrowserChrome
 
         toggle.Toggled += (_, _) => onChanged(toggle.IsOn);
         panel.Children.Add(toggle);
+
+        return panel;
+    }
+
+    private static UIElement CreateSettingsFlyoutCollectionPicker(
+        IReadOnlyList<TabCollection> collections,
+        string? selectedCollectionId,
+        bool isEnabled,
+        Action<string, string> onSaveSettingValue)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 6
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Startup collection",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+
+        if (collections.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Create a collection before choosing one for startup.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.68
+            });
+
+            return panel;
+        }
+
+        var comboBox = new Microsoft.UI.Xaml.Controls.ComboBox
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            IsEnabled = isEnabled
+        };
+
+        var selectedIndex = 0;
+        for (var index = 0; index < collections.Count; index++)
+        {
+            var collection = collections[index];
+            comboBox.Items.Add(new Microsoft.UI.Xaml.Controls.ComboBoxItem
+            {
+                Content = collection.Name,
+                Tag = collection.Id
+            });
+
+            if (string.Equals(collection.Id, selectedCollectionId, StringComparison.Ordinal))
+            {
+                selectedIndex = index;
+            }
+        }
+
+        comboBox.SelectedIndex = selectedIndex;
+        comboBox.SelectionChanged += (_, _) =>
+        {
+            if (comboBox.SelectedItem is not Microsoft.UI.Xaml.Controls.ComboBoxItem item ||
+                item.Tag is not string collectionId ||
+                string.IsNullOrWhiteSpace(collectionId))
+            {
+                return;
+            }
+
+            onSaveSettingValue(TabCollectionService.StartupCollectionSettingKey, collectionId);
+            onSaveSettingValue(TabCollectionService.StartupModeSettingKey, TabCollectionService.StartupModeCollection);
+        };
+
+        panel.Children.Add(comboBox);
+        panel.Children.Add(new TextBlock
+        {
+            Text = isEnabled
+                ? "This collection will open on the next app launch."
+                : "Turn on collection startup to use this selection.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.68
+        });
 
         return panel;
     }
@@ -1647,10 +1828,14 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
+        int historyLimit,
         string historyImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         bool isImportRunning,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
         Action<string> onHistoryFilterChanged,
+        Action onLoadMoreHistory,
         Action onImportHistory,
         Action<string> onImportBrowserHistory,
         Action<string, string> onImportBrowserHistoryProfile,
@@ -1658,12 +1843,13 @@ internal static class BrowserChrome
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         Action<string> onDeleteHistoryItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var historyItems = BuildGroupedHistoryItems(
             recentHistoryItems,
-            item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault))
+            item => BuildHistoryListItem(item, tabCollections, GetCollectionNames(collectionMembership, item.Url), onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, openInNewTabByDefault))
             .ToArray();
 
         return VStack(18,
@@ -1715,7 +1901,10 @@ internal static class BrowserChrome
                 )
                 .Padding(8, 4)
                 : Border(
-                    VStack(0, historyItems)
+                    VStack(10,
+                        VStack(0, historyItems)
+                            .HAlign(HorizontalAlignment.Stretch),
+                        BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
                         .HAlign(HorizontalAlignment.Stretch)
                 )
                 .Padding(4, 0)
@@ -1782,18 +1971,44 @@ internal static class BrowserChrome
         .HAlign(HorizontalAlignment.Stretch);
     }
 
+    private static Element BuildHistoryPagingFooter(int loadedCount, int historyLimit, Action onLoadMoreHistory)
+    {
+        var canLoadMore = loadedCount >= historyLimit && historyLimit < 2500;
+
+        return Border(
+            HStack(10,
+                TextBlock($"Loaded {loadedCount:n0} history items")
+                    .Opacity(0.72)
+                    .VAlign(VerticalAlignment.Center)
+                    .Flex(grow: 1, basis: 0),
+                Button("Load more", onLoadMoreHistory)
+                    .IsEnabled(canLoadMore)
+                    .AutomationName("Load more history")
+                    .ToolTip(canLoadMore ? "Load older history items" : "No more loaded in this page"))
+            .HAlign(HorizontalAlignment.Stretch))
+            .Padding(8, 6)
+            .CornerRadius(10)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
+    }
+
     private static Element BuildRecentBladeContent(
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<HistoryItem> recentHistoryItems,
+        int historyLimit,
         bool isLoading,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
+        Action onLoadMoreHistory,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         Action<string> onDeleteHistoryItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var recentItems = recentHistoryItems
-            .Select(item => BuildHistoryListItem(item, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault))
+            .Select(item => BuildHistoryListItem(item, tabCollections, GetCollectionNames(collectionMembership, item.Url), onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, openInNewTabByDefault))
             .ToArray();
 
         return VStack(10,
@@ -1810,7 +2025,10 @@ internal static class BrowserChrome
                 )
                 .Padding(8, 4)
                 : Border(
-                    VStack(0, recentItems)
+                    VStack(10,
+                        VStack(0, recentItems)
+                            .HAlign(HorizontalAlignment.Stretch),
+                        BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
                         .HAlign(HorizontalAlignment.Stretch)
                 )
                 .Padding(4, 0)
@@ -1822,9 +2040,12 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<HistoryItem> mostVisitedItems,
         bool isLoading,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         Action<string> onDeleteHistoryItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
@@ -1837,7 +2058,7 @@ internal static class BrowserChrome
 
             for (var column = index; column < Math.Min(index + 2, topItems.Length); column++)
             {
-                cards.Add(BuildMostVisitedItem(topItems[column], onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, openInNewTabByDefault)
+                cards.Add(BuildMostVisitedItem(topItems[column], tabCollections, GetCollectionNames(collectionMembership, topItems[column].Url), onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, openInNewTabByDefault)
                     .Flex(grow: 1, basis: 0));
             }
 
@@ -1876,6 +2097,8 @@ internal static class BrowserChrome
         string favoritesImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isImportRunning,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyDictionary<string, string[]> collectionMembership,
         Action<string> onFavoritesFilterChanged,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
@@ -1884,6 +2107,7 @@ internal static class BrowserChrome
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
         Action<string> onDeleteFavoriteItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool isCommandCenterExpanded)
     {
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
@@ -1891,7 +2115,7 @@ internal static class BrowserChrome
 
         for (var index = 0; index < favoriteItems.Count; index++)
         {
-            favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, openInNewTabByDefault));
+            favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], tabCollections, GetCollectionNames(collectionMembership, favoriteItems[index].Url), onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, openInNewTabByDefault));
         }
 
         return VStack(10,
@@ -2562,6 +2786,8 @@ internal static class BrowserChrome
         BrowserTab tab,
         bool isSelected,
         bool isLoading,
+        IReadOnlyList<TabCollection> tabCollections,
+        Action<string, string, string> onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab)
@@ -2579,7 +2805,7 @@ internal static class BrowserChrome
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -2591,6 +2817,9 @@ internal static class BrowserChrome
         BrowserTab tab,
         bool isSelected,
         bool isLoading,
+        IReadOnlyList<string> collectionNames,
+        IReadOnlyList<TabCollection> tabCollections,
+        Action<string, string, string> onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab)
@@ -2599,16 +2828,18 @@ internal static class BrowserChrome
             (FlexRow(
                 BuildTabIcon(tab, isLoading),
                 Border(
-                    TextBlock(tab.Title)
-                        .TextTrimming(TextTrimming.CharacterEllipsis)
-                        .TextWrapping(TextWrapping.Wrap)
-                        .Set(textBlock =>
-                        {
-                            textBlock.FontFamily = BrowserConstants.TextFontFamily;
-                            textBlock.MaxLines = 2;
-                            textBlock.MinHeight = 34;
-                            textBlock.MinWidth = 0;
-                        })
+                    VStack(4,
+                        TextBlock(tab.Title)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.Wrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.FontFamily = BrowserConstants.TextFontFamily;
+                                textBlock.MaxLines = collectionNames.Count > 0 ? 1 : 2;
+                                textBlock.MinHeight = collectionNames.Count > 0 ? 20 : 34;
+                                textBlock.MinWidth = 0;
+                            }),
+                        BuildCollectionBadgeRow(collectionNames, maxBadges: 1))
                 )
                 .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
@@ -2655,7 +2886,7 @@ internal static class BrowserChrome
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, onToggleFavoriteTab, onCloseTab, onReloadTab);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -2716,9 +2947,12 @@ internal static class BrowserChrome
 
     private static Element BuildMostVisitedItem(
         HistoryItem item,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyList<string> collectionNames,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         Action<string> onDeleteHistoryItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool openInNewTabByDefault)
     {
         return Button(
@@ -2743,7 +2977,8 @@ internal static class BrowserChrome
                                 .TextTrimming(TextTrimming.CharacterEllipsis)
                                 .TextWrapping(TextWrapping.NoWrap)
                                 .Opacity(0.68)
-                                .Set(textBlock => textBlock.FontSize = 11)
+                                .Set(textBlock => textBlock.FontSize = 11),
+                            BuildCollectionBadgeRow(collectionNames, maxBadges: 1)
                         )
                     )
                     .MinWidth(0)
@@ -2758,7 +2993,7 @@ internal static class BrowserChrome
             .Width(100)
             .Height(125),
             () => OpenItem(item.Url, openInNewTabByDefault, onOpenHistoryItem, onOpenHistoryItemInNewTab))
-            .Set(button => button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item"))
+            .Set(button => button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, item.Title, tabCollections, onAddUrlToCollection, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item"))
             .AutomationName("MostViewed");
     }
 
@@ -2774,11 +3009,70 @@ internal static class BrowserChrome
         return url;
     }
 
+    private static IReadOnlyList<string> GetCollectionNames(
+        IReadOnlyDictionary<string, string[]> collectionMembership,
+        string url)
+    {
+        if (string.IsNullOrWhiteSpace(url) ||
+            !collectionMembership.TryGetValue(url, out var collectionNames))
+        {
+            return [];
+        }
+
+        return collectionNames;
+    }
+
+    private static Element BuildCollectionBadgeRow(IReadOnlyList<string> collectionNames, int maxBadges)
+    {
+        if (collectionNames.Count == 0)
+        {
+            return Border(null).IsVisible(false);
+        }
+
+        var badges = collectionNames
+            .Take(Math.Max(maxBadges, 1))
+            .Select(BuildCollectionBadge)
+            .ToList();
+
+        if (collectionNames.Count > maxBadges)
+        {
+            badges.Add(BuildCollectionBadge($"+{collectionNames.Count - maxBadges}"));
+        }
+
+        return FlexRow(badges.ToArray()) with
+        {
+            ColumnGap = 4,
+            RowGap = 4
+        };
+    }
+
+    private static Element BuildCollectionBadge(string label)
+    {
+        return Border(
+            TextBlock(label)
+                .TextTrimming(TextTrimming.CharacterEllipsis)
+                .TextWrapping(TextWrapping.NoWrap)
+                .Set(textBlock =>
+                {
+                    textBlock.FontSize = 10;
+                    textBlock.MaxLines = 1;
+                }))
+            .Padding(7, 2)
+            .CornerRadius(999)
+            .Background(BrowserConstants.AccentFillColorTertiaryBrush)
+            .WithBorder(Theme.SurfaceStroke)
+            .MaxWidth(88)
+            .Flex(shrink: 0);
+    }
+
     private static Element BuildHistoryListItem(
         HistoryItem item,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyList<string> collectionNames,
         Action<string> onOpenHistoryItem,
         Action<string> onOpenHistoryItemInNewTab,
         Action<string> onDeleteHistoryItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool openInNewTabByDefault)
     {
         return Border(
@@ -2803,7 +3097,8 @@ internal static class BrowserChrome
                                 {
                                     textBlock.MaxLines = 1;
                                     textBlock.MinWidth = 0;
-                                })
+                                }),
+                            BuildCollectionBadgeRow(collectionNames, maxBadges: 2)
                         )
                         .MinWidth(0)
                         .Flex(grow: 1, basis: 0),
@@ -2824,7 +3119,7 @@ internal static class BrowserChrome
                     {
                         button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
                         ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
-                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item");
+                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, item.Title, tabCollections, onAddUrlToCollection, onOpenHistoryItem, onOpenHistoryItemInNewTab, () => onDeleteHistoryItem(item.Url), "Delete history item");
                     }),
                 IconButton(BrowserConstants.GlyphClose, () => onDeleteHistoryItem(item.Url), "Delete history item", buttonSize: 24, iconSize: 10, useGlass: true)
                     .Flex(shrink: 0)
@@ -2845,9 +3140,12 @@ internal static class BrowserChrome
 
     private static Element BuildFavoriteTabItem(
         FavoriteItem item,
+        IReadOnlyList<TabCollection> tabCollections,
+        IReadOnlyList<string> collectionNames,
         Action<string> onOpenFavoriteItem,
         Action<string> onOpenFavoriteItemInNewTab,
         Action<string> onDeleteFavoriteItem,
+        Action<string, string, string> onAddUrlToCollection,
         bool openInNewTabByDefault)
     {
         return Border(
@@ -2872,7 +3170,8 @@ internal static class BrowserChrome
                                 {
                                     textBlock.MaxLines = 1;
                                     textBlock.MinWidth = 0;
-                                })
+                                }),
+                            BuildCollectionBadgeRow(collectionNames, maxBadges: 2)
                         )
                         .MinWidth(0)
                         .Flex(grow: 1, basis: 0)
@@ -2890,7 +3189,7 @@ internal static class BrowserChrome
                     {
                         button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
                         ToolTipService.SetToolTip(button, string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title);
-                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, () => onDeleteFavoriteItem(item.Id), "Remove favorite");
+                        button.ContextFlyout = CreateOpenItemContextFlyout(item.Url, item.Title, tabCollections, onAddUrlToCollection, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, () => onDeleteFavoriteItem(item.Id), "Remove favorite");
                     }),
                 IconButton(BrowserConstants.GlyphClose, () => onDeleteFavoriteItem(item.Id), "Remove favorite", buttonSize: 24, iconSize: 10, useGlass: true)
                     .Flex(shrink: 0)
@@ -2929,6 +3228,27 @@ internal static class BrowserChrome
         Action? onDeleteItem = null,
         string? deleteText = null)
     {
+        return CreateOpenItemContextFlyout(
+            url,
+            string.Empty,
+            [],
+            null,
+            onOpenCurrentTab,
+            onOpenNewTab,
+            onDeleteItem,
+            deleteText);
+    }
+
+    private static MenuFlyout CreateOpenItemContextFlyout(
+        string url,
+        string title,
+        IReadOnlyList<TabCollection> tabCollections,
+        Action<string, string, string>? onAddUrlToCollection,
+        Action<string> onOpenCurrentTab,
+        Action<string> onOpenNewTab,
+        Action? onDeleteItem = null,
+        string? deleteText = null)
+    {
         var flyout = new MenuFlyout();
 
         var openItem = new MenuFlyoutItem
@@ -2944,6 +3264,45 @@ internal static class BrowserChrome
         };
         openInNewTabItem.Click += (_, _) => onOpenNewTab(url);
         flyout.Items.Add(openInNewTabItem);
+
+        if (onAddUrlToCollection is not null)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            var addToCollectionItem = new MenuFlyoutSubItem
+            {
+                Text = "Add to collection"
+            };
+
+            var collections = tabCollections
+                .Where(collection => !string.IsNullOrWhiteSpace(collection.Name))
+                .OrderBy(collection => collection.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (collections.Length == 0)
+            {
+                addToCollectionItem.Items.Add(new MenuFlyoutItem
+                {
+                    Text = "Create a collection first",
+                    IsEnabled = false
+                });
+            }
+            else
+            {
+                foreach (var collection in collections)
+                {
+                    var collectionName = collection.Name;
+                    var collectionItem = new MenuFlyoutItem
+                    {
+                        Text = collectionName
+                    };
+                    collectionItem.Click += (_, _) => onAddUrlToCollection(collectionName, url, title);
+                    addToCollectionItem.Items.Add(collectionItem);
+                }
+            }
+
+            flyout.Items.Add(addToCollectionItem);
+        }
 
         if (onDeleteItem is not null)
         {
@@ -3072,6 +3431,7 @@ internal static class BrowserChrome
     {
         return Button(FluentIcon(glyph, iconSize), onClick)
             .AutomationName(automationName)
+            .ToolTip(automationName)
             .Width(buttonSize)
             .Height(buttonSize)
             .Padding(0)
