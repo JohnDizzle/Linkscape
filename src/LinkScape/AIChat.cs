@@ -30,41 +30,41 @@
             "Show navigation options"
         };
 
-        var (prompt, setPrompt) = UseState(string.Empty);
-        var (messages, setMessages) = UseState<IReadOnlyList<ChatMessage>>(starterMessages);
-        var (isPinned, setIsPinned) = UseState(false);
-        var (showHistory, setShowHistory) = UseState(false);
-        var (showHelp, setShowHelp) = UseState(false);
-        var (isSending, setIsSending) = UseState(false);
+        var prompt = UseState(string.Empty);
+        var messages = UseState<IReadOnlyList<ChatMessage>>(starterMessages);
+        var isPinned = UseState(false);
+        var showHistory = UseState(false);
+        var showHelp = UseState(false);
+        var isSending = UseState(false);
 
         void ApplyPrompt(string value)
         {
-            setPrompt(value);
+            prompt.Set(value);
         }
 
         void SubmitPrompt()
         {
-            var text = prompt.Trim();
+            var text = prompt.Value.Trim();
 
-            if (string.IsNullOrWhiteSpace(text) || isSending)
+            if (string.IsNullOrWhiteSpace(text) || isSending.Value)
             {
                 return;
             }
 
-            setMessages(
+            messages.Set(
             [
-                ..messages,
+                ..messages.Value,
                 new ChatMessage(text, true),
                 new ChatMessage("Thinking...", false, true)
             ]);
 
-            setPrompt(string.Empty);
-            setIsSending(true);
+            prompt.Set(string.Empty);
+            isSending.Set(true);
 
             // Placeholder for real service integration.
-            setMessages(
+            messages.Set(
             [
-                ..messages,
+                ..messages.Value,
                 new ChatMessage(text, true),
                 new ChatMessage("Thinking...", false, true)
             ]);
@@ -72,11 +72,11 @@
 
         void StopOrNewChat()
         {
-            if (isSending)
+            if (isSending.Value)
             {
-                setIsSending(false);
+                isSending.Set(false);
 
-                setMessages(messages
+                messages.Set(messages.Value
                     .Select(message => message.IsThinking
                         ? message with { Text = "Response stopped by user.", IsThinking = false }
                         : message)
@@ -85,25 +85,25 @@
                 return;
             }
 
-            setMessages(
+            messages.Set(
             [
-                ..messages,
+                ..messages.Value,
                 new ChatMessage("Session cleared. Hi, I'm Web Dive. Ask me anything.", false)
             ]);
         }
 
         return CreateFlyout(
-            prompt,
-            setPrompt,
-            messages,
+            prompt.Value,
+            prompt.Set,
+            messages.Value,
             quickPrompts,
-            isPinned,
-            setIsPinned,
-            showHistory,
-            setShowHistory,
-            showHelp,
-            setShowHelp,
-            isSending,
+            isPinned.Value,
+            isPinned.Set,
+            showHistory.Value,
+            showHistory.Set,
+            showHelp.Value,
+            showHelp.Set,
+            isSending.Value,
             SubmitPrompt,
             StopOrNewChat,
             ApplyPrompt);

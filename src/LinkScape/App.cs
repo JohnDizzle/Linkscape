@@ -9,6 +9,13 @@ using Windows.Graphics;
 
 using Windows.Win32.UI.WindowsAndMessaging;
 
+var commandLineArgs = Environment.GetCommandLineArgs();
+
+if (await LocalMcpServerService.TryRunAsync(commandLineArgs))
+{
+    return;
+}
+
 if (!await LinkScape.ActivationRoutingService.InitializeAsync())
 {
     return;
@@ -18,6 +25,7 @@ TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
+TabCollectionService.EnsureDatabase();
 const string WindowPositionXSettingKey = "window.position.x";
 const string WindowPositionYSettingKey = "window.position.y";
 const string WindowWidthSettingKey = "window.size.width";
@@ -246,7 +254,7 @@ internal static class MainWindowActivation
 class App : Component
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
-    private const int StartupSplashDurationMilliseconds = 800;
+    private const int StartupSplashDurationMilliseconds = 1010;
     private static readonly object UnhandledExceptionSyncRoot = new();
     private static bool _unhandledExceptionHandlerRegistered;
     private bool _errorListenerRegistered;
@@ -255,32 +263,32 @@ class App : Component
 
     public override Element Render()
     {
-        var (backdropGradientPreset, setBackdropGradientPreset) = UseState(
+        var backdropGradientPreset = UseState(
             LinkScape.AppBackdropBrushes.NormalizePreset(
                 SettingsService.GetValueOrDefault(
                     BackdropGradientPresetSettingKey,
                     LinkScape.AppBackdropBrushes.DefaultPreset)));
-        var (fatalError, setFatalError) = UseState<Exception?>(LinkScape.AppErrorStateService.CurrentError, threadSafe: true);
-        var (isShowingStartupSplash, setIsShowingStartupSplash) = UseState(true, threadSafe: true);
+        var fatalError = UseState<Exception?>(LinkScape.AppErrorStateService.CurrentError, threadSafe: true);
+        var isShowingStartupSplash = UseState(true, threadSafe: true);
 
-        RegisterSettingsListener(setBackdropGradientPreset);
-        RegisterErrorListener(setFatalError);
+        RegisterSettingsListener(backdropGradientPreset.Set);
+        RegisterErrorListener(fatalError.Set);
         RegisterUnhandledExceptionHandler();
-        ScheduleStartupSplashDismissal(setIsShowingStartupSplash);
+        ScheduleStartupSplashDismissal(isShowingStartupSplash.Set);
 
         try
         {
 
-            return fatalError is not null
-                ? BuildErrorSurface(backdropGradientPreset, fatalError)
-                : isShowingStartupSplash
+            return fatalError.Value is not null
+                ? BuildErrorSurface(backdropGradientPreset.Value, fatalError.Value)
+                : isShowingStartupSplash.Value
                     ? LinkScape.AppLoadingSurface.Build()
-                : BuildMainSurface(backdropGradientPreset);
+                : BuildMainSurface(backdropGradientPreset.Value);
         }
         catch (Exception ex)
         {
             LinkScape.AppErrorStateService.SetError(ex);
-            return BuildErrorSurface(backdropGradientPreset, ex);
+            return BuildErrorSurface(backdropGradientPreset.Value, ex);
         }
     }
 

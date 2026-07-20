@@ -43,7 +43,6 @@ internal sealed class BrowserWebViewHostController
 internal sealed record BrowserWebViewHostProps(
     BrowserWebViewHostController Controller,
     BrowserTab SelectedTab,
-    bool IsCommandCenterOpen,
     Action OnHostTapped,
     Action<string, Func<BrowserTab, BrowserTab>> UpdateTab,
     Action<string> OpenUriInNewTab,
@@ -75,6 +74,22 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
+
+    protected override bool ShouldUpdate(BrowserWebViewHostProps? oldProps, BrowserWebViewHostProps? newProps)
+    {
+        if (oldProps is null || newProps is null)
+        {
+            return true;
+        }
+
+        return !ReferenceEquals(oldProps.Controller, newProps.Controller) ||
+            !string.Equals(oldProps.SelectedTab.Id, newProps.SelectedTab.Id, StringComparison.Ordinal) ||
+            !string.Equals(oldProps.SelectedTab.Url, newProps.SelectedTab.Url, StringComparison.Ordinal) ||
+            !string.Equals(oldProps.SelectedTab.Title, newProps.SelectedTab.Title, StringComparison.Ordinal) ||
+            oldProps.SelectedTab.IsFavorite != newProps.SelectedTab.IsFavorite ||
+            oldProps.SelectedTab.ScrollX != newProps.SelectedTab.ScrollX ||
+            oldProps.SelectedTab.ScrollY != newProps.SelectedTab.ScrollY;
+    }
 
     public override Element Render()
     {
@@ -381,21 +396,28 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     {
         host.DispatcherQueue.TryEnqueue(() =>
         {
+            if (host.Child == webView)
+            {
+                webView.Visibility = Visibility.Visible;
+                return;
+            }
+
             if (webView.Parent is Microsoft.UI.Xaml.Controls.Border previousHost &&
                 previousHost != host)
             {
                 previousHost.Child = null;
             }
 
-            if (host.Child != webView)
-            {
-                host.Child = webView;
-            }
+            host.Child = webView;
 
             webView.Visibility = Visibility.Visible;
             webView.InvalidateMeasure();
             webView.InvalidateArrange();
-            webView.UpdateLayout();
+
+            if (webView.IsLoaded)
+            {
+                webView.UpdateLayout();
+            }
         });
     }
 
@@ -410,7 +432,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         {
             _activeWebView.InvalidateMeasure();
             _activeWebView.InvalidateArrange();
-            _activeWebView.UpdateLayout();
+
+            if (_activeWebView.IsLoaded)
+            {
+                _activeWebView.UpdateLayout();
+            }
         });
     }
 

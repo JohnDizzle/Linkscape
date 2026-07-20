@@ -22,6 +22,8 @@ internal static class BrowserConstants
     public const string GlyphFavorite = "\uE735";
     public const string GlyphFavoriteOutline = "\uE734";
     public const string GlyphAdd = "\uE710";
+    public const string GlyphCollections = "\uE8A9";
+    public const string GlyphTabs = "\uE8A9";
     public const string GlyphClose = "\uE711";
     public const string GlyphTrash = "\uE74D";
     public const string GlyphRefresh = "\uE72C";
@@ -30,6 +32,7 @@ internal static class BrowserConstants
     public const string GlyphChevronUp = "\uE70E";
     public const string GlyphChevronDown = "\uE70D";
     public const string GlyphMagnifyGlass = "\uE721";
+    public const string GlyphChat = "\uE8F2";
     public static FontFamily TextFontFamily => new("Segoe UI");
     public static FontFamily IconFontFamily => new("Segoe Fluent Icons");
     public static Brush LayerFillDefaultBrush => GetBrush("LayerFillColorDefaultBrush");
