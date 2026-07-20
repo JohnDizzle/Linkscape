@@ -23,6 +23,7 @@ public static class LocalMcpToolRouter
             BrowserDataToolService.HistoryMostVisitedToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSummaryToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSearchToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.TabsSummaryToolName => InvokeBrowserTool(toolName, arguments),
             _ => new ChatToolResult(toolName, false, $"Local MCP tool '{toolName}' is not registered.")
         };
     }
@@ -35,7 +36,12 @@ public static class LocalMcpToolRouter
             return new ChatToolResult(WindowsIntentToolName, false, "A prompt argument is required.");
         }
 
-        var selectedToolName = BrowserDataToolService.SelectToolName(prompt);
+        if (!BrowserDataToolService.TrySelectToolName(prompt, out var selectedToolName))
+        {
+            var response = CommandCenterChatService.BuildUnsupportedPromptResponse(prompt);
+            return new ChatToolResult(WindowsIntentToolName, false, response.Text);
+        }
+
         var forwardedArguments = new Dictionary<string, string>(arguments, StringComparer.OrdinalIgnoreCase)
         {
             ["query"] = arguments.TryGetValue("query", out var query) && !string.IsNullOrWhiteSpace(query)

@@ -1315,7 +1315,8 @@ class TabViewPage : Component
                 {
                     ColumnGap = 10
                 },
-                Component<CommandCenterChatPanel>()
+                Component<CommandCenterChatPanel, CommandCenterChatPanelProps>(
+                    new CommandCenterChatPanelProps(url => OpenUriInNewTab(url, dismissCommandCenter: false)))
                     .Flex(grow: 1, basis: 0)) with
             {
                 RowGap = 12

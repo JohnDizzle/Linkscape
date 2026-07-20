@@ -1,11 +1,17 @@
+using System.Threading;
+using System.Threading.Tasks;
 using LinkScape.Browser;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Reactor.Markdown;
 
 namespace Browser.Components;
 
-internal sealed class CommandCenterChatPanel : Component
+internal sealed record CommandCenterChatPanelProps(Action<string> OnOpenLinkInNewTab);
+
+internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelProps>
 {
     private const string StoreLogoAssetPath = "ms-appx:///Assets/StoreLogo.png";
+    private const string LinkerSvgAssetPath = "ms-appx:///Assets/LoadingLink.silver.svg";
     private const double MessageFontSize = 15;
     private const double MetaFontSize = 12;
     private const double AssistantBubbleMaxWidth = 480;
@@ -15,10 +21,13 @@ internal sealed class CommandCenterChatPanel : Component
 
     private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
+    private FrameworkElement? _messagesBottomAnchor;
+    private int _scrollRequestVersion;
 
     public override Element Render()
     {
         var prompt = UseState(string.Empty);
+        var arePromptSuggestionsOpen = UseState(true);
         var messages = UseState<IReadOnlyList<ChatPanelMessage>>(
         [
             new ChatPanelMessage(
@@ -47,6 +56,7 @@ internal sealed class CommandCenterChatPanel : Component
         void ApplyPrompt(string value)
         {
             prompt.Set(value);
+            arePromptSuggestionsOpen.Set(false);
         }
 
         async void SubmitPrompt()
@@ -59,6 +69,7 @@ internal sealed class CommandCenterChatPanel : Component
             }
 
             prompt.Set(string.Empty);
+            arePromptSuggestionsOpen.Set(false);
             isSending.Set(true);
             var pendingMessages = messages.Value
                 .Concat(
@@ -115,19 +126,38 @@ internal sealed class CommandCenterChatPanel : Component
             ColumnGap = 6
         };
 
-        var messageList = FlexColumn(messages.Value.Select(BuildMessageBubble).ToArray()) with
+        var messageList = FlexColumn(
+            [
+                .. messages.Value.Select(BuildMessageBubble),
+                Border(null)
+                    .Height(1)
+                    .Set(anchor => _messagesBottomAnchor = anchor)
+            ]) with
         {
             RowGap = 8
         };
 
         var input = Border(
             FlexRow(
-                AutoSuggestBox(prompt.Value, prompt.Set, _ => SubmitPrompt())
+                AutoSuggestBox(prompt.Value, value =>
+                {
+                    prompt.Set(value);
+                    if (!string.IsNullOrWhiteSpace(value))
+                    {
+                        arePromptSuggestionsOpen.Set(false);
+                    }
+                }, _ => SubmitPrompt())
                     .AutomationName("CommandCenterChatPrompt")
+                    .SuggestionChosen(value =>
+                    {
+                        prompt.Set(value);
+                        arePromptSuggestionsOpen.Set(false);
+                    })
+                    .IsSuggestionListOpen(arePromptSuggestionsOpen.Value && !isSending.Value)
                     .Flex(grow: 1, basis: 0) with
                 {
                     PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about history, favorites, today, active sites, or mcp status...",
-                    Suggestions = string.IsNullOrWhiteSpace(prompt.Value)
+                    Suggestions = arePromptSuggestionsOpen.Value && string.IsNullOrWhiteSpace(prompt.Value)
                         ? new[]
                         {
                             "history tell me today's active sites",
@@ -178,20 +208,44 @@ internal sealed class CommandCenterChatPanel : Component
     private void ScrollMessagesToBottom()
     {
         var scrollViewer = _messagesScrollViewer;
+        var version = Interlocked.Increment(ref _scrollRequestVersion);
 
         if (scrollViewer is null)
         {
             return;
         }
 
-        scrollViewer.DispatcherQueue.TryEnqueue(() =>
+        _ = Task.Run(async () =>
         {
-            scrollViewer.UpdateLayout();
-            scrollViewer.ChangeView(null, scrollViewer.ScrollableHeight, null, disableAnimation: false);
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                await Task.Delay(attempt == 0 ? 20 : 70);
+
+                if (version != Volatile.Read(ref _scrollRequestVersion))
+                {
+                    return;
+                }
+
+                scrollViewer.DispatcherQueue.TryEnqueue(() =>
+                {
+                    scrollViewer.UpdateLayout();
+
+                    if (_messagesBottomAnchor is not null)
+                    {
+                        _messagesBottomAnchor.StartBringIntoView(new BringIntoViewOptions
+                        {
+                            AnimationDesired = true,
+                            VerticalAlignmentRatio = 1
+                        });
+                    }
+
+                    scrollViewer.ChangeView(null, scrollViewer.ScrollableHeight, null, disableAnimation: false);
+                });
+            }
         });
     }
 
-    private static Element BuildMessageBubble(ChatPanelMessage message)
+    private Element BuildMessageBubble(ChatPanelMessage message)
     {
         Element messageContent = message.IsUser
             ? TextBlock(message.Text)
@@ -199,7 +253,14 @@ internal sealed class CommandCenterChatPanel : Component
                 .FontSize(MessageFontSize)
             : message.IsThinking
                 ? CreateThinkingIndicator()
-            : Border(Markdown(message.Text)
+            : Border(Markdown(message.Text, new MarkdownOptions
+                {
+                    LinkBuilder = (children, uri) =>
+                        Button(FlexRow(children), () => OpenMarkdownLink(uri))
+                            .TextLink()
+                            .Padding(0)
+                            .AutomationName($"Open {uri}")
+                })
                     .HAlign(HorizontalAlignment.Stretch)
                     .MaxWidth(AssistantBubbleMaxWidth - 24))
                 .Padding(0)
@@ -229,6 +290,16 @@ internal sealed class CommandCenterChatPanel : Component
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
             .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth);
+    }
+
+    private void OpenMarkdownLink(Uri uri)
+    {
+        var target = uri.IsAbsoluteUri ? uri.AbsoluteUri : uri.ToString();
+
+        if (!string.IsNullOrWhiteSpace(target))
+        {
+            Props.OnOpenLinkInNewTab(target);
+        }
     }
 
     private static Element CreateThinkingIndicator()
@@ -293,9 +364,10 @@ internal sealed class CommandCenterChatPanel : Component
         }
 
         return Border(
-            TextBlock("U")
-                .FontSize(11)
-                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.Bold)
+            Image(LinkerSvgAssetPath)
+                .AutomationName("You")
+                .Width(18)
+                .Height(18)
                 .HAlign(HorizontalAlignment.Center)
                 .VAlign(VerticalAlignment.Center))
             .Width(24)

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using LinkScape.Models;
 
 public sealed record BrowserDataAssistantResult(
     string Markdown,
@@ -46,6 +47,61 @@ public static class BrowserDataAssistantService
         return BuildFavoritesReport("favorites summary");
     }
 
+    public static BrowserDataAssistantResult BuildTabsSummaryReport()
+    {
+        var tabs = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs") ?? [];
+        var selectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
+        var orderedTabs = tabs
+            .OrderBy(tab => tab.Order)
+            .ThenBy(tab => tab.DateTime)
+            .ToArray();
+        var selectedTab = orderedTabs.FirstOrDefault(tab => string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal));
+
+        var markdown = new StringBuilder();
+        markdown.AppendLine("## Saved tab session");
+        markdown.AppendLine();
+        markdown.AppendLine($"- Saved tabs: **{orderedTabs.Length}**");
+        markdown.AppendLine($"- Selected tab: **{MarkdownLink(GetDisplayTitle(selectedTab), selectedTab?.Url)}**");
+        markdown.AppendLine($"- Favorite tabs: **{orderedTabs.Count(tab => tab.IsFavorite)}**");
+        markdown.AppendLine($"- Home tabs: **{orderedTabs.Count(tab => tab.IsHomeTab)}**");
+        markdown.AppendLine();
+
+        if (orderedTabs.Length == 0)
+        {
+            markdown.AppendLine("No persisted tabs are stored right now. LinkScape will open the configured home page on startup.");
+            return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
+        }
+
+        markdown.AppendLine("### Tabs");
+        markdown.AppendLine();
+
+        foreach (var tab in orderedTabs.Take(20))
+        {
+            var badges = new List<string>();
+
+            if (string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal))
+            {
+                badges.Add("selected");
+            }
+
+            if (tab.IsFavorite)
+            {
+                badges.Add("favorite");
+            }
+
+            if (tab.IsHomeTab)
+            {
+                badges.Add("home");
+            }
+
+            var suffix = badges.Count > 0 ? $" · {string.Join(", ", badges)}" : string.Empty;
+            markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(tab), tab.Url)}**  ");
+            markdown.AppendLine($"  {EscapeMarkdown(GetHost(tab.Url))} · visits: {tab.VisitedCount} · saved {tab.DateTime:g}{suffix}");
+        }
+
+        return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
+    }
+
     public static BrowserDataAssistantResult BuildFavoritesSearchReport(string query)
     {
         var favorites = FavoritesService.SearchFavorites(query).Take(12).ToArray();
@@ -61,7 +117,7 @@ public static class BrowserDataAssistantService
 
         foreach (var favorite in favorites)
         {
-            markdown.AppendLine($"- **{EscapeMarkdown(favorite.Title)}**  ");
+            markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(favorite), favorite.Url)}**  ");
             markdown.AppendLine($"  {EscapeMarkdown(favorite.Url)}");
         }
 
@@ -99,7 +155,7 @@ public static class BrowserDataAssistantService
         markdown.AppendLine();
         markdown.AppendLine($"- Pages considered: **{activeItems.Length}**");
         markdown.AppendLine($"- Total stored visits across those pages: **{totalVisits}**");
-        markdown.AppendLine($"- Most recent item: **{GetDisplayTitle(activeItems.FirstOrDefault())}**");
+        markdown.AppendLine($"- Most recent item: **{MarkdownLink(GetDisplayTitle(activeItems.FirstOrDefault()), activeItems.FirstOrDefault()?.Url)}**");
         markdown.AppendLine();
 
         if (topHosts.Length > 0)
@@ -122,7 +178,7 @@ public static class BrowserDataAssistantService
 
         foreach (var item in activeItems.Take(8))
         {
-            markdown.AppendLine($"- **{EscapeMarkdown(GetDisplayTitle(item))}**  ");
+            markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(item), item.Url)}**  ");
             markdown.AppendLine($"  {EscapeMarkdown(GetHost(item.Url))} · {item.LastVisitedAt:g} · visits: {item.VisitCount}");
         }
 
@@ -162,7 +218,7 @@ public static class BrowserDataAssistantService
 
         markdown.AppendLine($"- Pages considered: **{activeItems.Count}**");
         markdown.AppendLine($"- Total stored visits across those pages: **{totalVisits}**");
-        markdown.AppendLine($"- Most recent item: **{EscapeMarkdown(GetDisplayTitle(activeItems.FirstOrDefault()))}**");
+        markdown.AppendLine($"- Most recent item: **{MarkdownLink(GetDisplayTitle(activeItems.FirstOrDefault()), activeItems.FirstOrDefault()?.Url)}**");
         markdown.AppendLine();
 
         if (topHosts.Length > 0)
@@ -187,7 +243,7 @@ public static class BrowserDataAssistantService
 
             foreach (var item in activeItems.Take(10))
             {
-                markdown.AppendLine($"- **{EscapeMarkdown(GetDisplayTitle(item))}**  ");
+                markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(item), item.Url)}**  ");
                 markdown.AppendLine($"  {EscapeMarkdown(GetHost(item.Url))} · {item.LastVisitedAt:g} · visits: {item.VisitCount}");
             }
         }
@@ -208,14 +264,14 @@ public static class BrowserDataAssistantService
         markdown.AppendLine("## Favorites summary");
         markdown.AppendLine();
         markdown.AppendLine($"- Favorites stored: **{favorites.Length}**");
-        markdown.AppendLine($"- Most recently updated: **{GetDisplayTitle(recentFavorites.FirstOrDefault())}**");
+        markdown.AppendLine($"- Most recently updated: **{MarkdownLink(GetDisplayTitle(recentFavorites.FirstOrDefault()), recentFavorites.FirstOrDefault()?.Url)}**");
         markdown.AppendLine();
         markdown.AppendLine("### Recent favorites");
         markdown.AppendLine();
 
         foreach (var favorite in recentFavorites)
         {
-            markdown.AppendLine($"- **{EscapeMarkdown(favorite.Title)}**  ");
+            markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(favorite), favorite.Url)}**  ");
             markdown.AppendLine($"  {EscapeMarkdown(GetHost(favorite.Url))} · updated {favorite.UpdatedAt:g}");
         }
 
@@ -324,8 +380,29 @@ public static class BrowserDataAssistantService
     private static string GetDisplayTitle(FavoriteItem? item) =>
         item is null ? "None" : string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title;
 
+    private static string GetDisplayTitle(BrowserTab? tab) =>
+        tab is null ? "None" : string.IsNullOrWhiteSpace(tab.Title) ? tab.Url : tab.Title;
+
     private static string EscapeMarkdown(string value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : value.Replace("|", "\\|", StringComparison.Ordinal);
+
+    private static string MarkdownLink(string title, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return EscapeMarkdown(title);
+        }
+
+        return $"[{EscapeMarkdownLinkText(title)}](<{EscapeMarkdownLinkUrl(url)}>)";
+    }
+
+    private static string EscapeMarkdownLinkText(string value) =>
+        EscapeMarkdown(value)
+            .Replace("[", "\\[", StringComparison.Ordinal)
+            .Replace("]", "\\]", StringComparison.Ordinal);
+
+    private static string EscapeMarkdownLinkUrl(string value) =>
+        value.Replace(">", "%3E", StringComparison.Ordinal);
 
     private static string Html(string value) => WebUtility.HtmlEncode(value ?? string.Empty);
 }

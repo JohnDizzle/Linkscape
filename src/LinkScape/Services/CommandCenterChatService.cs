@@ -67,10 +67,7 @@ public static class CommandCenterChatService
             return new CommandCenterChatResponse(result.Message, !result.Succeeded, [result]);
         }
 
-        var onlineResult = OnlineReferenceService.BuildReactorReference(prompt);
-        return new CommandCenterChatResponse(
-            $"I do not have a local model connected yet. For now, I can route framework questions to online reference links.\n\n{onlineResult.Message}",
-            ToolResults: [onlineResult]);
+        return BuildUnsupportedPromptResponse(prompt);
     }
 
     private static CommandCenterChatResponse SearchReactor(string prompt)
@@ -132,7 +129,11 @@ public static class CommandCenterChatService
         string prompt,
         CancellationToken cancellationToken)
     {
-         var toolName = BrowserDataToolService.SelectToolName(prompt);
+        if (!BrowserDataToolService.TrySelectToolName(prompt, out var toolName))
+        {
+            return BuildUnsupportedPromptResponse(prompt);
+        }
+
         var arguments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["prompt"] = prompt,
@@ -177,11 +178,40 @@ public static class CommandCenterChatService
         prompt.Contains("history", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("favorite", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("bookmark", StringComparison.OrdinalIgnoreCase) ||
-        prompt.Contains("today", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("active", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("visited", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("browser", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("tab", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("database", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("data", StringComparison.OrdinalIgnoreCase);
+
+    public static CommandCenterChatResponse BuildUnsupportedPromptResponse(string prompt)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("## I can only answer browser questions right now");
+        builder.AppendLine();
+        builder.AppendLine("I could not match that request to a local LinkScape browser tool.");
+        builder.AppendLine();
+        builder.AppendLine("### What I can use");
+        builder.AppendLine();
+        builder.AppendLine("- **Browser history**: today, recent activity, most visited sites, active pages");
+        builder.AppendLine("- **Favorites**: summarize saved favorites or search bookmarks");
+        builder.AppendLine("- **Tabs**: summarize the saved tab session and selected/restored tabs");
+        builder.AppendLine("- **Local MCP tools**: type `mcp status` or `tools` to see the current tool catalog");
+        builder.AppendLine();
+        builder.AppendLine("### Not connected yet");
+        builder.AppendLine();
+        builder.AppendLine("- General Q&A, weather, news, and web search are not connected to a model or API key yet.");
+        builder.AppendLine("- Later, LinkScape can add an API key setting for common questions.");
+
+        return new CommandCenterChatResponse(
+            builder.ToString().TrimEnd(),
+            IsError: true,
+            ToolResults:
+            [
+                new ChatToolResult("linkscape.browser.scope", false, $"No browser tool matched prompt: {prompt}")
+            ]);
+    }
 
     private static string ExtractSearchQuery(string prompt)
     {
