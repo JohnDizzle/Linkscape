@@ -1,7 +1,7 @@
 # LinkScape
 <img width="1920" height="1080" alt="Screenshot (284)" src="https://github.com/user-attachments/assets/4a94c741-53d8-4ef9-8bf9-aeb2ded72a22" />
 
-[Microsoft Store](https://apps.microsoft.com/detail/9NLNN451LC7T?hl=en-us&gl=US&ocid=pdpshare)
+[![Download on Microsoft Store](https://img.shields.io/badge/Download-Microsoft%20Store-00A4EF?style=for-the-badge&logo=microsoft&logoColor=white)](https://apps.microsoft.com/detail/9NLNN451LC7T?hl=en-us&gl=US&ocid=pdpshare)
 
 LinkScape is a WinUI 3 desktop browser-style app built on .NET 10 and Microsoft UI Reactor.
 
