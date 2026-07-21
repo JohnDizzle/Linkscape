@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Linker Help - LinkScape Browser</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #17191f;
+      --panel: #24262c;
+      --panel-2: #2d3037;
+      --text: #f4f6fb;
+      --muted: #b8c0cc;
+      --line: #454955;
+      --accent: #9b7ad8;
+      --accent-2: #20b8a9;
+      --warn: #f2b84b;
+      --good: #75d99b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(155, 122, 216, 0.22), transparent 36rem),
+        radial-gradient(circle at 85% 12%, rgba(32, 184, 169, 0.16), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 56px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(36, 38, 44, 0.86);
+      backdrop-filter: blur(14px);
+    }
+
+    header img {
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      letter-spacing: 0;
+      line-height: 1.18;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.6rem);
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      margin-bottom: 10px;
+    }
+
+    h3 {
+      font-size: 1.05rem;
+      margin-bottom: 6px;
+    }
+
+    p {
+      margin: 6px 0 0;
+      color: var(--muted);
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #17191f;
+      color: #f5d89d;
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .card, section {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(36, 38, 44, 0.88);
+      padding: 18px;
+    }
+
+    section {
+      margin-top: 18px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin-top: 10px;
+    }
+
+    .status {
+      color: var(--good);
+    }
+
+    .warn {
+      color: var(--warn);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--text);
+      background: rgba(45, 48, 55, 0.9);
+      font-weight: 650;
+    }
+
+    td {
+      color: var(--muted);
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+      color: var(--muted);
+    }
+
+    li + li {
+      margin-top: 4px;
+    }
+
+    .prompt-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .prompt {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #1f2127;
+      color: var(--text);
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.92rem;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 780px) {
+      header, .grid, .split, .prompt-list {
+        grid-template-columns: 1fr;
+      }
+
+      main {
+        width: min(100% - 20px, 1120px);
+        padding-top: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="../StoreLogo.scale-100.png" alt="LinkScape logo">
+      <div>
+        <h1>Meet Linker</h1>
+        <p>Linker is the browser helper inside LinkScape. It can answer questions about local browser data, use LinkScape tools, and optionally hand general chat questions to a provider key you choose.</p>
+        <span class="badge"><span class="status">Local tools first</span> then provider chat when connected</span>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Local MCP tools</h3>
+        <p>Read browser history, favorites, saved tabs, active tabs, collections, and browser settings stored by LinkScape.</p>
+      </div>
+      <div class="card">
+        <h3>Browser actions</h3>
+        <p>Switch tabs, open a new tab, navigate, go home, reload, and answer from the current LinkScape window.</p>
+      </div>
+      <div class="card">
+        <h3>Optional AI services</h3>
+        <p>Add your own provider key to ask general questions after local LinkScape tools do not match.</p>
+      </div>
+    </div>
+
+    <section>
+      <h2>How Linker Decides</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>What you ask</th>
+            <th>What Linker does</th>
+            <th>Example</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Browser data question</td>
+            <td>Uses local LinkScape SQLite data through MCP/browser tools.</td>
+            <td><code>show my collections</code></td>
+          </tr>
+          <tr>
+            <td>Browser action</td>
+            <td>Uses the running LinkScape window when available.</td>
+            <td><code>switch to google tab</code></td>
+          </tr>
+          <tr>
+            <td>General chat question</td>
+            <td>Uses your selected provider only if you saved a provider key.</td>
+            <td><code>what is the weather today?</code></td>
+          </tr>
+          <tr>
+            <td>No local tool and no provider key</td>
+            <td>Returns a standard explanation and asks you to add a key for broader chat.</td>
+            <td><code>explain quantum computing</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Tool Capabilities</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>What Linker can do</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>History</td>
+            <td>Summarize recent activity, most visited sites, active sites today, name searches, month/year queries, and imported browser history.</td>
+          </tr>
+          <tr>
+            <td>Favorites</td>
+            <td>List favorites, summarize counts, find saved favorite links, and open extracted links in LinkScape.</td>
+          </tr>
+          <tr>
+            <td>Tabs</td>
+            <td>Show saved tabs, list active tabs, find a tab by title or URL, switch to a tab, open a new tab, reload, go back, go forward, and go home.</td>
+          </tr>
+          <tr>
+            <td>Collections</td>
+            <td>List collections, show a named collection, add the current page or a URL, remove an item, and set a startup collection.</td>
+          </tr>
+          <tr>
+            <td>Settings</td>
+            <td>Read startup behavior, home page, provider status, collection startup settings, and open-in-new-tab preferences.</td>
+          </tr>
+          <tr>
+            <td>AI provider keys</td>
+            <td>Store user-provided keys in Windows Credential Manager. LinkScape keeps non-secret provider settings in its settings database.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="split">
+      <div>
+        <h2>Try These Prompts</h2>
+        <div class="prompt-list">
+          <div class="prompt">show my collections</div>
+          <div class="prompt">what's in the personal collection?</div>
+          <div class="prompt">add current page to collection personal</div>
+          <div class="prompt">summarize my saved tabs</div>
+          <div class="prompt">switch to google tab</div>
+          <div class="prompt">show history with microsoft in the name</div>
+          <div class="prompt">show me history for this month</div>
+          <div class="prompt">mcp status</div>
+        </div>
+      </div>
+      <div>
+        <h2>Privacy Notes</h2>
+        <ul>
+          <li>Local browser tools read LinkScape data from local SQLite databases.</li>
+          <li>History, favorites, tabs, collections, and settings stay on your device unless you ask a connected provider a broader chat question.</li>
+          <li>Provider API keys are saved in Windows Credential Manager.</li>
+          <li>When a provider key is connected, local LinkScape tools still run first.</li>
+          <li>Safety checks can stop harmful or inappropriate chat requests before provider fallback.</li>
+        </ul>
+        <p class="badge"><span class="warn">Tip</span> Type <code>mcp status</code> to see which local tools are available.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

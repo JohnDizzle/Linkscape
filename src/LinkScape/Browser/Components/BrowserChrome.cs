@@ -392,16 +392,18 @@ internal static class BrowserChrome
             .Width(22)
             .Height(22)
             .CornerRadius(6)
-            .Background(Theme.LayerFill)
-            .WithBorder(Theme.SurfaceStroke)
             .Padding(2),
             () => { })
             .AutomationName("Search provider")
             .ToolTip("Search provider")
-            .Width(30)
-            .Height(30)
+            .Width(32)
+            .Height(32)
             .Padding(0)
-            .Set(button => button.Flyout = flyout); 
+            .Set(button =>
+            {
+                button.Style = GetGlassIconButtonStyle();
+                button.Flyout = flyout;
+            });
     }
 
     private static MenuFlyout CreateTabContextFlyout(

@@ -1844,6 +1844,14 @@ class TabViewPage : Component
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
                         .VAlign(VerticalAlignment.Center)
                         .Flex(grow: 1, basis: 0),
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphHelp, 12), () => OpenUriInNewTab(BrowserConstants.LinkerHelpUrl, dismissCommandCenter: false))
+                        .AutomationName("Open Linker help")
+                        .ToolTip("Open Linker help")
+                        .Width(34)
+                        .Height(34)
+                        .Padding(0)
+                        .CornerRadius(17)
+                        .Background(BrowserConstants.LayerFillDefaultBrush),
                     Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 12), CloseChatBlade)
                         .AutomationName("Close chat")
                         .Width(34)

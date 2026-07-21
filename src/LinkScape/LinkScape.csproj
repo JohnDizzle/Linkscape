@@ -78,6 +78,9 @@
       <Content Update="Assets\LoadingLink.silver.svg">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </Content>
+      <Content Update="Assets\Help\**\*.*">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
     </ItemGroup>
     <ItemGroup>
       <Folder Include="Services\Mcp\Helpers\" />

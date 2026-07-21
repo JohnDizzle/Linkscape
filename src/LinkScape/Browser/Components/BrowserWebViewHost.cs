@@ -60,6 +60,8 @@ internal sealed record BrowserWebViewHostProps(
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 {
+    private const string LinkerVirtualHostName = "linker.local";
+    private const string LinkerAssetsFolderName = "Assets";
     private const string PauseMediaScript = """
         (() => {
             const media = Array.from(document.querySelectorAll('video, audio'));
@@ -236,6 +238,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 VerticalAlignment = VerticalAlignment.Stretch,
                 MinHeight = 300
             };
+            webView.CoreWebView2Initialized += HandleCoreWebView2Initialized;
 
             _webViewsByTabId[tab.Id] = webView;
             isNewWebView = true;
@@ -251,6 +254,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         var core = webView.CoreWebView2;
+        ConfigureLinkerVirtualHost(core);
 
         if (core is not null && _hookedWebViewTabs.Add(tab.Id))
         {
@@ -396,6 +400,32 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         AttachWebViewToHost(_webViewHost ?? host, webView);
+    }
+
+    private static void HandleCoreWebView2Initialized(
+        Microsoft.UI.Xaml.Controls.WebView2 sender,
+        Microsoft.UI.Xaml.Controls.CoreWebView2InitializedEventArgs args)
+    {
+        ConfigureLinkerVirtualHost(sender.CoreWebView2);
+    }
+
+    private static void ConfigureLinkerVirtualHost(CoreWebView2? core)
+    {
+        if (core is null)
+        {
+            return;
+        }
+
+        var assetsFolder = System.IO.Path.Combine(AppContext.BaseDirectory, LinkerAssetsFolderName);
+        if (!System.IO.Directory.Exists(assetsFolder))
+        {
+            return;
+        }
+
+        core.SetVirtualHostNameToFolderMapping(
+            LinkerVirtualHostName,
+            assetsFolder,
+            CoreWebView2HostResourceAccessKind.Allow);
     }
 
     private static void AttachWebViewToHost(
