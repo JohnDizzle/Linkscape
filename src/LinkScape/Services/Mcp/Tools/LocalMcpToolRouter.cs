@@ -5,8 +5,24 @@ public static class LocalMcpToolRouter
     public static IReadOnlyList<ChatToolStatus> GetTools() =>
     [
         new(WindowsIntentToolName, true, "Routes a natural-language prompt to a safe local browser-data tool."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsList, "Lists open browser tabs with IDs, titles, URLs, and selected state."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsFind, "Finds open tabs by title or URL."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsActivate, "Activates an existing browser tab."),
+        CreateNavigationStatus(BrowserNavigationToolNames.Navigate, "Navigates an existing browser tab to a URL."),
+        CreateNavigationStatus(BrowserNavigationToolNames.GoBack, "Navigates backward in a browser tab."),
+        CreateNavigationStatus(BrowserNavigationToolNames.GoForward, "Navigates forward in a browser tab."),
+        CreateNavigationStatus(BrowserNavigationToolNames.Reload, "Reloads a browser tab."),
+        CreateNavigationStatus(BrowserNavigationToolNames.GoHome, "Navigates a browser tab to the configured home URL."),
+        CreateNavigationStatus(BrowserNavigationToolNames.HomeGet, "Gets the configured browser home URL."),
+        CreateNavigationStatus(BrowserNavigationToolNames.HomeSet, "Sets the browser home URL."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsOpen, "Opens a URL in a new browser tab."),
         .. BrowserDataToolService.GetTools()
     ];
+
+    private static ChatToolStatus CreateNavigationStatus(string toolName, string readyMessage) =>
+        BrowserNavigationService.IsReady
+            ? new ChatToolStatus(toolName, true, readyMessage)
+            : new ChatToolStatus(toolName, false, "Live browser navigation requires the running LinkScape UI process.");
 
     public static ChatToolResult Invoke(
         string toolName,
@@ -18,6 +34,17 @@ public static class LocalMcpToolRouter
         return toolName switch
         {
             WindowsIntentToolName => InvokeWindowsIntent(arguments),
+            BrowserNavigationToolNames.TabsList => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.TabsFind => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.TabsActivate => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.Navigate => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.GoBack => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.GoForward => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.Reload => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.GoHome => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.HomeGet => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.HomeSet => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.TabsOpen => InvokeBrowserNavigation(toolName, arguments),
             BrowserDataToolService.HistoryTodayToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryRecentToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryMostVisitedToolName => InvokeBrowserTool(toolName, arguments),
@@ -27,6 +54,7 @@ public static class LocalMcpToolRouter
             BrowserDataToolService.FavoritesSummaryToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSearchToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.TabsSummaryToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.TabsSearchToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.CollectionsListToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.CollectionsSummaryToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.CollectionsAddItemToolName => InvokeBrowserTool(toolName, arguments),
@@ -71,5 +99,19 @@ public static class LocalMcpToolRouter
 
         var result = BrowserDataToolService.Invoke(toolName, arguments);
         return new ChatToolResult(toolName, true, result.Markdown);
+    }
+
+    private static ChatToolResult InvokeBrowserNavigation(string toolName, IReadOnlyDictionary<string, string> arguments)
+    {
+        if (!BrowserNavigationService.IsReady)
+        {
+            return new ChatToolResult(
+                toolName,
+                false,
+                "Live browser navigation is only available from the running LinkScape window. External MCP server mode can still read browser data from SQLite.");
+        }
+
+        var result = BrowserNavigationService.Invoke(new BrowserNavigationCommand(toolName, arguments));
+        return new ChatToolResult(toolName, result.Succeeded, result.Message);
     }
 }

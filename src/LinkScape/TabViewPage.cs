@@ -42,6 +42,7 @@ class TabViewPage : Component
     private readonly BrowserWebViewHostController _browserWebViewHostController = new();
     private readonly DispatcherQueue? _dispatcherQueue;
     private bool _importBrowserNamesLoadStarted;
+    private bool _collectionStateLoadStarted;
     private bool _activationListenerRegistered;
     private int _commandCenterBusyVersion;
     private int _commandCenterHighlightVersion;
@@ -821,6 +822,12 @@ class TabViewPage : Component
             });
         }
 
+        if (!_collectionStateLoadStarted)
+        {
+            _collectionStateLoadStarted = true;
+            _ = Task.Run(() => SetCollectionStateFromDatabase());
+        }
+
         void ApplyCollectionName(string nextName)
         {
             collectionName.Set(nextName);
@@ -1476,6 +1483,157 @@ class TabViewPage : Component
 
             _browserTitleBarController.SetAddressText(nextTab.Url);
         }
+
+        BrowserNavigationResult ExecuteNavigationCommand(BrowserNavigationCommand command)
+        {
+            var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+            var arguments = command.Arguments;
+            var requestedTabId = arguments.TryGetValue("tabId", out var tabId) ? tabId : _latestSelectedTabId;
+            var targetTab = currentTabs.FirstOrDefault(tab => string.Equals(tab.Id, requestedTabId, StringComparison.Ordinal));
+
+            BrowserNavigationResult RequireTargetTab()
+            {
+                return targetTab is null
+                    ? new BrowserNavigationResult(false, "The requested browser tab was not found.")
+                    : new BrowserNavigationResult(true, string.Empty);
+            }
+
+            switch (command.ToolName)
+            {
+                case BrowserNavigationToolNames.TabsList:
+                    return new BrowserNavigationResult(
+                        true,
+                        string.Join('\n', currentTabs.Select(tab =>
+                            $"{tab.Id} | {tab.Title} | {tab.Url} | selected={string.Equals(tab.Id, _latestSelectedTabId, StringComparison.Ordinal)}")));
+
+                case BrowserNavigationToolNames.TabsFind:
+                    if (!arguments.TryGetValue("query", out var query) || string.IsNullOrWhiteSpace(query))
+                    {
+                        return new BrowserNavigationResult(false, "A tab title or URL query is required.");
+                    }
+
+                    var matches = currentTabs.Where(tab =>
+                        tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                        tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
+                    return new BrowserNavigationResult(true, string.Join('\n', matches.Select(tab => $"{tab.Id} | {tab.Title} | {tab.Url}")));
+
+                case BrowserNavigationToolNames.TabsActivate:
+                    var activateResult = RequireTargetTab();
+                    if (!activateResult.Succeeded)
+                    {
+                        return activateResult;
+                    }
+
+                    SelectTab(Array.FindIndex(currentTabs, tab => tab.Id == targetTab!.Id));
+                    return new BrowserNavigationResult(true, $"Activated tab '{targetTab!.Title}'.");
+
+                case BrowserNavigationToolNames.Navigate:
+                    var navigateResult = RequireTargetTab();
+                    if (!navigateResult.Succeeded || !arguments.TryGetValue("url", out var url) || string.IsNullOrWhiteSpace(url))
+                    {
+                        return navigateResult.Succeeded
+                            ? new BrowserNavigationResult(false, "A URL is required.")
+                            : navigateResult;
+                    }
+
+                    var targetUrl = BrowserUrl.Normalize(url, targetTab!.Url, selectedSearchProviderKey);
+                    UpdateTab(targetTab.Id, tab => tab with { Url = targetUrl, DateTime = DateTime.Now });
+                    _browserWebViewHostController.Navigate(targetTab.Id, targetUrl);
+                    return new BrowserNavigationResult(true, $"Navigating '{targetTab.Title}' to {targetUrl}.");
+
+                case BrowserNavigationToolNames.GoBack:
+                    var backResult = RequireTargetTab();
+                    if (!backResult.Succeeded)
+                    {
+                        return backResult;
+                    }
+
+                    _browserWebViewHostController.GoBack(targetTab!.Id);
+                    return new BrowserNavigationResult(true, $"Navigated back in '{targetTab.Title}'.");
+
+                case BrowserNavigationToolNames.GoForward:
+                    var forwardResult = RequireTargetTab();
+                    if (!forwardResult.Succeeded)
+                    {
+                        return forwardResult;
+                    }
+
+                    _browserWebViewHostController.GoForward(targetTab!.Id);
+                    return new BrowserNavigationResult(true, $"Navigated forward in '{targetTab.Title}'.");
+
+                case BrowserNavigationToolNames.Reload:
+                    var reloadResult = RequireTargetTab();
+                    if (!reloadResult.Succeeded)
+                    {
+                        return reloadResult;
+                    }
+
+                    _browserWebViewHostController.ReloadTab(targetTab!.Id);
+                    return new BrowserNavigationResult(true, $"Reloaded '{targetTab.Title}'.");
+
+                case BrowserNavigationToolNames.GoHome:
+                    var homeResult = RequireTargetTab();
+                    if (!homeResult.Succeeded)
+                    {
+                        return homeResult;
+                    }
+
+                    var homeUrl = GetConfiguredHomeUrl(settingsSnapshot.Value);
+                    UpdateTab(targetTab!.Id, tab => tab with { Url = homeUrl, DateTime = DateTime.Now });
+                    _browserWebViewHostController.Navigate(targetTab.Id, homeUrl);
+                    return new BrowserNavigationResult(true, $"Navigating '{targetTab.Title}' home.");
+
+                case BrowserNavigationToolNames.HomeGet:
+                    return new BrowserNavigationResult(true, GetConfiguredHomeUrl(settingsSnapshot.Value));
+
+                case BrowserNavigationToolNames.HomeSet:
+                    if (!arguments.TryGetValue("url", out var newHomeUrl) || string.IsNullOrWhiteSpace(newHomeUrl))
+                    {
+                        return new BrowserNavigationResult(false, "A home URL is required.");
+                    }
+
+                    SaveSettingValue(HomeUrlSettingKey, newHomeUrl);
+                    return new BrowserNavigationResult(true, $"Home URL set to {GetConfiguredHomeUrl(settingsSnapshot.Value)}.");
+
+                case BrowserNavigationToolNames.TabsOpen:
+                    if (!arguments.TryGetValue("url", out var openUrl) || string.IsNullOrWhiteSpace(openUrl))
+                    {
+                        return new BrowserNavigationResult(false, "A URL is required.");
+                    }
+
+                    var select = !arguments.TryGetValue("select", out var selectValue) || !bool.TryParse(selectValue, out var shouldSelect) || shouldSelect;
+                    var normalizedOpenUrl = BrowserUrl.Normalize(openUrl, configuredHomeUrl, selectedSearchProviderKey);
+                    var nextTabs = BrowserTabActions.Add(currentTabs, normalizedOpenUrl, out var newTab, visitCount: 1);
+                    MarkTabsChanged(nextTabs);
+                    if (select)
+                    {
+                        UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, newTab.Id));
+                        _browserTitleBarController.SetAddressText(newTab.Url);
+                    }
+
+                    ScheduleTabsSave(nextTabs, select ? newTab.Id : _latestSelectedTabId ?? selectedTag);
+                    return new BrowserNavigationResult(true, $"Opened tab '{newTab.Title}' at {newTab.Url}.");
+
+                default:
+                    return new BrowserNavigationResult(false, $"Unsupported browser navigation tool '{command.ToolName}'.");
+            }
+        }
+
+        BrowserNavigationService.RegisterHandler(command =>
+        {
+            if (_dispatcherQueue is null || _dispatcherQueue.HasThreadAccess)
+            {
+                return ExecuteNavigationCommand(command);
+            }
+
+            var completion = new TaskCompletionSource<BrowserNavigationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_dispatcherQueue.TryEnqueue(() => completion.SetResult(ExecuteNavigationCommand(command))))
+            {
+                return new BrowserNavigationResult(false, "The LinkScape UI thread is unavailable for browser navigation.");
+            }
+
+            return completion.Task.GetAwaiter().GetResult();
+        });
         #endregion
 
         var selectedTab = tabs.FirstOrDefault(tab => tab.Id == selectedTag) ?? tabs[0];

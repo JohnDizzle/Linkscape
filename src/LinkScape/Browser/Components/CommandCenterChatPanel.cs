@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using LinkScape.Browser;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor.Markdown;
+using System.Text.RegularExpressions;
 
 namespace Browser.Components;
 
@@ -19,6 +20,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private const double MetaFontSize = 12;
     private const double AssistantBubbleMaxWidth = 480;
     private const double UserBubbleMaxWidth = 320;
+    private const int MaxExtractedLinks = 6;
 
     private sealed record ChatPanelMessage(string Text, bool IsUser, bool IsError = false, bool IsThinking = false);
 
@@ -40,6 +42,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 false)
         ], threadSafe: true);
         var isSending = UseState(false, threadSafe: true);
+        var previousProviderResponseId = UseState<string?>(null, threadSafe: true);
 
         void SetMessages(IReadOnlyList<ChatPanelMessage> nextMessages)
         {
@@ -75,6 +78,20 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
             prompt.Set(string.Empty);
             arePromptSuggestionsOpen.Set(false);
+
+            if (TryOpenPriorMessageLink(text, messages.Value, out var openedMessage))
+            {
+                SetMessages(
+                    messages.Value
+                        .Concat(
+                        [
+                            new ChatPanelMessage(text, true),
+                            new ChatPanelMessage(openedMessage, false)
+                        ])
+                        .ToArray());
+                return;
+            }
+
             isSending.Set(true);
             var pendingMessages = messages.Value
                 .Concat(
@@ -88,8 +105,12 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
             try
             {
-                var response = await CommandCenterChatService.SubmitAsync(text, GetChatContext());
+                var response = await CommandCenterChatService.SubmitAsync(text, GetChatContext(previousProviderResponseId.Value));
                 LocalMcpDiagnostics.Trace("ChatUI", $"Response received. IsError={response.IsError}, TextLength={response.Text?.Length ?? 0}");
+                if (!string.IsNullOrWhiteSpace(response.ProviderResponseId))
+                {
+                    previousProviderResponseId.Set(response.ProviderResponseId);
+                }
                 var answer = string.IsNullOrWhiteSpace(response.Text)
                     ? "The chat service returned an empty answer. Check the MCP trace for the selected tool response."
                     : response.Text;
@@ -116,6 +137,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
         void ClearChat()
         {
+            previousProviderResponseId.Set(null);
             SetMessages(
             [
                 new ChatPanelMessage("## Linker is ready\nSession cleared. Ask about history, favorites, or today's activity.", false)
@@ -267,17 +289,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 .FontSize(MessageFontSize)
             : message.IsThinking
                 ? CreateThinkingIndicator()
-            : Border(Markdown(message.Text, new MarkdownOptions
-                    {
-                        LinkBuilder = (children, uri) =>
-                            Button(GetMarkdownLinkText(children, uri), () => OpenMarkdownLink(uri)).AutomationName("Linker url" + uri.AbsoluteUri)
-                                .TextLink()
-                    })
-                    .HAlign(HorizontalAlignment.Stretch)
-                    .MaxWidth(AssistantBubbleMaxWidth - 24))
-                .Padding(0)
-                .HAlign(HorizontalAlignment.Stretch)
-                .MaxWidth(AssistantBubbleMaxWidth - 24);
+            : BuildAssistantMarkdownContent(message.Text);
 
         var content = FlexColumn(
             FlexRow(
@@ -314,6 +326,252 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         }
     }
 
+    private Element BuildAssistantMarkdownContent(string markdown)
+    {
+        var links = ExtractMarkdownLinks(markdown)
+            .DistinctBy(link => NormalizeLinkUrl(link.Url))
+            .ToArray();
+        var markdownContent = Border(Markdown(markdown, new MarkdownOptions
+            {
+                LinkBuilder = (children, uri) =>
+                    TextBlock(GetMarkdownLinkText(children, uri))
+            })
+            .HAlign(HorizontalAlignment.Stretch)
+            .MaxWidth(AssistantBubbleMaxWidth - 24))
+            .Padding(0)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MaxWidth(AssistantBubbleMaxWidth - 24);
+
+        if (links.Length == 0)
+        {
+            return markdownContent;
+        }
+
+        var visibleLinks = links.Take(MaxExtractedLinks).ToArray();
+        var overflowCount = Math.Max(0, links.Length - visibleLinks.Length);
+
+        return FlexColumn(
+            markdownContent,
+            Border(
+                FlexColumn(
+                    TextBlock(overflowCount > 0
+                            ? $"Open links from this answer ({overflowCount} more in text)"
+                            : "Open links from this answer")
+                        .FontSize(MetaFontSize)
+                        .Opacity(0.78),
+                    FlexColumn(
+                        visibleLinks.Select(BuildExtractedLinkButton).ToArray()) with
+                    {
+                        RowGap = 6
+                    }) with
+                {
+                    RowGap = 6
+                })
+                .Padding(8, 7)
+                .CornerRadius(10)
+                .Background(BrowserConstants.LayerFillDefaultBrush)
+                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+                .MaxWidth(AssistantBubbleMaxWidth - 24)
+                .HAlign(HorizontalAlignment.Stretch)) with
+        {
+            RowGap = 8
+        };
+    }
+
+    private ButtonElement BuildExtractedLinkButton(MarkdownLink link)
+    {
+        return Button(
+                (FlexRow(
+                    TextBlock(BrowserConstants.GlyphGo)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(12)
+                        .Opacity(0.82),
+                    VStack(1,
+                        TextBlock(GetLinkActionLabel(link.Label))
+                            .FontSize(13)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.NoWrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            }),
+                        TextBlock(GetLinkHost(link.Url))
+                            .FontSize(11)
+                            .Opacity(0.68)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.NoWrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            })
+                    )
+                    .MinWidth(0)
+                    .Flex(grow: 1, basis: 0)
+                ) with
+                {
+                    ColumnGap = 8
+                })
+                .HAlign(HorizontalAlignment.Stretch),
+                () => Props.OnOpenLinkInNewTab(link.Url))
+            .WithKey(link.Url)
+            .AutomationName("Open " + link.Label)
+            .ToolTip(link.Url)
+            .Padding(9, 6)
+            .CornerRadius(8)
+            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MinWidth(0);
+    }
+
+    private static string GetLinkActionLabel(string label)
+    {
+        label = UnescapeMarkdownLinkText(label);
+        label = Regex.Replace(label, @"\s+", " ").Trim();
+        label = Regex.Replace(label, @"^\(\d+\)\s*", string.Empty).Trim();
+        const int maxLength = 64;
+        return label.Length <= maxLength
+            ? label
+            : label[..Math.Max(0, maxLength - 1)].TrimEnd() + "…";
+    }
+
+    private static string UnescapeMarkdownLinkText(string? value) =>
+        (value ?? string.Empty)
+            .Replace("\\|", "|", StringComparison.Ordinal)
+            .Replace("\\[", "[", StringComparison.Ordinal)
+            .Replace("\\]", "]", StringComparison.Ordinal)
+            .Replace("\\\\", "\\", StringComparison.Ordinal);
+
+    private static string GetLinkHost(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? uri.Host[4..]
+                : uri.Host;
+        }
+
+        return url;
+    }
+
+    private bool TryOpenPriorMessageLink(
+        string prompt,
+        IReadOnlyList<ChatPanelMessage> messages,
+        out string openedMessage)
+    {
+        openedMessage = string.Empty;
+        if (!IsOpenPriorLinkPrompt(prompt))
+        {
+            return false;
+        }
+
+        var query = ExtractOpenPriorLinkQuery(prompt);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        var link = messages
+            .Where(message => !message.IsUser)
+            .Reverse()
+            .SelectMany(message => ExtractMarkdownLinks(message.Text))
+            .FirstOrDefault(candidate => IsLinkMatch(candidate, query));
+
+        if (link is null)
+        {
+            return false;
+        }
+
+        Props.OnOpenLinkInNewTab(link.Url);
+        openedMessage = $"Opened **[{EscapeMarkdownLinkText(link.Label)}](<{EscapeMarkdownLinkUrl(link.Url)}>)** in LinkScape.";
+        return true;
+    }
+
+    private static bool IsOpenPriorLinkPrompt(string prompt) =>
+        Regex.IsMatch(prompt ?? string.Empty, @"\b(?:go\s+to|open|visit|take\s+me\s+to)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static string ExtractOpenPriorLinkQuery(string prompt)
+    {
+        var match = Regex.Match(
+            prompt ?? string.Empty,
+            @"\b(?:go\s+to|open|visit|take\s+me\s+to)\s+(?:the\s+)?(?<query>.+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return match.Success
+            ? match.Groups["query"].Value.Trim().Trim('.', ',', ';', ':', '!', '?', '"', '\'')
+            : string.Empty;
+    }
+
+    private static bool IsLinkMatch(MarkdownLink link, string query)
+    {
+        query = NormalizeLinkSearchText(query);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        var label = NormalizeLinkSearchText(link.Label);
+        var url = NormalizeLinkSearchText(link.Url);
+        var host = Uri.TryCreate(link.Url, UriKind.Absolute, out var uri)
+            ? NormalizeLinkSearchText(uri.Host.Replace("www.", string.Empty, StringComparison.OrdinalIgnoreCase))
+            : string.Empty;
+
+        return label.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            url.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            host.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            query.Contains(label, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeLinkSearchText(string value) =>
+        Regex.Replace(value ?? string.Empty, @"\s+", " ")
+            .Trim()
+            .ToLowerInvariant();
+
+    private static string NormalizeLinkUrl(string value)
+    {
+        value = (value ?? string.Empty).Trim();
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return value.TrimEnd('/').ToLowerInvariant();
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Host = uri.Host.ToLowerInvariant()
+        };
+
+        return builder.Uri.AbsoluteUri.TrimEnd('/').ToLowerInvariant();
+    }
+
+    private sealed record MarkdownLink(string Label, string Url);
+
+    private static IEnumerable<MarkdownLink> ExtractMarkdownLinks(string markdown)
+    {
+        foreach (Match match in Regex.Matches(
+            markdown ?? string.Empty,
+            @"\[(?<label>[^\]]+)\]\((?:<)?(?<url>https?://[^>)]+)(?:>)?\)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            var label = match.Groups["label"].Value.Trim();
+            var url = match.Groups["url"].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(label) && !string.IsNullOrWhiteSpace(url))
+            {
+                yield return new MarkdownLink(label, url);
+            }
+        }
+    }
+
+    private static string EscapeMarkdownLinkText(string value) =>
+        (value ?? string.Empty)
+            .Replace("|", "\\|", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal)
+            .Replace("]", "\\]", StringComparison.Ordinal);
+
+    private static string EscapeMarkdownLinkUrl(string value) =>
+        (value ?? string.Empty).Replace(">", "%3E", StringComparison.Ordinal);
+
     private static string GetMarkdownLinkText(IReadOnlyList<Element> children, Uri uri)
     {
         var text = string.Join(string.Empty, children.Select(ExtractElementText));
@@ -345,8 +603,14 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         return string.Empty;
     }
 
-    private CommandCenterChatContext GetChatContext() =>
-        Props.GetChatContext();
+    private CommandCenterChatContext GetChatContext(string? previousProviderResponseId)
+    {
+        var context = Props.GetChatContext();
+        return context with
+        {
+            PreviousProviderResponseId = previousProviderResponseId
+        };
+    }
 
     private static Element CreateThinkingIndicator()
     {

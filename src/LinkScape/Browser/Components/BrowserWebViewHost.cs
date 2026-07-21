@@ -13,7 +13,9 @@ internal sealed class BrowserWebViewHostController
     internal Action<string>? CloseTabCore { get; set; }
     internal Action<string>? ReloadTabCore { get; set; }
     internal Action? GoBackCore { get; set; }
+    internal Action<string>? GoBackTabCore { get; set; }
     internal Action? GoForwardCore { get; set; }
+    internal Action<string>? GoForwardTabCore { get; set; }
     internal Action? ReloadCore { get; set; }
     internal Action? RefreshLayoutCore { get; set; }
     internal Func<string, Task>? PauseMediaInTabAsyncCore { get; set; }
@@ -27,7 +29,11 @@ internal sealed class BrowserWebViewHostController
 
     public void GoBack() => GoBackCore?.Invoke();
 
+    public void GoBack(string tabId) => GoBackTabCore?.Invoke(tabId);
+
     public void GoForward() => GoForwardCore?.Invoke();
+
+    public void GoForward(string tabId) => GoForwardTabCore?.Invoke(tabId);
 
     public void Reload() => ReloadCore?.Invoke();
 
@@ -99,7 +105,9 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.CloseTabCore = CloseTab;
         Props.Controller.ReloadTabCore = ReloadTab;
         Props.Controller.GoBackCore = () => _activeWebView?.GoBack();
+        Props.Controller.GoBackTabCore = tabId => _webViewsByTabId.GetValueOrDefault(tabId)?.GoBack();
         Props.Controller.GoForwardCore = () => _activeWebView?.GoForward();
+        Props.Controller.GoForwardTabCore = tabId => _webViewsByTabId.GetValueOrDefault(tabId)?.GoForward();
         Props.Controller.ReloadCore = () => _activeWebView?.CoreWebView2?.Reload();
         Props.Controller.RefreshLayoutCore = RefreshWebViewLayout;
         Props.Controller.PauseMediaInTabAsyncCore = PauseMediaInTabAsync;

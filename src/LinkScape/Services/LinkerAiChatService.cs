@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 internal static class LinkerAiChatService
 {
     private const int MaxOutputTokens = 700;
+    private sealed record ProviderChatCompletion(string Text, string? ResponseId = null);
 
     public static async Task<CommandCenterChatResponse> SubmitAsync(
         string prompt,
@@ -23,7 +24,7 @@ internal static class LinkerAiChatService
 
         try
         {
-            var answer = provider.Id switch
+            var completion = provider.Id switch
             {
                 "openai" => await SubmitOpenAiResponsesAsync("https://api.openai.com/v1/responses", credential, provider, prompt, context, cancellationToken),
                 "perplexity" => await SubmitOpenAiResponsesAsync("https://api.perplexity.ai/v1/responses", credential, provider, prompt, context, cancellationToken),
@@ -31,10 +32,10 @@ internal static class LinkerAiChatService
                 "anthropic" => await SubmitAnthropicAsync(credential, provider, prompt, context, cancellationToken),
                 "google-gemini" => await SubmitGeminiAsync(credential, provider, prompt, context, cancellationToken),
                 "xai" => await SubmitOpenAiChatCompletionsAsync(GetProviderEndpoint(credential, "https://api.x.ai/v1"), credential, provider, prompt, context, cancellationToken),
-                _ => string.Empty
+                _ => new ProviderChatCompletion(string.Empty)
             };
 
-            if (string.IsNullOrWhiteSpace(answer))
+            if (string.IsNullOrWhiteSpace(completion.Text))
             {
                 return new CommandCenterChatResponse(
                     $"## {provider.DisplayName} is saved but not connected yet\nLinker has the credentials, but this provider adapter still needs its chat endpoint mapping.",
@@ -43,8 +44,9 @@ internal static class LinkerAiChatService
             }
 
             return new CommandCenterChatResponse(
-                answer.Trim(),
-                ToolResults: [new ChatToolResult($"linker.ai.{provider.Id}", true, $"Answered with {provider.DisplayName} after local LinkScape tools did not match.")]);
+                completion.Text.Trim(),
+                ToolResults: [new ChatToolResult($"linker.ai.{provider.Id}", true, $"Answered with {provider.DisplayName} after local LinkScape tools did not match.")],
+                ProviderResponseId: completion.ResponseId);
         }
         catch (OperationCanceledException)
         {
@@ -59,7 +61,7 @@ internal static class LinkerAiChatService
         }
     }
 
-    private static async Task<string> SubmitOpenAiResponsesAsync(
+    private static async Task<ProviderChatCompletion> SubmitOpenAiResponsesAsync(
         string endpoint,
         LinkerAiProviderCredential credential,
         LinkerAiProviderDefinition provider,
@@ -75,14 +77,51 @@ internal static class LinkerAiChatService
             ["max_output_tokens"] = MaxOutputTokens
         };
 
+        var previousResponseId = provider.Id == "openai"
+            ? context?.PreviousProviderResponseId
+            : null;
+        if (!string.IsNullOrWhiteSpace(previousResponseId))
+        {
+            body["previous_response_id"] = previousResponseId;
+        }
+
+        if (provider.Id == "openai" && ShouldEnableWebSearch(prompt, previousResponseId))
+        {
+            body["tools"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "web_search",
+                    ["search_context_size"] = "low"
+                }
+            };
+            body["max_tool_calls"] = 3;
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.ApiKey);
         request.Content = CreateJsonContent(body);
 
-        return await SendAndExtractAsync(request, ExtractResponsesText, cancellationToken);
+        try
+        {
+            return await SendAndExtractAsync(request, ExtractResponsesCompletion, cancellationToken);
+        }
+        catch (InvalidOperationException) when (!string.IsNullOrWhiteSpace(previousResponseId))
+        {
+            body.Remove("previous_response_id");
+            using var retryRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            retryRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.ApiKey);
+            retryRequest.Content = CreateJsonContent(body);
+
+            var retryCompletion = await SendAndExtractAsync(retryRequest, ExtractResponsesCompletion, cancellationToken);
+            return retryCompletion with
+            {
+                Text = $"{retryCompletion.Text.Trim()}\n\n_Started a fresh provider chat because the previous OpenAI response id was no longer available._"
+            };
+        }
     }
 
-    private static async Task<string> SubmitOpenAiChatCompletionsAsync(
+    private static async Task<ProviderChatCompletion> SubmitOpenAiChatCompletionsAsync(
         string endpointRoot,
         LinkerAiProviderCredential credential,
         LinkerAiProviderDefinition provider,
@@ -101,10 +140,10 @@ internal static class LinkerAiChatService
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.ApiKey);
         request.Content = CreateJsonContent(body);
 
-        return await SendAndExtractAsync(request, ExtractChatCompletionText, cancellationToken);
+        return await SendAndExtractAsync(request, root => new ProviderChatCompletion(ExtractChatCompletionText(root)), cancellationToken);
     }
 
-    private static async Task<string> SubmitAzureOpenAiAsync(
+    private static async Task<ProviderChatCompletion> SubmitAzureOpenAiAsync(
         LinkerAiProviderCredential credential,
         LinkerAiProviderDefinition provider,
         string prompt,
@@ -113,7 +152,7 @@ internal static class LinkerAiChatService
     {
         if (string.IsNullOrWhiteSpace(credential.Endpoint) || string.IsNullOrWhiteSpace(credential.Deployment))
         {
-            return "## Azure OpenAI needs setup\nAdd your Azure endpoint and deployment name in the Linker provider key dialog.";
+            return new ProviderChatCompletion("## Azure OpenAI needs setup\nAdd your Azure endpoint and deployment name in the Linker provider key dialog.");
         }
 
         var endpoint = credential.Endpoint.TrimEnd('/');
@@ -129,10 +168,10 @@ internal static class LinkerAiChatService
         request.Headers.Add("api-key", credential.ApiKey);
         request.Content = CreateJsonContent(body);
 
-        return await SendAndExtractAsync(request, ExtractChatCompletionText, cancellationToken);
+        return await SendAndExtractAsync(request, root => new ProviderChatCompletion(ExtractChatCompletionText(root)), cancellationToken);
     }
 
-    private static async Task<string> SubmitAnthropicAsync(
+    private static async Task<ProviderChatCompletion> SubmitAnthropicAsync(
         LinkerAiProviderCredential credential,
         LinkerAiProviderDefinition provider,
         string prompt,
@@ -159,10 +198,10 @@ internal static class LinkerAiChatService
         request.Headers.Add("anthropic-version", "2023-06-01");
         request.Content = CreateJsonContent(body);
 
-        return await SendAndExtractAsync(request, ExtractAnthropicText, cancellationToken);
+        return await SendAndExtractAsync(request, root => new ProviderChatCompletion(ExtractAnthropicText(root)), cancellationToken);
     }
 
-    private static async Task<string> SubmitGeminiAsync(
+    private static async Task<ProviderChatCompletion> SubmitGeminiAsync(
         LinkerAiProviderCredential credential,
         LinkerAiProviderDefinition provider,
         string prompt,
@@ -201,7 +240,7 @@ internal static class LinkerAiChatService
         request.Headers.Add("x-goog-api-key", credential.ApiKey);
         request.Content = CreateJsonContent(body);
 
-        return await SendAndExtractAsync(request, ExtractGeminiText, cancellationToken);
+        return await SendAndExtractAsync(request, root => new ProviderChatCompletion(ExtractGeminiText(root)), cancellationToken);
     }
 
     private static string BuildSystemInstructions(CommandCenterChatContext? context)
@@ -210,6 +249,7 @@ internal static class LinkerAiChatService
         builder.AppendLine("You are Linker, the assistant inside LinkScape Browser.");
         builder.AppendLine("Local browser tools already had the first chance to answer. For this response, answer the user's general question clearly and briefly.");
         builder.AppendLine("Do not claim you used history, favorites, collections, tabs, or local MCP tools unless the user supplied that information in the prompt.");
+        builder.AppendLine("If OpenAI web search is available and the user asks for current facts, use it instead of saying you cannot access real-time information.");
         builder.AppendLine("Use markdown. If a browser-related action requires local tools, tell the user which Linker tool prompt to try.");
 
         if (!string.IsNullOrWhiteSpace(context?.ActiveTitle) || !string.IsNullOrWhiteSpace(context?.ActiveUrl))
@@ -247,9 +287,9 @@ internal static class LinkerAiChatService
     private static StringContent CreateJsonContent(JsonNode body) =>
         new(body.ToJsonString(), Encoding.UTF8, "application/json");
 
-    private static async Task<string> SendAndExtractAsync(
+    private static async Task<ProviderChatCompletion> SendAndExtractAsync(
         HttpRequestMessage request,
-        Func<JsonNode?, string> extractText,
+        Func<JsonNode?, ProviderChatCompletion> extractCompletion,
         CancellationToken cancellationToken)
     {
         using var client = new HttpClient();
@@ -265,8 +305,11 @@ internal static class LinkerAiChatService
         }
 
         var root = JsonNode.Parse(responseText);
-        return extractText(root);
+        return extractCompletion(root);
     }
+
+    private static ProviderChatCompletion ExtractResponsesCompletion(JsonNode? root) =>
+        new(ExtractResponsesText(root), root?["id"]?.GetValue<string>());
 
     private static string ExtractResponsesText(JsonNode? root)
     {
@@ -330,4 +373,25 @@ internal static class LinkerAiChatService
 
     private static string GetProviderEndpoint(LinkerAiProviderCredential credential, string defaultEndpoint) =>
         string.IsNullOrWhiteSpace(credential.Endpoint) ? defaultEndpoint : credential.Endpoint;
+
+    private static bool ShouldEnableWebSearch(string prompt, string? previousResponseId)
+    {
+        if (!string.IsNullOrWhiteSpace(previousResponseId))
+        {
+            return true;
+        }
+
+        prompt = prompt?.Trim() ?? string.Empty;
+        return prompt.Contains("weather", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("temperature", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("forecast", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("today", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("tomorrow", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("current", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("latest", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("news", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("score", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("stock", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("price", StringComparison.OrdinalIgnoreCase);
+    }
 }

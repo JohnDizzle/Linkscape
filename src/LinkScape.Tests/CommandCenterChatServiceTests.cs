@@ -32,4 +32,50 @@ public sealed class CommandCenterChatServiceTests
         Assert.IsTrue(selected);
         Assert.AreEqual(BrowserDataToolService.TabsSearchToolName, toolName);
     }
+
+    [DataTestMethod]
+    [DataRow("go back", BrowserNavigationToolNames.GoBack)]
+    [DataRow("go forward", BrowserNavigationToolNames.GoForward)]
+    [DataRow("reload this page", BrowserNavigationToolNames.Reload)]
+    [DataRow("go home", BrowserNavigationToolNames.GoHome)]
+    [DataRow("go to msn.com", BrowserNavigationToolNames.Navigate)]
+    [DataRow("open a new tab to https://example.com", BrowserNavigationToolNames.TabsOpen)]
+    [DataRow("open a new tab for portal.azure.com", BrowserNavigationToolNames.TabsOpen)]
+    public void TryParseBrowserNavigationPrompt_ParsesNavigationCommands(string prompt, string expectedToolName)
+    {
+        var parsed = CommandCenterChatService.TryParseBrowserNavigationPrompt(prompt, out var command);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(expectedToolName, command.ToolName);
+    }
+
+    [DataTestMethod]
+    [DataRow("open a new tab for portal.azure.com", "portal.azure.com")]
+    [DataRow("open new tab at https://portal.azure.com/#home", "https://portal.azure.com/#home")]
+    public void TryParseBrowserNavigationPrompt_ExtractsOpenTabUrl(string prompt, string expectedUrl)
+    {
+        var parsed = CommandCenterChatService.TryParseBrowserNavigationPrompt(prompt, out var command);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(BrowserNavigationToolNames.TabsOpen, command.ToolName);
+        Assert.AreEqual(expectedUrl, command.Arguments["url"]);
+    }
+
+    [TestMethod]
+    public void TryParseBrowserNavigationPrompt_DoesNotOpenFillerWordAsUrl()
+    {
+        var parsed = CommandCenterChatService.TryParseBrowserNavigationPrompt("open a new tab for", out _);
+
+        Assert.IsFalse(parsed);
+    }
+
+    [TestMethod]
+    public void TryParseBrowserNavigationPrompt_FindsNamedTab()
+    {
+        var parsed = CommandCenterChatService.TryParseBrowserNavigationPrompt("go to my YouTube tab", out var command);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(BrowserNavigationToolNames.TabsFind, command.ToolName);
+        Assert.AreEqual("YouTube", command.Arguments["query"]);
+    }
 }

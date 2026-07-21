@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 public static class CommandCenterChatService
 {
+    private sealed record BrowserNavigationIntent(BrowserNavigationCommand Command, bool ActivateFirstMatch = false);
+
     public static CommandCenterChatResponse GetStartupSummary()
     {
         var mcpStatus = WindowsMcpClientService.GetStatus();
@@ -35,6 +37,11 @@ public static class CommandCenterChatService
             return new CommandCenterChatResponse("Type a command or question first.", IsError: true);
         }
 
+        if (TryParseBrowserNavigationIntent(prompt, out var navigationIntent))
+        {
+            return SubmitBrowserNavigationPrompt(navigationIntent);
+        }
+
         if (IsToolCatalogPrompt(prompt))
         {
             return BuildToolCatalogResponse();
@@ -60,7 +67,25 @@ public static class CommandCenterChatService
 
         if (LinkerAiCredentialService.HasAnyApiKey())
         {
+            var safetyResult = await LinkerSafetyService.CheckProviderPromptAsync(prompt, cancellationToken);
+            if (!safetyResult.IsAllowed)
+            {
+                return new CommandCenterChatResponse(
+                    safetyResult.Message,
+                    IsError: true,
+                    ToolResults: [new ChatToolResult("linker.safety", false, $"Blocked provider chat prompt: {safetyResult.Category}")]);
+            }
+
             return await LinkerAiChatService.SubmitAsync(prompt, context, cancellationToken);
+        }
+
+        var localSafetyResult = await LinkerSafetyService.CheckProviderPromptAsync(prompt, cancellationToken);
+        if (!localSafetyResult.IsAllowed)
+        {
+            return new CommandCenterChatResponse(
+                localSafetyResult.Message,
+                IsError: true,
+                ToolResults: [new ChatToolResult("linker.safety", false, $"Blocked chat prompt: {localSafetyResult.Category}")]);
         }
 
         return BuildUnsupportedPromptResponse(prompt);
@@ -143,6 +168,40 @@ public static class CommandCenterChatService
             ]);
     }
 
+    private static CommandCenterChatResponse SubmitBrowserNavigationPrompt(BrowserNavigationIntent intent)
+    {
+        var result = BrowserNavigationService.Invoke(intent.Command);
+
+        if (result.Succeeded && intent.ActivateFirstMatch)
+        {
+            var firstMatch = result.Message
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault();
+            var separatorIndex = firstMatch?.IndexOf(" | ", StringComparison.Ordinal) ?? -1;
+
+            if (separatorIndex <= 0)
+            {
+                result = new BrowserNavigationResult(false, "No open tab matched that name.");
+            }
+            else
+            {
+                var tabId = firstMatch![..separatorIndex];
+                result = BrowserNavigationService.Invoke(
+                    new BrowserNavigationCommand(
+                        BrowserNavigationToolNames.TabsActivate,
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["tabId"] = tabId
+                        }));
+            }
+        }
+
+        return new CommandCenterChatResponse(
+            result.Message,
+            IsError: !result.Succeeded,
+            ToolResults: [new ChatToolResult(intent.Command.ToolName, result.Succeeded, result.Message)]);
+    }
+
     public static bool TryParseBrowserSearchPrompt(string prompt, out string toolName, out string query)
     {
         var match = Regex.Match(
@@ -167,6 +226,108 @@ public static class CommandCenterChatService
         };
 
         return !string.IsNullOrWhiteSpace(query) && !string.IsNullOrWhiteSpace(toolName);
+    }
+
+    public static bool TryParseBrowserNavigationPrompt(string prompt, out BrowserNavigationCommand command)
+    {
+        var parsed = TryParseBrowserNavigationIntent(prompt, out var intent);
+        command = parsed
+            ? intent.Command
+            : new BrowserNavigationCommand(string.Empty, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        return parsed;
+    }
+
+    private static bool TryParseBrowserNavigationIntent(string prompt, out BrowserNavigationIntent intent)
+    {
+        prompt = prompt?.Trim() ?? string.Empty;
+        var normalized = prompt.TrimEnd('.', '!', '?');
+
+        BrowserNavigationIntent Create(string toolName, params (string Key, string Value)[] arguments) =>
+            new(new BrowserNavigationCommand(toolName, arguments.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)));
+
+        if (Regex.IsMatch(normalized, @"\b(?:go\s+)?back\b", RegexOptions.IgnoreCase))
+        {
+            intent = Create(BrowserNavigationToolNames.GoBack);
+            return true;
+        }
+
+        if (Regex.IsMatch(normalized, @"\b(?:go\s+)?forward\b", RegexOptions.IgnoreCase))
+        {
+            intent = Create(BrowserNavigationToolNames.GoForward);
+            return true;
+        }
+
+        if (Regex.IsMatch(normalized, @"\b(?:reload|refresh)(?:\s+(?:this|the)?\s*page)?\b", RegexOptions.IgnoreCase))
+        {
+            intent = Create(BrowserNavigationToolNames.Reload);
+            return true;
+        }
+
+        if (Regex.IsMatch(normalized, @"\bgo\s+home\b", RegexOptions.IgnoreCase))
+        {
+            intent = Create(BrowserNavigationToolNames.GoHome);
+            return true;
+        }
+
+        var setHomeMatch = Regex.Match(normalized, @"\bset\s+(?:my\s+)?home\s+(?:to\s+)?(?<url>\S+)", RegexOptions.IgnoreCase);
+        if (setHomeMatch.Success)
+        {
+            intent = Create(BrowserNavigationToolNames.HomeSet, ("url", setHomeMatch.Groups["url"].Value));
+            return true;
+        }
+
+        var tabMatch = Regex.Match(normalized, @"\b(?:go\s+to|switch\s+to|activate)\s+(?:my\s+)?(?<query>.+?)\s+tab\b", RegexOptions.IgnoreCase);
+        if (tabMatch.Success)
+        {
+            intent = new BrowserNavigationIntent(
+                new BrowserNavigationCommand(
+                    BrowserNavigationToolNames.TabsFind,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["query"] = tabMatch.Groups["query"].Value.Trim()
+                    }),
+                ActivateFirstMatch: true);
+            return true;
+        }
+
+        var openMatch = Regex.Match(normalized, @"\bopen\s+(?:a\s+)?(?:new\s+)?tab\b(?<target>.*)$", RegexOptions.IgnoreCase);
+        if (openMatch.Success)
+        {
+            var targetUrl = ExtractUrlFromNavigationTarget(openMatch.Groups["target"].Value);
+            if (!string.IsNullOrWhiteSpace(targetUrl))
+            {
+                intent = Create(BrowserNavigationToolNames.TabsOpen, ("url", targetUrl));
+                return true;
+            }
+        }
+
+        var navigateMatch = Regex.Match(normalized, @"\b(?:go\s+to|navigate\s+to)\s+(?<url>(?:https?://)?[^\s]+\.[^\s]+)", RegexOptions.IgnoreCase);
+        if (navigateMatch.Success)
+        {
+            intent = Create(BrowserNavigationToolNames.Navigate, ("url", navigateMatch.Groups["url"].Value));
+            return true;
+        }
+
+        intent = default!;
+        return false;
+    }
+
+    private static string ExtractUrlFromNavigationTarget(string value)
+    {
+        value = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var match = Regex.Match(
+            value,
+            @"(?<url>(?:https?://)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s]*)?)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return match.Success
+            ? match.Groups["url"].Value.Trim().TrimEnd('.', ',', ';', ':', '!', '?')
+            : string.Empty;
     }
 
     private static bool IsWindowsMcpPrompt(string prompt) =>

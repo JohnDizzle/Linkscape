@@ -142,7 +142,40 @@ public static class LocalMcpServerService
         var properties = new JsonObject();
         var required = new JsonArray();
 
-        if (toolName == LocalMcpToolRouter.WindowsIntentToolName)
+        if (BrowserNavigationToolNames.IsNavigationTool(toolName))
+        {
+            if (toolName is BrowserNavigationToolNames.TabsFind)
+            {
+                properties["query"] = CreateStringSchema("Tab title or URL search text.");
+                required.Add("query");
+            }
+
+            if (toolName is BrowserNavigationToolNames.TabsActivate or BrowserNavigationToolNames.Navigate or BrowserNavigationToolNames.GoBack or BrowserNavigationToolNames.GoForward or BrowserNavigationToolNames.Reload or BrowserNavigationToolNames.GoHome)
+            {
+                properties["tabId"] = CreateStringSchema("Optional browser tab ID. Uses the selected tab when omitted.");
+            }
+
+            if (toolName is BrowserNavigationToolNames.Navigate or BrowserNavigationToolNames.HomeSet or BrowserNavigationToolNames.TabsOpen)
+            {
+                properties["url"] = CreateStringSchema("URL to navigate to, set as home, or open in a new tab.");
+                required.Add("url");
+            }
+
+            if (toolName == BrowserNavigationToolNames.TabsActivate)
+            {
+                required.Add("tabId");
+            }
+
+            if (toolName == BrowserNavigationToolNames.TabsOpen)
+            {
+                properties["select"] = new JsonObject
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Whether to activate the new tab. Defaults to true."
+                };
+            }
+        }
+        else if (toolName == LocalMcpToolRouter.WindowsIntentToolName)
         {
             properties["prompt"] = new JsonObject
             {
@@ -210,4 +243,11 @@ public static class LocalMcpServerService
             ["additionalProperties"] = true
         };
     }
+
+    private static JsonObject CreateStringSchema(string description) =>
+        new()
+        {
+            ["type"] = "string",
+            ["description"] = description
+        };
 }

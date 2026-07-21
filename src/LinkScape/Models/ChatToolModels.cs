@@ -1,7 +1,8 @@
 public sealed record CommandCenterChatResponse(
     string Text,
     bool IsError = false,
-    IReadOnlyList<ChatToolResult>? ToolResults = null);
+    IReadOnlyList<ChatToolResult>? ToolResults = null,
+    string? ProviderResponseId = null);
 
 public sealed record ChatToolResult(
     string ToolName,
@@ -15,4 +16,5 @@ public sealed record ChatToolStatus(
 
 public sealed record CommandCenterChatContext(
     string? ActiveUrl = null,
-    string? ActiveTitle = null);
+    string? ActiveTitle = null,
+    string? PreviousProviderResponseId = null);
