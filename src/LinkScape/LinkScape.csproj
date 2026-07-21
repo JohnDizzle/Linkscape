@@ -24,7 +24,7 @@
         <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And ('$(Platform)' == '' Or '$(Platform)' == 'AnyCPU' Or '$(Platform)' == 'Any CPU')">$(NETCoreSdkPortableRuntimeIdentifier)</RuntimeIdentifier>
         <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
         <GenerateAppInstallerFile>False</GenerateAppInstallerFile>
-        <PackageCertificateThumbprint>6F78036564FA28F11E268C654D915BCE297776D8</PackageCertificateThumbprint>
+        <PackageCertificateThumbprint>1A79CF3216E8EC1E961564BAAC697006285FA21F</PackageCertificateThumbprint>
         <AppxPackageSigningTimestampDigestAlgorithm>SHA256</AppxPackageSigningTimestampDigestAlgorithm>
         <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
         <GenerateTestArtifacts>False</GenerateTestArtifacts>
