@@ -154,6 +154,41 @@ public static class BrowserDataAssistantService
         return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
     }
 
+    public static BrowserDataAssistantResult BuildTabsSearchReport(string query)
+    {
+        query = query?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return new BrowserDataAssistantResult("## Tab search\nTell me what to search for in your saved tabs.");
+        }
+
+        var tabs = (TabPersistenceService.LoadTabs<BrowserTab[]>("tabs") ?? [])
+            .Where(tab =>
+                tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(tab => tab.Order)
+            .ThenBy(tab => tab.DateTime)
+            .Take(12)
+            .ToArray();
+
+        if (tabs.Length == 0)
+        {
+            return new BrowserDataAssistantResult($"## Tab search\nNo saved tabs matched `{EscapeMarkdown(query)}`.");
+        }
+
+        var markdown = new StringBuilder();
+        markdown.AppendLine($"## Saved tabs matching `{EscapeMarkdown(query)}`");
+        markdown.AppendLine();
+
+        foreach (var tab in tabs)
+        {
+            markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(tab), tab.Url)}**  ");
+            markdown.AppendLine($"  {EscapeMarkdown(tab.Url)}");
+        }
+
+        return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
+    }
+
     public static BrowserDataAssistantResult BuildCollectionsListReport()
     {
         var collections = TabCollectionService.GetCollections();

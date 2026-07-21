@@ -9,6 +9,7 @@ public static class BrowserDataToolService
     public const string FavoritesSummaryToolName = "browser.favorites.summary";
     public const string FavoritesSearchToolName = "browser.favorites.search";
     public const string TabsSummaryToolName = "browser.tabs.summary";
+    public const string TabsSearchToolName = "browser.tabs.search";
     public const string CollectionsListToolName = "browser.collections.list";
     public const string CollectionsSummaryToolName = "browser.collections.summary";
     public const string CollectionsAddItemToolName = "browser.collections.addItem";
@@ -27,6 +28,7 @@ public static class BrowserDataToolService
         new(FavoritesSummaryToolName, true, "Summarizes saved favorites."),
         new(FavoritesSearchToolName, true, "Searches saved favorites by title or URL."),
         new(TabsSummaryToolName, true, "Summarizes saved/restored browser tabs and the selected tab."),
+        new(TabsSearchToolName, true, "Searches saved browser tabs by title or URL."),
         new(CollectionsListToolName, true, "Lists saved tab collections."),
         new(CollectionsSummaryToolName, true, "Summarizes a saved tab collection."),
         new(CollectionsAddItemToolName, true, "Adds a URL or the active page to a tab collection."),
@@ -52,6 +54,7 @@ public static class BrowserDataToolService
             FavoritesSummaryToolName => BrowserDataAssistantService.BuildFavoritesSummaryReport(),
             FavoritesSearchToolName => BrowserDataAssistantService.BuildFavoritesSearchReport(arguments.TryGetValue("query", out var query) ? query : string.Empty),
             TabsSummaryToolName => BrowserDataAssistantService.BuildTabsSummaryReport(),
+            TabsSearchToolName => BrowserDataAssistantService.BuildTabsSearchReport(GetArgument(arguments, "query", "prompt")),
             CollectionsListToolName => BrowserDataAssistantService.BuildCollectionsListReport(),
             CollectionsSummaryToolName => BrowserDataAssistantService.BuildCollectionSummaryReport(GetArgument(arguments, "collection", "query", "prompt")),
             CollectionsAddItemToolName => BrowserDataAssistantService.BuildAddCollectionItemReport(
@@ -153,7 +156,7 @@ public static class BrowserDataToolService
 
         if (IsTabPrompt(prompt))
         {
-            toolName = TabsSummaryToolName;
+            toolName = IsSearchPrompt(prompt) ? TabsSearchToolName : TabsSummaryToolName;
             return true;
         }
 
@@ -211,12 +214,15 @@ public static class BrowserDataToolService
         prompt.Contains("page", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHistorySearchPrompt(string prompt) =>
+        IsSearchPrompt(prompt) ||
         prompt.Contains("anything with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("starts with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("start with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("with \"", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("named", StringComparison.OrdinalIgnoreCase) ||
-        prompt.Contains("name", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("name", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSearchPrompt(string prompt) =>
         prompt.Contains("search", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("find", StringComparison.OrdinalIgnoreCase);
 

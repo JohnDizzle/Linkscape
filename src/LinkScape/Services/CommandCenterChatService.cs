@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -6,25 +7,19 @@ public static class CommandCenterChatService
 {
     public static CommandCenterChatResponse GetStartupSummary()
     {
-        var reactorStatus = ReactorReferenceService.GetStatus();
         var mcpStatus = WindowsMcpClientService.GetStatus();
-        var onlineStatus = OnlineReferenceService.GetStatus();
 
         var text = $"""
             Local chat services are ready.
 
-            • Reactor local reference: {reactorStatus.Message}
             • Windows MCP: {mcpStatus.Message}
-            • Online reference: {onlineStatus.Message}
             """;
 
         return new CommandCenterChatResponse(
             text,
             ToolResults:
             [
-                new ChatToolResult("reactor.status", reactorStatus.SourceExists, reactorStatus.Message),
-                new ChatToolResult(mcpStatus.ToolName, mcpStatus.IsAvailable, mcpStatus.Message),
-                new ChatToolResult(onlineStatus.ToolName, onlineStatus.IsAvailable, onlineStatus.Message)
+                new ChatToolResult(mcpStatus.ToolName, mcpStatus.IsAvailable, mcpStatus.Message)
             ]);
     }
 
@@ -50,11 +45,6 @@ public static class CommandCenterChatService
             return await SubmitBrowserDataPromptAsync(prompt, context, cancellationToken);
         }
 
-        if (IsReactorReferencePrompt(prompt))
-        {
-            return SearchReactor(prompt);
-        }
-
         if (IsWindowsMcpPrompt(prompt))
         {
             var result = await WindowsMcpClientService.InvokeToolAsync(
@@ -74,34 +64,6 @@ public static class CommandCenterChatService
         }
 
         return BuildUnsupportedPromptResponse(prompt);
-    }
-
-    private static CommandCenterChatResponse SearchReactor(string prompt)
-    {
-        var query = ExtractSearchQuery(prompt);
-        var localResults = ReactorReferenceService.Search(query, 6);
-
-        if (localResults.Count == 0)
-        {
-            var onlineResult = OnlineReferenceService.BuildReactorReference(query);
-            return new CommandCenterChatResponse(
-                $"No local Reactor results were found for '{query}'.\n\n{onlineResult.Message}",
-                ToolResults: [onlineResult]);
-        }
-
-        var builder = new StringBuilder();
-        builder.AppendLine($"Local Reactor results for '{query}':");
-        builder.AppendLine();
-
-        foreach (var result in localResults)
-        {
-            builder.AppendLine($"• {result.RelativePath}:{result.LineNumber}");
-            builder.AppendLine($"  {result.Preview}");
-        }
-
-        return new CommandCenterChatResponse(
-            builder.ToString().TrimEnd(),
-            ToolResults: [new ChatToolResult("reactor.search", true, $"Found {localResults.Count} local result(s).")]);
     }
 
     private static CommandCenterChatResponse BuildToolCatalogResponse()
@@ -136,7 +98,15 @@ public static class CommandCenterChatService
         CommandCenterChatContext? context,
         CancellationToken cancellationToken)
     {
-        if (!BrowserDataToolService.TrySelectToolName(prompt, out var toolName))
+        var query = prompt;
+        string toolName;
+
+        if (TryParseBrowserSearchPrompt(prompt, out var parsedToolName, out var parsedQuery))
+        {
+            toolName = parsedToolName;
+            query = parsedQuery;
+        }
+        else if (!BrowserDataToolService.TrySelectToolName(prompt, out toolName))
         {
             return BuildUnsupportedPromptResponse(prompt);
         }
@@ -144,7 +114,7 @@ public static class CommandCenterChatService
         var arguments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["prompt"] = prompt,
-            ["query"] = prompt
+            ["query"] = query
         };
 
         if (!string.IsNullOrWhiteSpace(context?.ActiveUrl))
@@ -173,10 +143,31 @@ public static class CommandCenterChatService
             ]);
     }
 
-    private static bool IsReactorReferencePrompt(string prompt) =>
-        prompt.Contains("reactor", StringComparison.OrdinalIgnoreCase) ||
-        prompt.Contains("usestate", StringComparison.OrdinalIgnoreCase) ||
-        prompt.Contains("component", StringComparison.OrdinalIgnoreCase);
+    public static bool TryParseBrowserSearchPrompt(string prompt, out string toolName, out string query)
+    {
+        var match = Regex.Match(
+            prompt ?? string.Empty,
+            @"\b(?:search|find)\s+(?:for\s+)?(?<query>.+?)\s+(?:in|from)\s+(?:my\s+)?(?<source>favorites?|bookmarks?|history|tabs?)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        if (!match.Success)
+        {
+            toolName = string.Empty;
+            query = string.Empty;
+            return false;
+        }
+
+        query = match.Groups["query"].Value.Trim().Trim('"', '\'');
+        toolName = match.Groups["source"].Value.ToLowerInvariant() switch
+        {
+            "favorite" or "favorites" or "bookmark" or "bookmarks" => BrowserDataToolService.FavoritesSearchToolName,
+            "history" => BrowserDataToolService.HistorySearchToolName,
+            "tab" or "tabs" => BrowserDataToolService.TabsSearchToolName,
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(query) && !string.IsNullOrWhiteSpace(toolName);
+    }
 
     private static bool IsWindowsMcpPrompt(string prompt) =>
         prompt.Contains("windows", StringComparison.OrdinalIgnoreCase) ||
@@ -234,14 +225,4 @@ public static class CommandCenterChatService
             ]);
     }
 
-    private static string ExtractSearchQuery(string prompt)
-    {
-        var query = prompt
-            .Replace("search", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("reactor", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("for", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Trim();
-
-        return string.IsNullOrWhiteSpace(query) ? "UseState" : query;
-    }
 }

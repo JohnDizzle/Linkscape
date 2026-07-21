@@ -88,14 +88,7 @@ internal static class BrowserChrome
             (FlexRow(
                 IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphCollections, onOpenCollections, "Open collections", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true)
-                    .Set(button =>
-                    {
-                        if (isChatOpen)
-                        {
-                            button.Background = BrowserConstants.AccentFillColorTertiaryBrush;
-                        }
-                    }),
+                IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
@@ -2680,22 +2673,6 @@ internal static class BrowserChrome
             .Padding(10)
             .CornerRadius(10)
             .Background(BrowserConstants.LayerFillDefaultBrush)
-            .WithBorder(Theme.SurfaceStroke);
-    }
-
-    private static Element BuildReactorReferenceSearchResult(ReactorReferenceSearchResult result)
-    {
-        return Border(
-            VStack(2,
-                TextBlock($"{result.RelativePath}:{result.LineNumber}")
-                    .TextTrimming(TextTrimming.CharacterEllipsis)
-                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-                TextBlock(result.Preview)
-                    .TextWrapping(TextWrapping.Wrap)
-                    .Opacity(0.82)))
-            .Padding(8)
-            .CornerRadius(8)
-            .Background(BrowserConstants.LayerFillAltBrush)
             .WithBorder(Theme.SurfaceStroke);
     }
 
