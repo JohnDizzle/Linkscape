@@ -1,0 +1,74 @@
+name: Feature request
+description: Suggest an idea or enhancement for LinkScape
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea! Please describe the user problem first, then propose a solution.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user problem are you trying to solve?
+      placeholder: As a user, I want ... because ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should LinkScape do?
+      placeholder: Describe the behavior, UI, and expected outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: Any workaround or alternative approach you considered.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Tabs
+        - History
+        - Favorites
+        - Settings
+        - Search
+        - Command Center
+        - Theming / Acrylic
+        - Accessibility
+        - Performance
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - label: Improves accessibility
+        - label: Improves usability
+        - label: Improves performance
+        - label: Enables personalization
+        - label: Breaking/major behavior change
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups / references
+      description: Optional screenshots, sketches, or links.
+      placeholder: Add visuals or references here.
+    validations:
+      required: false
