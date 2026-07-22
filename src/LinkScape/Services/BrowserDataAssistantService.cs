@@ -70,11 +70,79 @@ public static class BrowserDataAssistantService
             return new BrowserDataAssistantResult("## History period\nTell me a month or year, like `history for this month`, `history for June`, or `history for 2025`.");
         }
 
-        var items = HistoryPersistenceService.GetHistoryBetween(startedAt, endedAt, 200);
+        var searchTerms = ExtractHistoryReportSearchTerms(prompt);
+        var items = searchTerms.Length == 0
+            ? HistoryPersistenceService.GetHistoryBetween(startedAt, endedAt, 200)
+            : HistoryPersistenceService.GetHistoryBetween(startedAt, endedAt, searchTerms, 200);
+        var note = searchTerms.Length == 0
+            ? items.Count == 0 ? $"No active history items were found for {label}." : null
+            : $"Search group: **{EscapeMarkdown(string.Join(", ", searchTerms))}**";
+
         return BuildHistoryReport(
             $"History for {label}",
             items,
-            items.Count == 0 ? $"No active history items were found for {label}." : null);
+            note);
+    }
+
+    public static BrowserDataAssistantResult BuildHistoryGroupReport(IReadOnlyDictionary<string, string> arguments)
+    {
+        var report = HistoryGroupSqlService.Query(HistoryGroupSqlService.FromArguments(arguments));
+        var request = report.Request;
+        var markdown = new StringBuilder();
+        markdown.AppendLine($"## History grouped by {request.GroupBy}");
+        markdown.AppendLine();
+        markdown.AppendLine($"- State: **{EscapeMarkdown(request.State)}**");
+        markdown.AppendLine($"- Includes: **{EscapeMarkdown(request.Include)}**");
+        markdown.AppendLine($"- Sort: **{EscapeMarkdown(request.SortBy)}**");
+        if (request.SearchTerms?.Count > 0)
+        {
+            markdown.AppendLine($"- Search group: **{EscapeMarkdown(string.Join(", ", request.SearchTerms))}**");
+        }
+        if (!string.IsNullOrWhiteSpace(request.Url))
+        {
+            markdown.AppendLine($"- URL: **{MarkdownLink(request.Url, request.Url)}**");
+        }
+        markdown.AppendLine($"- Groups returned: **{report.Rows.Count}**");
+        markdown.AppendLine();
+
+        if (report.Rows.Count == 0)
+        {
+            markdown.AppendLine("No matching history groups were found.");
+            return new BrowserDataAssistantResult(markdown.ToString().TrimEnd(), BuildHistoryGroupHtmlReport(report));
+        }
+
+        markdown.AppendLine("### Periods");
+        markdown.AppendLine();
+
+        foreach (var row in report.Rows.Take(12))
+        {
+            var metrics = new List<string>
+            {
+                $"pages: {row.PageCount}",
+                $"visits: {row.VisitCount}"
+            };
+            if (request.Include.Contains("favorites", StringComparison.OrdinalIgnoreCase))
+            {
+                metrics.Add($"favorites: {row.FavoriteCount}");
+            }
+
+            if (request.Include.Contains("collections", StringComparison.OrdinalIgnoreCase))
+            {
+                metrics.Add($"collections: {row.CollectionLinkCount}");
+            }
+
+            metrics.Add($"last: {row.LastVisitedAt:g}");
+
+            markdown.AppendLine($"- **{EscapeMarkdown(row.Period)}**  ");
+            markdown.AppendLine($"  {string.Join(" | ", metrics)}");
+        }
+
+        if (report.Rows.Count > 12)
+        {
+            markdown.AppendLine($"- {report.Rows.Count - 12} more periods in this result.");
+        }
+
+        return new BrowserDataAssistantResult(markdown.ToString().TrimEnd(), BuildHistoryGroupHtmlReport(report));
     }
 
     public static BrowserDataAssistantResult BuildHistoryArchiveReport(string prompt)
@@ -423,24 +491,22 @@ public static class BrowserDataAssistantService
         {
             markdown.AppendLine("### Top active sites");
             markdown.AppendLine();
-            markdown.AppendLine("| Site | Pages | Visits | Last active |");
-            markdown.AppendLine("|---|---:|---:|---|");
-
-            foreach (var host in topHosts)
-            {
-                markdown.AppendLine($"| {EscapeMarkdown(host.Host)} | {host.Items} | {host.Visits} | {host.LastVisitedAt:g} |");
-            }
-
+            AppendTopSiteTable(markdown, topHosts.Select(item => (item.Host, item.Items, item.Visits, item.LastVisitedAt)).ToArray());
             markdown.AppendLine();
         }
 
-        markdown.AppendLine("### Latest pages");
+        markdown.AppendLine("### Sample pages");
         markdown.AppendLine();
 
-        foreach (var item in activeItems.Take(8))
+        foreach (var item in activeItems.Take(5))
         {
             markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(item), item.Url)}**  ");
             markdown.AppendLine($"  {EscapeMarkdown(GetHost(item.Url))} · {item.LastVisitedAt:g} · visits: {item.VisitCount}");
+        }
+
+        if (activeItems.Length > 5)
+        {
+            markdown.AppendLine($"- {activeItems.Length - 5} more pages in this result.");
         }
 
         var html = BuildHistoryHtmlReport(activeItems, topHosts.Select(item => (item.Host, item.Items, item.Visits, item.LastVisitedAt)).ToArray());
@@ -486,26 +552,24 @@ public static class BrowserDataAssistantService
         {
             markdown.AppendLine("### Top active sites");
             markdown.AppendLine();
-            markdown.AppendLine("| Site | Pages | Visits | Last active |");
-            markdown.AppendLine("|---|---:|---:|---|");
-
-            foreach (var host in topHosts)
-            {
-                markdown.AppendLine($"| {EscapeMarkdown(host.Host)} | {host.Items} | {host.Visits} | {host.LastVisitedAt:g} |");
-            }
-
+            AppendTopSiteTable(markdown, topHosts.Select(item => (item.Host, item.Items, item.Visits, item.LastVisitedAt)).ToArray());
             markdown.AppendLine();
         }
 
         if (activeItems.Count > 0)
         {
-            markdown.AppendLine("### Pages");
+            markdown.AppendLine("### Sample pages");
             markdown.AppendLine();
 
-            foreach (var item in activeItems.Take(10))
+            foreach (var item in activeItems.Take(5))
             {
                 markdown.AppendLine($"- **{MarkdownLink(GetDisplayTitle(item), item.Url)}**  ");
                 markdown.AppendLine($"  {EscapeMarkdown(GetHost(item.Url))} · {item.LastVisitedAt:g} · visits: {item.VisitCount}");
+            }
+
+            if (activeItems.Count > 5)
+            {
+                markdown.AppendLine($"- {activeItems.Count - 5} more pages in this result.");
             }
         }
 
@@ -624,6 +688,78 @@ public static class BrowserDataAssistantService
             """;
     }
 
+    private static void AppendTopSiteTable(
+        StringBuilder markdown,
+        IReadOnlyList<(string Host, int Items, int Visits, DateTime LastVisitedAt)> topHosts)
+    {
+        markdown.AppendLine("| Site | Pages | Visits | Last active |");
+        markdown.AppendLine("|---|---:|---:|---|");
+
+        foreach (var host in topHosts.Take(6))
+        {
+            markdown.AppendLine($"| {EscapeMarkdown(TrimCell(host.Host, 28))} | {host.Items} | {host.Visits} | {host.LastVisitedAt:g} |");
+        }
+
+        if (topHosts.Count > 6)
+        {
+            markdown.AppendLine($"| {topHosts.Count - 6} more |  |  |  |");
+        }
+    }
+
+    private static string TrimCell(string value, int maxLength)
+    {
+        value = Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
+        return value.Length <= maxLength
+            ? value
+            : value[..Math.Max(0, maxLength - 1)].TrimEnd() + "...";
+    }
+
+    private static string BuildHistoryGroupHtmlReport(HistoryGroupSqlReport report)
+    {
+        var rows = new StringBuilder();
+
+        foreach (var row in report.Rows)
+        {
+            rows.AppendLine($"""
+                <tr>
+                    <td>{Html(row.Period)}</td>
+                    <td>{row.PageCount}</td>
+                    <td>{row.VisitCount}</td>
+                    <td>{row.FavoriteCount}</td>
+                    <td>{row.CollectionLinkCount}</td>
+                    <td>{Html(row.LastVisitedAt?.ToString("g") ?? string.Empty)}</td>
+                </tr>
+                """);
+        }
+
+        return $$"""
+            <!doctype html>
+            <html>
+            <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: Segoe UI, sans-serif; margin: 18px; color: #f8fafc; background: #111827; }
+                h1 { font-size: 20px; margin: 0 0 8px; }
+                .muted { color: #cbd5e1; margin: 0 0 14px; }
+                table { border-collapse: collapse; width: 100%; background: #1f2937; border-radius: 12px; overflow: hidden; }
+                th, td { padding: 10px 12px; border-bottom: 1px solid #374151; text-align: left; }
+                th { background: #0f172a; color: #bfdbfe; }
+                td:not(:first-child), th:not(:first-child) { text-align: right; }
+                td:last-child, th:last-child { text-align: left; }
+            </style>
+            </head>
+            <body>
+                <h1>History grouped by {{Html(report.Request.GroupBy)}}</h1>
+                <p class="muted">State: {{Html(report.Request.State)}}. Includes: {{Html(report.Request.Include)}}. Sort: {{Html(report.Request.SortBy)}}. URL: {{Html(report.Request.Url ?? "All")}}.</p>
+                <table>
+                    <thead><tr><th>Period</th><th>Pages</th><th>Visits</th><th>Favorites</th><th>Collections</th><th>Last visit</th></tr></thead>
+                    <tbody>{{rows}}</tbody>
+                </table>
+            </body>
+            </html>
+            """;
+    }
+
     private static bool IsFavoritesPrompt(string prompt) =>
         prompt.Contains("favorite", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("bookmark", StringComparison.OrdinalIgnoreCase);
@@ -654,8 +790,33 @@ public static class BrowserDataAssistantService
 
     private static string CleanHistorySearchQuery(string value)
     {
-        value = Regex.Replace(value ?? string.Empty, @"\b(show|me|anything|history|browser|with|in|the|name|named|title|url|that|contains|starts|start)\b", string.Empty, RegexOptions.IgnoreCase);
+        value = Regex.Replace(value ?? string.Empty, @"\b(show|me|anything|history|browser|search|find|for|with|in|from|the|name|named|title|url|that|contains|starts|start)\b", string.Empty, RegexOptions.IgnoreCase);
         return Regex.Replace(value, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '!', '?', '"', '\'');
+    }
+
+    private static string[] ExtractHistoryReportSearchTerms(string prompt)
+    {
+        prompt = prompt?.Trim() ?? string.Empty;
+        var quoted = Regex.Match(prompt, "\"(?<terms>[^\"]+)\"");
+        var value = quoted.Success
+            ? quoted.Groups["terms"].Value
+            : Regex.Match(
+                prompt,
+                @"\b(?:about|for|with)\s+(?<terms>.+?)\s+(?:(?:\b(?:for|in|during)\s+)?(?:this\s+month|last\s+month|this\s+year|last\s+year|january|february|march|april|may|june|july|august|september|october|november|december|20\d{2}))\b",
+                RegexOptions.IgnoreCase).Groups["terms"].Value;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return [];
+        }
+
+        value = Regex.Replace(value, @"\band\b", ",", RegexOptions.IgnoreCase);
+        return value
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(term => Regex.Replace(term, @"\s+", " ").Trim(' ', '.', ',', ':', ';', '!', '?', '"', '\''))
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static bool TryExtractHistoryPeriod(string prompt, out DateTime startedAt, out DateTime endedAt, out string label)
@@ -734,8 +895,34 @@ public static class BrowserDataAssistantService
             : url;
     }
 
-    private static string GetDisplayTitle(HistoryItem? item) =>
-        item is null ? "None" : string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title;
+    private static string GetDisplayTitle(HistoryItem? item)
+    {
+        if (item is null)
+        {
+            return "None";
+        }
+
+        var title = string.IsNullOrWhiteSpace(item.Title) ? string.Empty : item.Title.Trim();
+        if (!string.IsNullOrWhiteSpace(title) &&
+            !title.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !title.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return title;
+        }
+
+        if (Uri.TryCreate(item.Url, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
+                ? uri.Host[4..]
+                : uri.Host;
+            var path = uri.AbsolutePath.Trim('/');
+            return string.IsNullOrWhiteSpace(path)
+                ? host
+                : $"{host}/{path.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()}";
+        }
+
+        return item.Url;
+    }
 
     private static string GetDisplayTitle(FavoriteItem? item) =>
         item is null ? "None" : string.IsNullOrWhiteSpace(item.Title) ? item.Url : item.Title;

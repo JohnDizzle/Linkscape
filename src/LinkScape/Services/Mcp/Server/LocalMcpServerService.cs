@@ -198,6 +198,22 @@ public static class LocalMcpServerService
             };
             required.Add("query");
         }
+        else if (toolName == BrowserDataToolService.HistoryGroupToolName)
+        {
+            properties["prompt"] = CreateStringSchema("Optional natural-language report request, such as group history by month with favorites.");
+            properties["groupBy"] = CreateEnumSchema("Time group for the history report.", "day", "month", "year");
+            properties["include"] = CreateStringSchema("Comma-separated related facts to include: visits, favorites, collections.");
+            properties["state"] = CreateEnumSchema("History state to query.", "current", "archived", "both");
+            properties["sortBy"] = CreateEnumSchema("Logical sort for grouped rows.", "lastVisit", "visits", "favorites", "collections", "period");
+            properties["startedAt"] = CreateStringSchema("Optional inclusive ISO date/time lower bound.");
+            properties["endedAt"] = CreateStringSchema("Optional exclusive ISO date/time upper bound.");
+            properties["url"] = CreateStringSchema("Optional exact URL filter. The service normalizes the URL before querying.");
+            properties["limit"] = new JsonObject
+            {
+                ["type"] = "integer",
+                ["description"] = "Maximum groups to return. Defaults to 24."
+            };
+        }
         else if (toolName.StartsWith("browser.collections.", StringComparison.OrdinalIgnoreCase))
         {
             properties["collection"] = new JsonObject
@@ -250,4 +266,20 @@ public static class LocalMcpServerService
             ["type"] = "string",
             ["description"] = description
         };
+
+    private static JsonObject CreateEnumSchema(string description, params string[] values)
+    {
+        var enumValues = new JsonArray();
+        foreach (var value in values)
+        {
+            enumValues.Add(value);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = description,
+            ["enum"] = enumValues
+        };
+    }
 }

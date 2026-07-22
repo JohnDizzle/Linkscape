@@ -50,6 +50,7 @@ public static class LocalMcpToolRouter
             BrowserDataToolService.HistoryMostVisitedToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistorySearchToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryPeriodToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.HistoryGroupToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryArchiveToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSummaryToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.FavoritesSearchToolName => InvokeBrowserTool(toolName, arguments),

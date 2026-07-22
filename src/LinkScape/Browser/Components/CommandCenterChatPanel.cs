@@ -4,6 +4,7 @@ using LinkScape.Browser;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor.Markdown;
 using System.Text.RegularExpressions;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace Browser.Components;
 
@@ -20,13 +21,15 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private const double MetaFontSize = 12;
     private const double AssistantBubbleMaxWidth = 480;
     private const double UserBubbleMaxWidth = 320;
-    private const int MaxExtractedLinks = 6;
+    private const int MaxExtractedLinks = 3;
 
     private sealed record ChatPanelMessage(string Text, bool IsUser, bool IsError = false, bool IsThinking = false);
 
     private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
     private FrameworkElement? _messagesBottomAnchor;
+    private string _latestPromptText = string.Empty;
+    private DateTime _lastSubmitStartedAt = DateTime.MinValue;
     private int _scrollRequestVersion;
     private static readonly SolidColorBrush ChatSurfaceBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF0, 0x27, 0x27, 0x29));
     private static readonly SolidColorBrush AssistantBubbleBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF5, 0x2E, 0x2E, 0x31));
@@ -63,19 +66,26 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
         void ApplyPrompt(string value)
         {
-            prompt.Set(value);
+            var nextValue = value ?? string.Empty;
+            _latestPromptText = nextValue;
+            prompt.Set(nextValue);
             arePromptSuggestionsOpen.Set(false);
         }
 
-        async void SubmitPrompt()
+        async void SubmitPrompt(string? submittedText = null)
         {
-            var text = prompt.Value.Trim();
+            var text = (submittedText ?? _latestPromptText ?? prompt.Value).Trim();
+            var now = DateTime.UtcNow;
 
-            if (string.IsNullOrWhiteSpace(text) || isSending.Value)
+            if (string.IsNullOrWhiteSpace(text) ||
+                isSending.Value ||
+                now - _lastSubmitStartedAt < TimeSpan.FromMilliseconds(700))
             {
                 return;
             }
 
+            _lastSubmitStartedAt = now;
+            _latestPromptText = string.Empty;
             prompt.Set(string.Empty);
             arePromptSuggestionsOpen.Set(false);
 
@@ -149,6 +159,10 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             CreatePromptPill("Favorites", () => ApplyPrompt("summarize my favorites")),
             CreatePromptPill("Tabs", () => ApplyPrompt("summarize my saved tabs")),
             CreatePromptPill("Collections", () => ApplyPrompt("show my collections")),
+            CreatePromptPill("Group month", () => ApplyPrompt("report history by month")),
+            CreatePromptPill("Group year", () => ApplyPrompt("report history by year")),
+            CreatePromptPill("+ Favorites", () => ApplyPrompt(AppendPromptClause(prompt.Value, "with favorites"))),
+            CreatePromptPill("+ Collections", () => ApplyPrompt(AppendPromptClause(prompt.Value, "with collections"))),
             CreatePromptPill("Most visited", () => ApplyPrompt("what sites are most active in my history")),
             CreatePromptPill("Tools", () => ApplyPrompt("mcp status"))) with
         {
@@ -170,16 +184,20 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             FlexRow(
                 AutoSuggestBox(prompt.Value, value =>
                 {
-                    prompt.Set(value);
-                    if (!string.IsNullOrWhiteSpace(value))
+                    var nextValue = value ?? string.Empty;
+                    _latestPromptText = nextValue;
+                    prompt.Set(nextValue);
+                    if (!string.IsNullOrWhiteSpace(nextValue))
                     {
                         arePromptSuggestionsOpen.Set(false);
                     }
-                }, _ => SubmitPrompt())
+                }, submitted => SubmitPrompt(submitted))
                     .AutomationName("CommandCenterChatPrompt")
                     .SuggestionChosen(value =>
                     {
-                        prompt.Set(value);
+                        var nextValue = value ?? string.Empty;
+                        _latestPromptText = nextValue;
+                        prompt.Set(nextValue);
                         arePromptSuggestionsOpen.Set(false);
                     })
                     .IsSuggestionListOpen(false)
@@ -188,8 +206,19 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                     PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about history, favorites, today, active sites, or mcp status...",
                     Suggestions = []
                 },
-                Button(isSending.Value ? "..." : "Ask", SubmitPrompt).AutomationName("CommandCenterChatSubmit")
-                    .IsEnabled(!isSending.Value),
+                Button(isSending.Value ? "..." : "Ask", () => SubmitPrompt())
+                    .AutomationName("CommandCenterChatSubmit")
+                    .Set(button =>
+                    {
+                        if (isSending.Value)
+                        {
+                            StartAskButtonPulse(button);
+                        }
+                        else
+                        {
+                            StopAskButtonPulse(button);
+                        }
+                    }),
                 Button("Clear", ClearChat)) with
             {
                 ColumnGap = 8
@@ -313,7 +342,30 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .Background(message.IsUser ? BrowserConstants.AccentFillColorTertiaryBrush : AssistantBubbleBrush)
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
-            .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth);
+            .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth)
+            .Set(border => border.ContextFlyout = CreateMessageContextFlyout(message.Text));
+    }
+
+    private static MenuFlyout CreateMessageContextFlyout(string messageText)
+    {
+        var flyout = new MenuFlyout();
+        var copyItem = new MenuFlyoutItem
+        {
+            Text = "Copy message"
+        };
+        copyItem.Click += (_, _) => CopyMessageToClipboard(messageText);
+        flyout.Items.Add(copyItem);
+        return flyout;
+    }
+
+    private static void CopyMessageToClipboard(string messageText)
+    {
+        var package = new DataPackage
+        {
+            RequestedOperation = DataPackageOperation.Copy
+        };
+        package.SetText(messageText ?? string.Empty);
+        Clipboard.SetContent(package);
     }
 
     private void OpenMarkdownLink(Uri uri)
@@ -454,6 +506,29 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         }
 
         return url;
+    }
+
+    private static string AppendPromptClause(string prompt, string clause)
+    {
+        prompt = (prompt ?? string.Empty).Trim();
+        clause = (clause ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(clause))
+        {
+            return prompt;
+        }
+
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return $"report history by month {clause}";
+        }
+
+        if (prompt.Contains(clause, StringComparison.OrdinalIgnoreCase))
+        {
+            return prompt;
+        }
+
+        return $"{prompt} {clause}";
     }
 
     private bool TryOpenPriorMessageLink(
@@ -653,6 +728,45 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         storyboard.Children.Add(animation);
         textBlock.Tag = storyboard;
         storyboard.Begin();
+    }
+
+    private static void StartAskButtonPulse(Button button)
+    {
+        if (button.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
+        {
+            return;
+        }
+
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0.55,
+            To = 1,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromMilliseconds(620)),
+            AutoReverse = true,
+            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+            EnableDependentAnimation = true
+        };
+
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, button);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
+
+        var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        storyboard.Children.Add(animation);
+        button.Tag = storyboard;
+        storyboard.Begin();
+    }
+
+    private static void StopAskButtonPulse(Button button)
+    {
+        if (button.Tag is not Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
+        {
+            button.Opacity = 1;
+            return;
+        }
+
+        storyboard.Stop();
+        button.Tag = null;
+        button.Opacity = 1;
     }
 
     private static Element CreateAvatarPill(bool isUser)

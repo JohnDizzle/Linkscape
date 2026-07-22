@@ -206,7 +206,7 @@ public static class CommandCenterChatService
     {
         var match = Regex.Match(
             prompt ?? string.Empty,
-            @"\b(?:search|find)\s+(?:for\s+)?(?<query>.+?)\s+(?:in|from)\s+(?:my\s+)?(?<source>favorites?|bookmarks?|history|tabs?)\b",
+            @"\b(?:search|find)\s+(?:for\s+)?(?<query>.+?)\s+(?:in|from)\s+(?:my\s+)?(?<source>favorites?|bookmarks?|history|tabs?)\b|\b(?:search|find)\s+(?:my\s+)?(?<source2>favorites?|bookmarks?|history|tabs?)\s+(?:for\s+)?(?<query2>.+)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         if (!match.Success)
@@ -216,8 +216,11 @@ public static class CommandCenterChatService
             return false;
         }
 
-        query = match.Groups["query"].Value.Trim().Trim('"', '\'');
-        toolName = match.Groups["source"].Value.ToLowerInvariant() switch
+        query = (match.Groups["query"].Success ? match.Groups["query"].Value : match.Groups["query2"].Value)
+            .Trim()
+            .Trim('"', '\'');
+        var source = match.Groups["source"].Success ? match.Groups["source"].Value : match.Groups["source2"].Value;
+        toolName = source.ToLowerInvariant() switch
         {
             "favorite" or "favorites" or "bookmark" or "bookmarks" => BrowserDataToolService.FavoritesSearchToolName,
             "history" => BrowserDataToolService.HistorySearchToolName,

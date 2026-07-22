@@ -5,6 +5,7 @@ public static class BrowserDataToolService
     public const string HistoryMostVisitedToolName = "browser.history.mostVisited";
     public const string HistorySearchToolName = "browser.history.search";
     public const string HistoryPeriodToolName = "browser.history.period";
+    public const string HistoryGroupToolName = "browser.history.group";
     public const string HistoryArchiveToolName = "browser.history.archive";
     public const string FavoritesSummaryToolName = "browser.favorites.summary";
     public const string FavoritesSearchToolName = "browser.favorites.search";
@@ -24,6 +25,7 @@ public static class BrowserDataToolService
         new(HistoryMostVisitedToolName, true, "Summarizes most visited browser history entries."),
         new(HistorySearchToolName, true, "Searches browser history by title or URL, including starts-with matching."),
         new(HistoryPeriodToolName, true, "Shows browser history for a month, year, or explicit date period."),
+        new(HistoryGroupToolName, true, "Groups browser history by day, month, or year and relates visits to favorites and collections by URL."),
         new(HistoryArchiveToolName, true, "Archives browser history for a month or year into the archive table."),
         new(FavoritesSummaryToolName, true, "Summarizes saved favorites."),
         new(FavoritesSearchToolName, true, "Searches saved favorites by title or URL."),
@@ -50,6 +52,7 @@ public static class BrowserDataToolService
             HistoryMostVisitedToolName => BrowserDataAssistantService.BuildMostVisitedHistoryReport(),
             HistorySearchToolName => BrowserDataAssistantService.BuildHistorySearchReport(GetArgument(arguments, "query", "prompt")),
             HistoryPeriodToolName => BrowserDataAssistantService.BuildHistoryPeriodReport(GetArgument(arguments, "period", "query", "prompt")),
+            HistoryGroupToolName => BrowserDataAssistantService.BuildHistoryGroupReport(arguments),
             HistoryArchiveToolName => BrowserDataAssistantService.BuildHistoryArchiveReport(GetArgument(arguments, "period", "query", "prompt")),
             FavoritesSummaryToolName => BrowserDataAssistantService.BuildFavoritesSummaryReport(),
             FavoritesSearchToolName => BrowserDataAssistantService.BuildFavoritesSearchReport(arguments.TryGetValue("query", out var query) ? query : string.Empty),
@@ -86,6 +89,12 @@ public static class BrowserDataToolService
     {
         prompt = prompt?.Trim() ?? string.Empty;
         toolName = HistoryRecentToolName;
+
+        if (IsBrowserHistoryPrompt(prompt) && IsHistoryGroupPrompt(prompt))
+        {
+            toolName = HistoryGroupToolName;
+            return true;
+        }
 
         if (IsCollectionPrompt(prompt))
         {
@@ -212,6 +221,12 @@ public static class BrowserDataToolService
         prompt.Contains("anything with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("starts with", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("page", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsHistoryGroupPrompt(string prompt) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            prompt,
+            @"\b(group(?:ed)?|aggre?gr?ate|roll\s*up|break\s*down)\b.*\b(day|daily|month|monthly|year|yearly|visit|visited|favorite|bookmark|collection)\b|\bby\s+(?:day|month|year)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     private static bool IsHistorySearchPrompt(string prompt) =>
         IsSearchPrompt(prompt) ||

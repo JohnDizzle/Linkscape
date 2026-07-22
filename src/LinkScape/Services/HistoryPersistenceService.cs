@@ -209,6 +209,51 @@ public static class HistoryPersistenceService
             });
     }
 
+    public static IReadOnlyList<HistoryItem> GetHistoryBetween(
+        DateTime startedAt,
+        DateTime endedAt,
+        IReadOnlyList<string> searchTerms,
+        int limit = 200)
+    {
+        var terms = searchTerms
+            .Select(term => term.Trim())
+            .Where(term => !string.IsNullOrWhiteSpace(term))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToArray();
+
+        if (terms.Length == 0)
+        {
+            return GetHistoryBetween(startedAt, endedAt, limit);
+        }
+
+        var filters = terms
+            .Select((_, index) => $"(Url LIKE $term{index} OR Title LIKE $term{index})")
+            .ToArray();
+
+        return QueryHistory(
+            $"""
+            SELECT Url, Title, FirstVisitedAt, LastVisitedAt, VisitCount
+            FROM HistoryItems
+            WHERE LastVisitedAt >= $startedAt
+                AND LastVisitedAt < $endedAt
+                AND ({string.Join(" OR ", filters)})
+            ORDER BY LastVisitedAt DESC
+            LIMIT $limit;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$startedAt", startedAt.ToString("O"));
+                command.Parameters.AddWithValue("$endedAt", endedAt.ToString("O"));
+                command.Parameters.AddWithValue("$limit", limit);
+
+                for (var index = 0; index < terms.Length; index++)
+                {
+                    command.Parameters.AddWithValue($"$term{index}", $"%{terms[index]}%");
+                }
+            });
+    }
+
     public static HistoryArchiveSummary ArchiveHistoryBetween(DateTime startedAt, DateTime endedAt, string period)
     {
         var archivePeriod = string.IsNullOrWhiteSpace(period)

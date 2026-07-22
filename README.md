@@ -180,6 +180,22 @@ Current database files used by the app:
 - `favorites.db`
 - `settings.db`
 
+### Debugging MCP and Linker Chat
+
+MCP and Linker chat diagnostics are written to:
+
+```text
+%USERPROFILE%\Documents\LinkScapeCache\mcp-debug.log
+```
+
+Stream the log live in PowerShell with:
+
+```powershell
+Get-Content "$env:USERPROFILE\Documents\LinkScapeCache\mcp-debug.log" -Tail 100 -Wait
+```
+
+If `LINKSCAPE_CACHE_DIRECTORY` is set, use that directory instead of `Documents\LinkScapeCache`.
+
 ## Signing and Open Source Safety
 
 Private signing assets are intentionally not stored in the repository.

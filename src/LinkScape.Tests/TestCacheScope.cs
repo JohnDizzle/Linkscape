@@ -20,7 +20,7 @@ internal static class TestCacheScope
         Environment.SetEnvironmentVariable("LINKSCAPE_CACHE_DIRECTORY", RootPath, EnvironmentVariableTarget.Process);
 
         ResetDatabase("tabs.db", "DROP TABLE IF EXISTS KeyValue;");
-        ResetDatabase("history.db", "DROP TABLE IF EXISTS HistoryItems;");
+        ResetDatabase("history.db", "DROP TABLE IF EXISTS HistoryArchiveItems; DROP TABLE IF EXISTS HistoryItems;");
         ResetDatabase("favorites.db", "DROP TABLE IF EXISTS Favorites;");
         ResetDatabase("settings.db", "DROP TABLE IF EXISTS Settings;");
         ResetDatabase("tabCollections.db", "DROP TABLE IF EXISTS TabCollectionItems; DROP TABLE IF EXISTS TabCollections;");
