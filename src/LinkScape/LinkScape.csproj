@@ -31,7 +31,7 @@
         <AppxBundle>Always</AppxBundle>
         <AppxBundlePlatforms>x64</AppxBundlePlatforms>
         <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
-        <GenerateTemporaryStoreCertificate>True</GenerateTemporaryStoreCertificate>
+        <GenerateTemporaryStoreCertificate>false</GenerateTemporaryStoreCertificate>
     </PropertyGroup>
     <ItemGroup>
       <Compile Remove="AIChat.cs" />

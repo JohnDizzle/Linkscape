@@ -22,6 +22,15 @@ internal static class LinkerAiChatService
             return CommandCenterChatService.BuildUnsupportedPromptResponse(prompt);
         }
 
+        if (IsPageImagePrompt(prompt) && context?.CaptureActivePageImageAsync is not null)
+        {
+            var viewportImage = await context.CaptureActivePageImageAsync();
+            if (!string.IsNullOrWhiteSpace(viewportImage))
+            {
+                context = context with { ActivePageImageDataUrl = viewportImage };
+            }
+        }
+
         try
         {
             var completion = provider.Id switch
@@ -73,7 +82,7 @@ internal static class LinkerAiChatService
         {
             ["model"] = GetModel(credential, provider),
             ["instructions"] = BuildSystemInstructions(context),
-            ["input"] = prompt,
+            ["input"] = BuildResponsesInput(prompt, context),
             ["max_output_tokens"] = MaxOutputTokens
         };
 
@@ -267,7 +276,82 @@ internal static class LinkerAiChatService
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(context?.ActivePageImageDataUrl))
+        {
+            builder.AppendLine("A cached visual overview of the current page may be attached to current-page questions. Use it as visual context and do not claim that every lazy-loaded or hidden page element is present.");
+        }
+
         return builder.ToString().Trim();
+    }
+
+    private static JsonNode BuildResponsesInput(string prompt, CommandCenterChatContext? context)
+    {
+        var input = new JsonArray();
+        if (string.IsNullOrWhiteSpace(context?.PreviousProviderResponseId))
+        {
+            foreach (var turn in context?.ConversationTurns ?? [])
+            {
+                if (turn.Role is not ("user" or "assistant") || string.IsNullOrWhiteSpace(turn.Text))
+                {
+                    continue;
+                }
+
+                input.Add(new JsonObject
+                {
+                    ["role"] = turn.Role,
+                    ["content"] = turn.Text
+                });
+            }
+        }
+
+        if (!ShouldAttachPageImage(prompt, context))
+        {
+            input.Add(new JsonObject
+            {
+                ["role"] = "user",
+                ["content"] = prompt
+            });
+            return input;
+        }
+
+        input.Add(new JsonObject
+        {
+            ["role"] = "user",
+            ["content"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "input_text",
+                    ["text"] = prompt
+                },
+                new JsonObject
+                {
+                    ["type"] = "input_image",
+                    ["image_url"] = context!.ActivePageImageDataUrl,
+                    ["detail"] = "high"
+                }
+            }
+        });
+        return input;
+    }
+
+    private static bool ShouldAttachPageImage(string prompt, CommandCenterChatContext? context)
+    {
+        if (string.IsNullOrWhiteSpace(context?.ActivePageImageDataUrl))
+        {
+            return false;
+        }
+
+        return IsPageImagePrompt(prompt);
+    }
+
+    private static bool IsPageImagePrompt(string prompt)
+    {
+        prompt = prompt?.Trim() ?? string.Empty;
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            prompt,
+            @"\b(this|current)\s+(page|site|website|article)\b|\b(on|from)\s+(this|the)\s+page\b|\bwhat\s+(?:do\s+you\s+)?see\b|\bpage\s+(?:summary|overview|content)\b|\barticles?\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 
     private static JsonArray BuildMessages(string system, string prompt) =>

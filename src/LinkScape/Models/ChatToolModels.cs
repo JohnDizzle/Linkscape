@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+
 public sealed record CommandCenterChatResponse(
     string Text,
     bool IsError = false,
@@ -14,7 +16,15 @@ public sealed record ChatToolStatus(
     bool IsAvailable,
     string Message);
 
+public sealed record CommandCenterChatTurn(
+    string Role,
+    string Text);
+
 public sealed record CommandCenterChatContext(
     string? ActiveUrl = null,
     string? ActiveTitle = null,
-    string? PreviousProviderResponseId = null);
+    string? PreviousProviderResponseId = null,
+    string? ActivePageImageDataUrl = null,
+    IReadOnlyList<CommandCenterChatTurn>? ConversationTurns = null,
+    string? ActiveTabId = null,
+    Func<Task<string?>>? CaptureActivePageImageAsync = null);

@@ -1866,7 +1866,11 @@ class TabViewPage : Component
                     new CommandCenterChatPanelProps(
                         url => OpenUriInNewTab(url, dismissCommandCenter: false),
                         ShowLinkerProviderKeyDialog,
-                        () => new CommandCenterChatContext(selectedTab.Url, selectedTab.Title)))
+                        () => new CommandCenterChatContext(
+                            selectedTab.Url,
+                            selectedTab.Title,
+                            ActiveTabId: selectedTab.Id,
+                            CaptureActivePageImageAsync: _browserWebViewHostController.CaptureActivePageImageAsync)))
                     .Flex(grow: 1, basis: 0)) with
             {
                 RowGap = 12

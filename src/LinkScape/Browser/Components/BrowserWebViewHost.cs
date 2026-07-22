@@ -3,6 +3,7 @@ using LinkScape.Models;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace Browser.Components;
@@ -20,6 +21,7 @@ internal sealed class BrowserWebViewHostController
     internal Action? RefreshLayoutCore { get; set; }
     internal Func<string, Task>? PauseMediaInTabAsyncCore { get; set; }
     internal Func<string, Task>? CaptureScrollPositionAsyncCore { get; set; }
+    internal Func<Task<string?>>? CaptureActivePageImageAsyncCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
 
@@ -44,6 +46,10 @@ internal sealed class BrowserWebViewHostController
 
     public Task CaptureScrollPositionAsync(string tabId) =>
         CaptureScrollPositionAsyncCore?.Invoke(tabId) ?? Task.CompletedTask;
+
+    public Task<string?> CaptureActivePageImageAsync() =>
+        CaptureActivePageImageAsyncCore?.Invoke() ?? Task.FromResult<string?>(null);
+
 }
 
 internal sealed record BrowserWebViewHostProps(
@@ -114,6 +120,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.RefreshLayoutCore = RefreshWebViewLayout;
         Props.Controller.PauseMediaInTabAsyncCore = PauseMediaInTabAsync;
         Props.Controller.CaptureScrollPositionAsyncCore = CaptureScrollPositionAsync;
+        Props.Controller.CaptureActivePageImageAsyncCore = CaptureActiveViewportAsync;
 
         return Border(null)
             .Set(host =>
@@ -229,7 +236,6 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Action<string> openUriInNewTab)
     {
         var isNewWebView = false;
-
         if (!_webViewsByTabId.TryGetValue(tab.Id, out var webView))
         {
             webView = new Microsoft.UI.Xaml.Controls.WebView2
@@ -366,6 +372,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
                 await RestoreScrollPositionAsync(tab.Id, currentTab.ScrollX, currentTab.ScrollY);
+
             };
 
             core.HistoryChanged += (_, _) =>
@@ -400,6 +407,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         AttachWebViewToHost(_webViewHost ?? host, webView);
+
     }
 
     private static void HandleCoreWebView2Initialized(
@@ -407,6 +415,39 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Microsoft.UI.Xaml.Controls.CoreWebView2InitializedEventArgs args)
     {
         ConfigureLinkerVirtualHost(sender.CoreWebView2);
+    }
+
+    private async Task<string?> CaptureActiveViewportAsync()
+    {
+        var core = _activeWebView?.CoreWebView2;
+        if (core is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var captureParameters = new JsonObject
+            {
+                ["format"] = "jpeg",
+                ["quality"] = 70,
+                ["fromSurface"] = true,
+                ["captureBeyondViewport"] = false,
+                ["optimizeForSpeed"] = true
+            };
+            var screenshotJson = await core.CallDevToolsProtocolMethodAsync(
+                "Page.captureScreenshot",
+                captureParameters.ToJsonString());
+            var screenshot = JsonNode.Parse(screenshotJson)?["data"]?.GetValue<string>();
+            return string.IsNullOrWhiteSpace(screenshot)
+                ? null
+                : $"data:image/jpeg;base64,{screenshot}";
+        }
+        catch (Exception ex)
+        {
+            LocalMcpDiagnostics.Trace("PageViewport", $"Capture failed: {ex.Message}");
+            return null;
+        }
     }
 
     private static void ConfigureLinkerVirtualHost(CoreWebView2? core)

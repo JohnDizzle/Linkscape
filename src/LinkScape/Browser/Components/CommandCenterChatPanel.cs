@@ -22,6 +22,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private const double AssistantBubbleMaxWidth = 480;
     private const double UserBubbleMaxWidth = 320;
     private const int MaxExtractedLinks = 3;
+    private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
 
     private sealed record ChatPanelMessage(string Text, bool IsUser, bool IsError = false, bool IsThinking = false);
 
@@ -29,7 +30,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
     private FrameworkElement? _messagesBottomAnchor;
     private string _latestPromptText = string.Empty;
-    private DateTime _lastSubmitStartedAt = DateTime.MinValue;
+    private string? _providerPageIdentity;
     private int _scrollRequestVersion;
     private static readonly SolidColorBrush ChatSurfaceBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF0, 0x27, 0x27, 0x29));
     private static readonly SolidColorBrush AssistantBubbleBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF5, 0x2E, 0x2E, 0x31));
@@ -46,6 +47,10 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         ], threadSafe: true);
         var isSending = UseState(false, threadSafe: true);
         var previousProviderResponseId = UseState<string?>(null, threadSafe: true);
+        var searchProviderName = BrowserSearchProviders.GetByKey(
+            SettingsService.GetValueOrDefault(
+                DefaultSearchProviderSettingKey,
+                BrowserSearchProviders.DefaultProviderKey)).DisplayName;
 
         void SetMessages(IReadOnlyList<ChatPanelMessage> nextMessages)
         {
@@ -74,17 +79,18 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
         async void SubmitPrompt(string? submittedText = null)
         {
-            var text = (submittedText ?? _latestPromptText ?? prompt.Value).Trim();
-            var now = DateTime.UtcNow;
+            var text = !string.IsNullOrWhiteSpace(submittedText)
+                ? submittedText.Trim()
+                : !string.IsNullOrWhiteSpace(_latestPromptText)
+                    ? _latestPromptText.Trim()
+                    : (prompt.Value ?? string.Empty).Trim();
+            var conversationBeforePrompt = messages.Value;
 
-            if (string.IsNullOrWhiteSpace(text) ||
-                isSending.Value ||
-                now - _lastSubmitStartedAt < TimeSpan.FromMilliseconds(700))
+            if (string.IsNullOrWhiteSpace(text))
             {
                 return;
             }
 
-            _lastSubmitStartedAt = now;
             _latestPromptText = string.Empty;
             prompt.Set(string.Empty);
             arePromptSuggestionsOpen.Set(false);
@@ -115,11 +121,28 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
             try
             {
-                var response = await CommandCenterChatService.SubmitAsync(text, GetChatContext(previousProviderResponseId.Value));
+                var baseContext = Props.GetChatContext();
+                var pageIdentity = BuildPageIdentity(baseContext);
+                var effectivePreviousResponseId = string.Equals(
+                    _providerPageIdentity,
+                    pageIdentity,
+                    StringComparison.Ordinal)
+                        ? previousProviderResponseId.Value
+                        : null;
+                var response = await CommandCenterChatService.SubmitAsync(
+                    text,
+                    GetChatContext(effectivePreviousResponseId, conversationBeforePrompt),
+                    CancellationToken.None);
                 LocalMcpDiagnostics.Trace("ChatUI", $"Response received. IsError={response.IsError}, TextLength={response.Text?.Length ?? 0}");
                 if (!string.IsNullOrWhiteSpace(response.ProviderResponseId))
                 {
                     previousProviderResponseId.Set(response.ProviderResponseId);
+                    _providerPageIdentity = pageIdentity;
+                }
+                else
+                {
+                    previousProviderResponseId.Set(null);
+                    _providerPageIdentity = null;
                 }
                 var answer = string.IsNullOrWhiteSpace(response.Text)
                     ? "The chat service returned an empty answer. Check the MCP trace for the selected tool response."
@@ -148,6 +171,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         void ClearChat()
         {
             previousProviderResponseId.Set(null);
+            _providerPageIdentity = null;
             SetMessages(
             [
                 new ChatPanelMessage("## Linker is ready\nSession cleared. Ask about history, favorites, or today's activity.", false)
@@ -155,16 +179,35 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         }
 
         var quickPrompts = FlexRow(
-            CreatePromptPill("Today", () => ApplyPrompt("history tell me today's active sites")),
-            CreatePromptPill("Favorites", () => ApplyPrompt("summarize my favorites")),
-            CreatePromptPill("Tabs", () => ApplyPrompt("summarize my saved tabs")),
-            CreatePromptPill("Collections", () => ApplyPrompt("show my collections")),
-            CreatePromptPill("Group month", () => ApplyPrompt("report history by month")),
-            CreatePromptPill("Group year", () => ApplyPrompt("report history by year")),
-            CreatePromptPill("+ Favorites", () => ApplyPrompt(AppendPromptClause(prompt.Value, "with favorites"))),
-            CreatePromptPill("+ Collections", () => ApplyPrompt(AppendPromptClause(prompt.Value, "with collections"))),
-            CreatePromptPill("Most visited", () => ApplyPrompt("what sites are most active in my history")),
-            CreatePromptPill("Tools", () => ApplyPrompt("mcp status"))) with
+            CreatePromptMenuPill("Tabs", ApplyPrompt,
+                ("Summarize saved tabs", "summarize my saved tabs"),
+                ("Show active tabs", "show my active tabs"),
+                ("Find a tab", $"find {searchProviderName} in my tabs")),
+            CreatePromptMenuPill("Collections", ApplyPrompt,
+                ("Show collections", "show my collections"),
+                ("Show a collection", "what's in the personal collection?"),
+                ("Add current page", "add current page to collection personal")),
+            CreatePromptMenuPill("Favorites", ApplyPrompt,
+                ("Summarize favorites", "summarize my favorites"),
+                ("Search favorites", $"search for {searchProviderName} in my favorites"),
+                ("Show recent favorites", "show my recent favorites")),
+            CreatePromptMenuPill("History", ApplyPrompt,
+                ("Today's activity", "history tell me today's active sites"),
+                ("Recent history", "show my recent history"),
+                ("Most visited", "what sites are most active in my history"),
+                ("Search history", $"search history for {searchProviderName}"),
+                ("This month", "show me history for this month"),
+                ("This year", "show me history for this year")),
+            CreatePromptMenuPill("Status", ApplyPrompt,
+                ("MCP tools", "mcp status")),
+            CreatePromptMenuPill("Group", ApplyPrompt,
+                ("Group by day", "report history by day"),
+                ("Group by month", "report history by month"),
+                ("Group by year", "report history by year"),
+                ("Include favorites", "report history by month with favorites"),
+                ("Include collections", "report history by month with collections"),
+                ("Favorites and collections", "report history by month with favorites and collections"),
+                ("Archived by year", "break down archived history by year"))) with
         {
             ColumnGap = 6
         };
@@ -199,26 +242,16 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                         _latestPromptText = nextValue;
                         prompt.Set(nextValue);
                         arePromptSuggestionsOpen.Set(false);
-                    })
-                    .IsSuggestionListOpen(false)
-                    .Flex(grow: 1, basis: 0) with
+                        })
+                        .IsSuggestionListOpen(false)
+                        .Set(ConfigurePromptContextMenu)
+                        .Flex(grow: 1, basis: 0) with
                 {
                     PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about history, favorites, today, active sites, or mcp status...",
                     Suggestions = []
                 },
-                Button(isSending.Value ? "..." : "Ask", () => SubmitPrompt())
-                    .AutomationName("CommandCenterChatSubmit")
-                    .Set(button =>
-                    {
-                        if (isSending.Value)
-                        {
-                            StartAskButtonPulse(button);
-                        }
-                        else
-                        {
-                            StopAskButtonPulse(button);
-                        }
-                    }),
+                Button("Ask", () => SubmitPrompt())
+                    .AutomationName("CommandCenterChatSubmit"),
                 Button("Clear", ClearChat)) with
             {
                 ColumnGap = 8
@@ -368,6 +401,68 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         Clipboard.SetContent(package);
     }
 
+    private static void ConfigurePromptContextMenu(AutoSuggestBox autoSuggestBox)
+    {
+        void AttachToEditor()
+        {
+            var editor = FindVisualDescendant<TextBox>(autoSuggestBox);
+            if (editor is not null)
+            {
+                editor.ContextFlyout = CreatePromptEditingFlyout(editor);
+            }
+        }
+
+        autoSuggestBox.Loaded += (_, _) => AttachToEditor();
+        AttachToEditor();
+    }
+
+    private static MenuFlyout CreatePromptEditingFlyout(TextBox editor)
+    {
+        var flyout = new MenuFlyout();
+
+        var cutItem = new MenuFlyoutItem { Text = "Cut" };
+        cutItem.Click += (_, _) => editor.CutSelectionToClipboard();
+        flyout.Items.Add(cutItem);
+
+        var copyItem = new MenuFlyoutItem { Text = "Copy" };
+        copyItem.Click += (_, _) => editor.CopySelectionToClipboard();
+        flyout.Items.Add(copyItem);
+
+        var pasteItem = new MenuFlyoutItem { Text = "Paste" };
+        pasteItem.Click += (_, _) => editor.PasteFromClipboard();
+        flyout.Items.Add(pasteItem);
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+
+        var selectAllItem = new MenuFlyoutItem { Text = "Select all" };
+        selectAllItem.Click += (_, _) => editor.SelectAll();
+        flyout.Items.Add(selectAllItem);
+
+        return flyout;
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        var childCount = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var descendant = FindVisualDescendant<T>(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
+
     private void OpenMarkdownLink(Uri uri)
     {
         var target = uri.IsAbsoluteUri ? uri.AbsoluteUri : uri.ToString();
@@ -506,29 +601,6 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         }
 
         return url;
-    }
-
-    private static string AppendPromptClause(string prompt, string clause)
-    {
-        prompt = (prompt ?? string.Empty).Trim();
-        clause = (clause ?? string.Empty).Trim();
-
-        if (string.IsNullOrWhiteSpace(clause))
-        {
-            return prompt;
-        }
-
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            return $"report history by month {clause}";
-        }
-
-        if (prompt.Contains(clause, StringComparison.OrdinalIgnoreCase))
-        {
-            return prompt;
-        }
-
-        return $"{prompt} {clause}";
     }
 
     private bool TryOpenPriorMessageLink(
@@ -678,13 +750,30 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         return string.Empty;
     }
 
-    private CommandCenterChatContext GetChatContext(string? previousProviderResponseId)
+    private CommandCenterChatContext GetChatContext(
+        string? previousProviderResponseId,
+        IReadOnlyList<ChatPanelMessage> messages)
     {
         var context = Props.GetChatContext();
         return context with
         {
-            PreviousProviderResponseId = previousProviderResponseId
+            PreviousProviderResponseId = previousProviderResponseId,
+            ConversationTurns = messages
+                .Skip(1)
+                .Where(message => !message.IsThinking && !message.IsError && !string.IsNullOrWhiteSpace(message.Text))
+                .TakeLast(12)
+                .Select(message => new CommandCenterChatTurn(message.IsUser ? "user" : "assistant", message.Text))
+                .ToArray()
         };
+    }
+
+    private static string BuildPageIdentity(CommandCenterChatContext context)
+    {
+        var url = (context.ActiveUrl ?? string.Empty).Trim();
+        var normalizedUrl = Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? uri.AbsoluteUri
+            : url;
+        return $"{context.ActiveTabId ?? string.Empty}|{normalizedUrl}";
     }
 
     private static Element CreateThinkingIndicator()
@@ -730,45 +819,6 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         storyboard.Begin();
     }
 
-    private static void StartAskButtonPulse(Button button)
-    {
-        if (button.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
-        {
-            return;
-        }
-
-        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
-        {
-            From = 0.55,
-            To = 1,
-            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromMilliseconds(620)),
-            AutoReverse = true,
-            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
-            EnableDependentAnimation = true
-        };
-
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, button);
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
-
-        var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
-        storyboard.Children.Add(animation);
-        button.Tag = storyboard;
-        storyboard.Begin();
-    }
-
-    private static void StopAskButtonPulse(Button button)
-    {
-        if (button.Tag is not Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
-        {
-            button.Opacity = 1;
-            return;
-        }
-
-        storyboard.Stop();
-        button.Tag = null;
-        button.Opacity = 1;
-    }
-
     private static Element CreateAvatarPill(bool isUser)
     {
         if (!isUser)
@@ -801,13 +851,29 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
     }
 
-    private static ButtonElement CreatePromptPill(string label, Action onClick)
+    private static ButtonElement CreatePromptMenuPill(
+        string label,
+        Action<string> applyPrompt,
+        params (string Label, string Prompt)[] prompts)
     {
-        return Button(label, onClick)
+        var flyout = new MenuFlyout();
+        foreach (var prompt in prompts)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = prompt.Label
+            };
+            item.Click += (_, _) => applyPrompt(prompt.Prompt);
+            flyout.Items.Add(item);
+        }
+
+        return Button(label, () => { })
             .AutomationName(label)
+            .ToolTip($"Show {label.ToLowerInvariant()} prompts")
             .Padding(12, 6)
             .CornerRadius(999)
             .Background(BrowserConstants.LayerFillDefaultBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
+            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+            .Set(button => button.Flyout = flyout);
     }
 }
