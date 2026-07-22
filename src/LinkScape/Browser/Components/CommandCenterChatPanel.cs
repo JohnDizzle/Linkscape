@@ -29,6 +29,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
     private FrameworkElement? _messagesBottomAnchor;
+    private AutoSuggestBox? _promptAutoSuggestBox;
     private string _latestPromptText = string.Empty;
     private string? _providerPageIdentity;
     private int _scrollRequestVersion;
@@ -94,6 +95,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             _latestPromptText = string.Empty;
             prompt.Set(string.Empty);
             arePromptSuggestionsOpen.Set(false);
+            RefocusPromptInput();
 
             if (TryOpenPriorMessageLink(text, messages.Value, out var openedMessage))
             {
@@ -294,7 +296,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                     .Flex(grow: 1, basis: 0))
                 .CornerRadius(14)
                 .Background(ChatSurfaceBrush)
-                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+                .WithBorder(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
                 .MinHeight(0)
                 .Flex(grow: 1, basis: 0),
             input) with
@@ -401,8 +403,10 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         Clipboard.SetContent(package);
     }
 
-    private static void ConfigurePromptContextMenu(AutoSuggestBox autoSuggestBox)
+    private void ConfigurePromptContextMenu(AutoSuggestBox autoSuggestBox)
     {
+        _promptAutoSuggestBox = autoSuggestBox;
+
         void AttachToEditor()
         {
             var editor = FindVisualDescendant<TextBox>(autoSuggestBox);
@@ -414,6 +418,22 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
         autoSuggestBox.Loaded += (_, _) => AttachToEditor();
         AttachToEditor();
+    }
+
+    private void RefocusPromptInput()
+    {
+        void ApplyFocus()
+        {
+            _promptAutoSuggestBox?.Focus(FocusState.Programmatic);
+        }
+
+        if (_dispatcherQueue is not null)
+        {
+            _dispatcherQueue.TryEnqueue(ApplyFocus);
+            return;
+        }
+
+        ApplyFocus();
     }
 
     private static MenuFlyout CreatePromptEditingFlyout(TextBox editor)
