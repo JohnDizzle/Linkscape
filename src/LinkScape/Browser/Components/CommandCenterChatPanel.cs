@@ -33,9 +33,6 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private string _latestPromptText = string.Empty;
     private string? _providerPageIdentity;
     private int _scrollRequestVersion;
-    private static readonly SolidColorBrush ChatSurfaceBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF0, 0x27, 0x27, 0x29));
-    private static readonly SolidColorBrush AssistantBubbleBrush = new(Microsoft.UI.ColorHelper.FromArgb(0xF5, 0x2E, 0x2E, 0x31));
-
     public override Element Render()
     {
         var prompt = UseState(string.Empty);
@@ -260,8 +257,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             })
             .Padding(8)
             .CornerRadius(12)
-            .Background(ChatSurfaceBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
+            .Background(BrowserMaterialTheme.ChatSurfaceBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush);
 
         var provider = LinkerAiCredentialService.SelectedProvider;
         var keyButtonText = LinkerAiCredentialService.HasAnyApiKey()
@@ -295,8 +292,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                     .MinHeight(0)
                     .Flex(grow: 1, basis: 0))
                 .CornerRadius(14)
-                .Background(ChatSurfaceBrush)
-                .WithBorder(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+                .Background(BrowserMaterialTheme.ChatSurfaceBrush)
+                .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
                 .MinHeight(0)
                 .Flex(grow: 1, basis: 0),
             input) with
@@ -374,8 +371,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         return Border(content)
             .Padding(message.IsUser ? 10 : 12)
             .CornerRadius(message.IsUser ? 18 : 16)
-            .Background(message.IsUser ? BrowserConstants.AccentFillColorTertiaryBrush : AssistantBubbleBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+            .Background(message.IsUser ? BrowserMaterialTheme.ChatUserBubbleBrush : BrowserMaterialTheme.ChatAssistantBubbleBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
             .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth)
             .Set(border => border.ContextFlyout = CreateMessageContextFlyout(message.Text));
@@ -536,8 +533,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 })
                 .Padding(8, 7)
                 .CornerRadius(10)
-                .Background(BrowserConstants.LayerFillDefaultBrush)
-                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+                .Background(BrowserMaterialTheme.GlassFillBrush)
+                .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
                 .MaxWidth(AssistantBubbleMaxWidth - 24)
                 .HAlign(HorizontalAlignment.Stretch)) with
         {
@@ -587,8 +584,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .ToolTip(link.Url)
             .Padding(9, 6)
             .CornerRadius(8)
-            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+            .Background(BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .HAlign(HorizontalAlignment.Stretch)
             .MinWidth(0);
     }
@@ -853,8 +850,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 .Width(24)
                 .Height(24)
                 .CornerRadius(12)
-                .Background(BrowserConstants.LayerFillDefaultBrush)
-                .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
+                .Background(BrowserMaterialTheme.PillFillBrush)
+                .WithBorder(BrowserMaterialTheme.GlassStrokeBrush);
         }
 
         return Border(
@@ -867,8 +864,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .Width(24)
             .Height(24)
             .CornerRadius(12)
-            .Background(isUser ? BrowserConstants.AccentFillColorDefaultBrush : BrowserConstants.LayerFillDefaultBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush);
+            .Background(BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush);
     }
 
     private static ButtonElement CreatePromptMenuPill(
@@ -891,9 +888,9 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .AutomationName(label)
             .ToolTip($"Show {label.ToLowerInvariant()} prompts")
             .Padding(12, 6)
-            .CornerRadius(999)
-            .Background(BrowserConstants.LayerFillDefaultBrush)
-            .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+            .CornerRadius(6)
+            .Background(BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .Set(button => button.Flyout = flyout);
     }
 }

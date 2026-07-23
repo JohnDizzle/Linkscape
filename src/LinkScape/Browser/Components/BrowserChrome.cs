@@ -24,9 +24,6 @@ internal static class BrowserChrome
     private const double SelectedTabBorderThickness = 1;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
-    private static Style? _glassIconButtonStyle;
-    private static Style? _glassCardStyle;
-    private static Style? _collapsedTabGlassCardStyle;
     
     public static double CollapsedRailWidthDefault { get; private set; } = 400; 
 
@@ -91,20 +88,22 @@ internal static class BrowserChrome
                 IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
+                Border(null).Width(6).Flex(shrink: 0),
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
                 IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
                 IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
                 BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
-                .Flex(grow: 1, basis: 0),
+                    .MinWidth(360)
+                    .Flex(grow: 1, shrink: 1, basis: 0),
 
-                
+                Border(null).Width(6).Flex(shrink: 0),
                 IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
                 Button("Set home", onSetCurrentPageAsHome)
                     .AutomationName("Set current page as home")
                     .ToolTip("Set current page as home")
                     .Height(32)
                     .Padding(10, 0)
-                    .CornerRadius(16),
+                    .CornerRadius(10),
                 IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
@@ -123,7 +122,7 @@ internal static class BrowserChrome
                     .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue, onOpenAiKeyDialog))
             ) with
             {
-                ColumnGap = 8
+                ColumnGap = 6
             })
             .HAlign(HorizontalAlignment.Stretch)
         )
@@ -160,7 +159,7 @@ internal static class BrowserChrome
                 {
                     ColumnGap = 8
                 })
-                .Padding(0, 0, 0, 2)
+                .Padding(0)
                 .HAlign(HorizontalAlignment.Stretch)
                 .MinWidth(0),
                 Border(null)
@@ -185,19 +184,28 @@ internal static class BrowserChrome
     private static Element BuildAddressBarFavicon(BrowserTab selectedTab)
     {
         return Border(
-            Uri.TryCreate(selectedTab.Url, UriKind.Absolute, out _)
-                ? Image(BrowserUrl.GetDomainFaviconUrl(selectedTab.Url))
-                    .AccessibilityHidden()
-                    .Width(16)
-                    .Height(16)
-                    .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-                : FluentIcon(BrowserConstants.GlyphHome, 14))
+            Border(
+                Uri.TryCreate(selectedTab.Url, UriKind.Absolute, out _)
+                    ? Image(BrowserUrl.GetDomainFaviconUrl(selectedTab.Url))
+                        .AccessibilityHidden()
+                        .Width(16)
+                        .Height(16)
+                        .HAlign(HorizontalAlignment.Center)
+                        .VAlign(VerticalAlignment.Center)
+                        .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
+                    : FluentIcon(BrowserConstants.GlyphHome, 14)
+                        .HAlign(HorizontalAlignment.Center)
+                        .VAlign(VerticalAlignment.Center))
+                .Width(16)
+                .Height(16)
+                .HAlign(HorizontalAlignment.Center)
+                .VAlign(VerticalAlignment.Center))
             .Width(24)
             .Height(24)
             .CornerRadius(8)
             .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
             .WithBorder(Theme.SurfaceStroke)
-            .Padding(3)
+            .Padding(0)
             .HAlign(HorizontalAlignment.Center)
             .VAlign(VerticalAlignment.Center)
             .Flex(shrink: 0);
@@ -1126,7 +1134,7 @@ internal static class BrowserChrome
                 HStack(8,
                     BuildCommandCenterButton("Favorites", activeCommandCenterSection, onToggleCommandCenter),
                     BuildCommandCenterButton("Collections", activeCommandCenterSection, onToggleCommandCenter),
-                    BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter)
+                    BuildCommandCenterButton("Backdrop", activeCommandCenterSection, onToggleCommandCenter, "Appearance")
                 ),
                 isCommandCenterBusy
                     ? HStack(8,
@@ -1157,6 +1165,9 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var selectedMaterialTheme = settingsSnapshot.TryGetValue(BrowserMaterialTheme.SettingKey, out var configuredMaterialTheme)
+            ? BrowserMaterialTheme.NormalizePreset(configuredMaterialTheme)
+            : BrowserMaterialTheme.DefaultPreset;
         var startupCollections = TabCollectionService.GetCollections();
         settingsSnapshot.TryGetValue(TabCollectionService.StartupModeSettingKey, out var startupMode);
         settingsSnapshot.TryGetValue(TabCollectionService.StartupCollectionSettingKey, out var startupCollectionId);
@@ -1249,6 +1260,19 @@ internal static class BrowserChrome
                 CreateSettingsFlyoutCard(
                     new TextBlock
                     {
+                        Text = "Material theme",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = "Applies to glass pills, tabs, badges, borders, and Linker chat messages.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutMaterialThemePicker(selectedMaterialTheme, onSaveSettingValue)),
+                CreateSettingsFlyoutCard(
+                    new TextBlock
+                    {
                         Text = "Linker provider key",
                         FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                     },
@@ -1304,8 +1328,10 @@ internal static class BrowserChrome
         return new Microsoft.UI.Xaml.Controls.Border
         {
             Padding = new Thickness(10),
-            BorderBrush = LinkScape.Browser.BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            Background = BrowserConstants.LayerFillDefaultBrush,
+            BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
             BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
             Child = panel
         };
     }
@@ -1317,7 +1343,7 @@ internal static class BrowserChrome
             Content = label,
             Padding = new Thickness(12, 6, 12, 6),
             HorizontalAlignment = HorizontalAlignment.Left,
-            CornerRadius = new CornerRadius(999)
+            CornerRadius = new CornerRadius(10)
         };
 
         button.Click += (_, _) => onClick();
@@ -1441,6 +1467,39 @@ internal static class BrowserChrome
         return panel;
     }
 
+    private static UIElement CreateSettingsFlyoutMaterialThemePicker(
+        string selectedPreset,
+        Action<string, string> onSaveSettingValue)
+    {
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
+
+        foreach (var preset in BrowserMaterialTheme.Presets)
+        {
+            var normalizedPreset = BrowserMaterialTheme.NormalizePreset(preset);
+            var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
+            var button = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Content = GetMaterialThemeDisplayName(normalizedPreset),
+                Background = isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush,
+                BorderBrush = isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush,
+                BorderThickness = new Thickness(1),
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(13, 6, 13, 6),
+                MinWidth = string.Equals(normalizedPreset, BrowserMaterialTheme.HighContrastPreset, StringComparison.Ordinal) ? 114 : 82
+            };
+            button.Click += (_, _) => onSaveSettingValue(BrowserMaterialTheme.SettingKey, normalizedPreset);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Select material theme: " + normalizedPreset);
+            panel.Children.Add(button);
+        }
+
+        return panel;
+    }
+
     private static UIElement CreateSettingsFlyoutSettingsList(IReadOnlyDictionary<string, string> settingsSnapshot)
     {
         var settingsItems = settingsSnapshot
@@ -1515,7 +1574,7 @@ internal static class BrowserChrome
 
         return Border(
             Button(label ?? section, () => onToggleCommandCenter(section))
-                .CornerRadius(10)
+                .CornerRadius(6)
                 .Padding(6)
                 .Flex(grow: 1, basis: 0)
                 .AutomationName(label ?? section)
@@ -1523,15 +1582,15 @@ internal static class BrowserChrome
                 {
                     button.Style = GetGlassIconButtonStyle();
                     button.Background = isActive
-                        ? BrowserConstants.LayerFillAltBrush
-                        : BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush;
+                        ? BrowserMaterialTheme.GlassStrongFillBrush
+                        : BrowserMaterialTheme.PillFillBrush;
                     button.BorderBrush = isActive
-                        ? BrowserConstants.SubtleFillColorSecondaryBrush
-                        : BrowserConstants.SurfaceStrokeColorDefaultBrush;
+                        ? BrowserMaterialTheme.SelectedStrokeBrush
+                        : BrowserMaterialTheme.GlassStrokeBrush;
                     button.BorderThickness = new Thickness(isActive ? 1.5 : 1);
                 })
         ).WithKey($"cc-button-{ label}-{section}")
-        .CornerRadius(10)
+        .CornerRadius(6)
         .Flex(grow: 1, basis: 0);
     }
 
@@ -1819,7 +1878,7 @@ internal static class BrowserChrome
             )
         )
         .Padding(8, 6)
-        .CornerRadius(10)
+        .CornerRadius(6)
         .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
@@ -2217,14 +2276,8 @@ internal static class BrowserChrome
             .Select(collection =>
             {
                 var isStartup = string.Equals(collection.Id, startupCollectionId, StringComparison.Ordinal);
-                return Button(isStartup ? $"{collection.Name} *" : collection.Name, () => onCollectionNameChanged(collection.Name))
-                    .AutomationName($"Open collection {collection.Name}")
-                    .Padding(10, 6)
-                    .CornerRadius(999)
-                    .Background(string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase)
-                        ? BrowserConstants.AccentFillColorTertiaryBrush
-                        : BrowserConstants.LayerFillDefaultBrush)
-                    .WithBorder(Theme.SurfaceStroke);
+                var isSelected = string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase);
+                return BuildCollectionSelectorButton(collection.Name, isSelected, isStartup, onCollectionNameChanged);
             })
             .Cast<Element>()
             .ToArray();
@@ -2247,7 +2300,7 @@ internal static class BrowserChrome
                     .AutomationName("Create collection"),
                 Button("Add current tab", onAddCurrentTabToCollection)
                     .AutomationName("Add current tab to collection"),
-                Button("Set startup", onSetStartupCollection)
+                Button("Use at startup", onSetStartupCollection)
                     .AutomationName("Set startup collection")),
             collectionButtons.Length == 0
                 ? Border(
@@ -2279,6 +2332,46 @@ internal static class BrowserChrome
                     .Padding(4, 0)
                     .HAlign(HorizontalAlignment.Stretch)
                     .MinWidth(0));
+    }
+
+    private static ButtonElement BuildCollectionSelectorButton(
+        string collectionName,
+        bool isSelected,
+        bool isStartup,
+        Action<string> onCollectionNameChanged)
+    {
+        var content = HStack(6,
+            TextBlock(collectionName)
+                .TextTrimming(TextTrimming.CharacterEllipsis)
+                .TextWrapping(TextWrapping.NoWrap)
+                .Set(textBlock =>
+                {
+                    textBlock.MaxLines = 1;
+                    textBlock.FontWeight = isSelected
+                        ? Microsoft.UI.Text.FontWeights.SemiBold
+                        : Microsoft.UI.Text.FontWeights.Normal;
+                }),
+            Border(
+                TextBlock(BrowserConstants.GlyphHome)
+                    .FontFamily(BrowserConstants.IconFontFamily)
+                    .FontSize(10)
+                    .HAlign(HorizontalAlignment.Center)
+                    .VAlign(VerticalAlignment.Center))
+                .Width(18)
+                .Height(18)
+                .CornerRadius(4)
+                .Background(isSelected ? BrowserMaterialTheme.BadgeFillBrush : BrowserMaterialTheme.GlassStrongFillBrush)
+                .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
+                .ToolTip("Opens on startup")
+                .IsVisible(isStartup));
+
+        return Button(content, () => onCollectionNameChanged(collectionName))
+            .AutomationName($"Open collection {collectionName}")
+            .Padding(12, 6)
+            .CornerRadius(6)
+            .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
+            .Set(button => button.BorderThickness = new Thickness(isSelected ? 1.75 : 1));
     }
 
     private static Element BuildCollectionItem(
@@ -2563,9 +2656,10 @@ internal static class BrowserChrome
                 .MinWidth(0)
                 .Flex(grow: 1, basis: 0),
                 Button(value ? "On" : "Off", () => onChanged(!value))
-                    .Background(value ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerFillDefaultBrush)
+                    .Background(value ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
+                    .WithBorder(value ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
                     .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
-                    .CornerRadius(999)
+                    .CornerRadius(10)
                     .Padding(12, 6)
                     .MinWidth(56)
                     .AutomationName("Toggle " + title + " setting")
@@ -2596,15 +2690,39 @@ internal static class BrowserChrome
         var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredPreset)
             ? NormalizeBackdropGradientPreset(configuredPreset)
             : BackdropGradientPresetDefault;
+        var selectedMaterialTheme = settingsSnapshot.TryGetValue(BrowserMaterialTheme.SettingKey, out var configuredMaterialTheme)
+            ? BrowserMaterialTheme.NormalizePreset(configuredMaterialTheme)
+            : BrowserMaterialTheme.DefaultPreset;
 
         return VStack(10,
-            TextBlock("Backdrop gradient")
-                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            TextBlock("Choose a preset tint for the Acrylic app backdrop.")
-                .TextWrapping(TextWrapping.Wrap)
-                .Opacity(0.76),
-            BuildBackdropPresetPicker(selectedBackdropPreset, onSaveSettingValue)
+            BuildInsetOptionCard(
+                "Backdrop tint",
+                "Choose an optional color wash over the app material.",
+                BuildBackdropPresetPicker(selectedBackdropPreset, onSaveSettingValue)),
+            BuildInsetOptionCard(
+                "Control theme",
+                "Default keeps the original Mica look. Other choices repaint controls, pills, badges, borders, and chat messages.",
+                BuildMaterialThemePresetPicker(selectedMaterialTheme, onSaveSettingValue))
         );
+    }
+
+    private static Element BuildInsetOptionCard(string title, string description, Element content)
+    {
+        return Border(
+            VStack(8,
+                TextBlock(title)
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                TextBlock(description)
+                    .TextWrapping(TextWrapping.Wrap)
+                    .Opacity(0.76),
+                content)
+            .HAlign(HorizontalAlignment.Stretch)
+        )
+        .Padding(10)
+        .CornerRadius(12)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(BrowserConstants.SurfaceStrokeColorDefaultBrush)
+        .HAlign(HorizontalAlignment.Stretch);
     }
 
     private static string NormalizeBackdropGradientPreset(string? preset)
@@ -2654,12 +2772,57 @@ internal static class BrowserChrome
         var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
 
         return Button(normalizedPreset, () => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset))
-            .Background(isSelected ? BrowserConstants.AccentFillColorTertiaryBrush : BrowserConstants.LayerFillDefaultBrush)
+            .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
             .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
-            .CornerRadius(999)
-            .Padding(12, 6)
+            .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
+            .CornerRadius(6)
+            .Padding(13, 6)
             .AutomationName("Select backdrop gradient preset: " + normalizedPreset)
             .MinWidth(72);
+    }
+
+    private static Element BuildMaterialThemePresetPicker(
+        string selectedPreset,
+        Action<string, string> onSaveSettingValue)
+    {
+        var presetButtons = BrowserMaterialTheme.Presets
+            .Select(preset => BuildMaterialThemePresetButton(preset, selectedPreset, onSaveSettingValue))
+            .ToArray();
+
+        return FlexRow(presetButtons) with
+        {
+            ColumnGap = 8,
+            RowGap = 8,
+            Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+        };
+    }
+
+    private static Element BuildMaterialThemePresetButton(
+        string preset,
+        string selectedPreset,
+        Action<string, string> onSaveSettingValue)
+    {
+        var normalizedPreset = BrowserMaterialTheme.NormalizePreset(preset);
+        var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
+
+        return Button(GetMaterialThemeDisplayName(normalizedPreset), () => onSaveSettingValue(BrowserMaterialTheme.SettingKey, normalizedPreset))
+            .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
+            .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
+            .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
+            .CornerRadius(6)
+            .Padding(13, 6)
+            .AutomationName("Select material theme: " + normalizedPreset)
+            .MinWidth(string.Equals(normalizedPreset, BrowserMaterialTheme.HighContrastPreset, StringComparison.Ordinal) ? 114 : 82);
+    }
+
+    private static string GetMaterialThemeDisplayName(string preset)
+    {
+        return preset switch
+        {
+            BrowserMaterialTheme.DefaultThemePreset => "Default",
+            BrowserMaterialTheme.HighContrastPreset => "High contrast",
+            _ => preset
+        };
     }
     
     
@@ -2856,7 +3019,7 @@ internal static class BrowserChrome
                 Border(
                     (FlexColumn(
                         Border(
-                            InfoBadge(tab.VisitedCount)
+                            BuildVisitBadge(tab.VisitedCount)
                                 .HAlign(HorizontalAlignment.Right)
                                 .VAlign(VerticalAlignment.Top)
                         )
@@ -2892,12 +3055,13 @@ internal static class BrowserChrome
                 Border(
                     TextBlock("💤")
                         .FontSize(11)
+                        .Foreground(BrowserMaterialTheme.BadgeForegroundBrush)
                         .AutomationName("Sleeping tab"))
                     .Width(18)
                     .Height(18)
                     .CornerRadius(9)
-                    .Background(Theme.LayerFill)
-                    .WithBorder(Theme.SurfaceStroke)
+                    .Background(BrowserMaterialTheme.BadgeFillBrush)
+                    .WithBorder(BrowserMaterialTheme.SelectedStrokeBrush)
                     .HAlign(HorizontalAlignment.Left)
                     .VAlign(VerticalAlignment.Bottom)
                     .IsVisible(tab.IsSleeping)
@@ -2931,37 +3095,34 @@ internal static class BrowserChrome
                 border.Tag = null;
             }
 
-            border.BorderThickness = isSelected ? new Thickness(SelectedTabBorderThickness) : new Thickness(0);
-            border.BorderBrush = isSelected
-                ? BrowserConstants.AccentFillColorTertiaryBrush
+            var drawSelectedBorder = isSelected && !BrowserMaterialTheme.IsHighContrast;
+            border.BorderThickness = drawSelectedBorder ? new Thickness(SelectedTabBorderThickness) : new Thickness(0);
+            border.BorderBrush = drawSelectedBorder
+                ? BrowserMaterialTheme.SelectedStrokeBrush
                 : null;
+            border.Opacity = 1;
             return;
         }
 
         border.BorderThickness = new Thickness(2);
+        border.BorderBrush = BrowserMaterialTheme.LoadingStrokeBrush;
 
         if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
         {
             return;
         }
 
-        var rotateTransform = new RotateTransform
-        {
-            CenterX = 0.5,
-            CenterY = 0.5
-        };
-        border.BorderBrush = CreateRainbowBorderBrush(rotateTransform);
-
         var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
         {
-            From = 0,
-            To = 360,
+            From = 0.58,
+            To = 1,
             Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(1.4)),
+            AutoReverse = true,
             RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
             EnableDependentAnimation = true
         };
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, rotateTransform);
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Angle");
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, border);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
 
         var loadingStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
         loadingStoryboard.Children.Add(animation);
@@ -2984,7 +3145,7 @@ internal static class BrowserChrome
                 VStack(8,
                     HStack(8,
                         BuildHistoryIcon(item.Url),
-                        InfoBadge(item.VisitCount).HAlign(HorizontalAlignment.Right)
+                        BuildVisitBadge(item.VisitCount).HAlign(HorizontalAlignment.Right)
                     ),
                     Border(
                         VStack(4,
@@ -3070,12 +3231,31 @@ internal static class BrowserChrome
         };
     }
 
+    private static Element BuildVisitBadge(int count)
+    {
+        return Border(
+            TextBlock(Math.Max(count, 0).ToString())
+                .FontSize(11)
+                .Foreground(BrowserMaterialTheme.BadgeForegroundBrush)
+                .HAlign(HorizontalAlignment.Center)
+                .VAlign(VerticalAlignment.Center)
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold))
+            .MinWidth(22)
+            .Height(22)
+            .Padding(6, 0)
+            .CornerRadius(999)
+            .Background(BrowserMaterialTheme.BadgeFillBrush)
+            .WithBorder(BrowserMaterialTheme.SelectedStrokeBrush)
+            .Flex(shrink: 0);
+    }
+
     private static Element BuildCollectionBadge(string label)
     {
         return Border(
             TextBlock(label)
                 .TextTrimming(TextTrimming.CharacterEllipsis)
                 .TextWrapping(TextWrapping.NoWrap)
+                .Foreground(BrowserMaterialTheme.BadgeForegroundBrush)
                 .Set(textBlock =>
                 {
                     textBlock.FontSize = 10;
@@ -3083,8 +3263,8 @@ internal static class BrowserChrome
                 }))
             .Padding(7, 2)
             .CornerRadius(999)
-            .Background(BrowserConstants.AccentFillColorTertiaryBrush)
-            .WithBorder(Theme.SurfaceStroke)
+            .Background(BrowserMaterialTheme.BadgeFillBrush)
+            .WithBorder(BrowserMaterialTheme.SelectedStrokeBrush)
             .MaxWidth(88)
             .Flex(shrink: 0);
     }
@@ -3470,7 +3650,7 @@ internal static class BrowserChrome
 
     private static Style GetGlassIconButtonStyle()
     {
-        return _glassIconButtonStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Button))
+        return new Style(typeof(Microsoft.UI.Xaml.Controls.Button))
         {
             Setters =
             {
@@ -3484,7 +3664,7 @@ internal static class BrowserChrome
 
     private static Style GetGlassCardStyle()
     {
-        return _glassCardStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
+        return new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
         {
             Setters =
             {
@@ -3498,7 +3678,7 @@ internal static class BrowserChrome
 
     private static Style GetCollapsedTabGlassCardStyle()
     {
-        return _collapsedTabGlassCardStyle ??= new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
+        return new Style(typeof(Microsoft.UI.Xaml.Controls.Border))
         {
             Setters =
             {

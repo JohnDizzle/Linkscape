@@ -117,6 +117,7 @@ public static class SettingsService
     {
         EnsureDefaultSetting("Developer", "John M. Doyle");
         EnsureDefaultSetting(LinkScape.Browser.BrowserConstants.SaveTabsSettingKey, "true");
+        EnsureDefaultSetting(LinkScape.Browser.BrowserMaterialTheme.SettingKey, LinkScape.Browser.BrowserMaterialTheme.DefaultPreset);
     }
 
     private static void EnsureDefaultSetting(string key, string value)
