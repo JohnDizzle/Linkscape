@@ -1504,7 +1504,7 @@ class TabViewPage : Component
                     return new BrowserNavigationResult(
                         true,
                         string.Join('\n', currentTabs.Select(tab =>
-                            $"{tab.Id} | {tab.Title} | {tab.Url} | selected={string.Equals(tab.Id, _latestSelectedTabId, StringComparison.Ordinal)}")));
+                            $"{tab.Id} | {tab.Title} | {tab.Url} | selected={string.Equals(tab.Id, _latestSelectedTabId, StringComparison.Ordinal)} | sleeping={tab.IsSleeping}")));
 
                 case BrowserNavigationToolNames.TabsFind:
                     if (!arguments.TryGetValue("query", out var query) || string.IsNullOrWhiteSpace(query))
@@ -1515,7 +1515,8 @@ class TabViewPage : Component
                     var matches = currentTabs.Where(tab =>
                         tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                         tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
-                    return new BrowserNavigationResult(true, string.Join('\n', matches.Select(tab => $"{tab.Id} | {tab.Title} | {tab.Url}")));
+                    return new BrowserNavigationResult(true, string.Join('\n', matches.Select(tab =>
+                        $"{tab.Id} | {tab.Title} | {tab.Url} | selected={string.Equals(tab.Id, _latestSelectedTabId, StringComparison.Ordinal)} | sleeping={tab.IsSleeping}")));
 
                 case BrowserNavigationToolNames.TabsActivate:
                     var activateResult = RequireTargetTab();
@@ -2429,7 +2430,8 @@ class TabViewPage : Component
                 VisitedCount = Math.Max(0, tab.VisitedCount),
                 Order = index,
                 ScrollX = Math.Max(0, tab.ScrollX),
-                ScrollY = Math.Max(0, tab.ScrollY)
+                ScrollY = Math.Max(0, tab.ScrollY),
+                IsSleeping = false
             })
             .ToArray();
 

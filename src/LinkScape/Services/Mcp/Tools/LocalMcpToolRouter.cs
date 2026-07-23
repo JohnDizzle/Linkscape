@@ -5,7 +5,7 @@ public static class LocalMcpToolRouter
     public static IReadOnlyList<ChatToolStatus> GetTools() =>
     [
         new(WindowsIntentToolName, true, "Routes a natural-language prompt to a safe local browser-data tool."),
-        CreateNavigationStatus(BrowserNavigationToolNames.TabsList, "Lists open browser tabs with IDs, titles, URLs, and selected state."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsList, "Lists open browser tabs with IDs, titles, URLs, selected state, and sleeping state."),
         CreateNavigationStatus(BrowserNavigationToolNames.TabsFind, "Finds open tabs by title or URL."),
         CreateNavigationStatus(BrowserNavigationToolNames.TabsActivate, "Activates an existing browser tab."),
         CreateNavigationStatus(BrowserNavigationToolNames.Navigate, "Navigates an existing browser tab to a URL."),

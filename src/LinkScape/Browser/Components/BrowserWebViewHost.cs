@@ -4,6 +4,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Browser.Components;
@@ -66,6 +67,7 @@ internal sealed record BrowserWebViewHostProps(
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 {
+    private static readonly TimeSpan InactiveTabSuspendDelay = TimeSpan.FromSeconds(60);
     private const string LinkerVirtualHostName = "linker.local";
     private const string LinkerAssetsFolderName = "Assets";
     private const string PauseMediaScript = """
@@ -85,6 +87,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
     private readonly Dictionary<string, BrowserTab> _tabSnapshotsById = [];
     private readonly HashSet<string> _hookedWebViewTabs = [];
+    private readonly object _suspendDelayGate = new();
+    private readonly Dictionary<string, CancellationTokenSource> _suspendDelayByTabId = [];
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
@@ -101,6 +105,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             !string.Equals(oldProps.SelectedTab.Url, newProps.SelectedTab.Url, StringComparison.Ordinal) ||
             !string.Equals(oldProps.SelectedTab.Title, newProps.SelectedTab.Title, StringComparison.Ordinal) ||
             oldProps.SelectedTab.IsFavorite != newProps.SelectedTab.IsFavorite ||
+            oldProps.SelectedTab.IsSleeping != newProps.SelectedTab.IsSleeping ||
             oldProps.SelectedTab.ScrollX != newProps.SelectedTab.ScrollX ||
             oldProps.SelectedTab.ScrollY != newProps.SelectedTab.ScrollY;
     }
@@ -187,6 +192,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
     private void CloseTab(string tabId)
     {
+        CancelPendingSuspend(tabId);
         _tabSnapshotsById.Remove(tabId);
 
         if (_webViewsByTabId.Remove(tabId, out var closedWebView))
@@ -236,6 +242,15 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Action<string> openUriInNewTab)
     {
         var isNewWebView = false;
+        var previousTabId = _activeWebViewTabId;
+        if (!string.IsNullOrWhiteSpace(previousTabId) &&
+            !string.Equals(previousTabId, tab.Id, StringComparison.Ordinal))
+        {
+            PrepareInactiveTab(previousTabId);
+        }
+
+        CancelPendingSuspend(tab.Id);
+
         if (!_webViewsByTabId.TryGetValue(tab.Id, out var webView))
         {
             webView = new Microsoft.UI.Xaml.Controls.WebView2
@@ -261,6 +276,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         var core = webView.CoreWebView2;
         ConfigureLinkerVirtualHost(core);
+
+        if (core?.IsSuspended == true)
+        {
+            core.Resume();
+        }
+
+        SetTabSleepingState(tab.Id, false);
 
         if (core is not null && _hookedWebViewTabs.Add(tab.Id))
         {
@@ -419,29 +441,51 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
     private async Task<string?> CaptureActiveViewportAsync()
     {
-        var core = _activeWebView?.CoreWebView2;
-        if (core is null)
+        var webView = _activeWebView;
+        var tabId = _activeWebViewTabId;
+        if (webView?.CoreWebView2 is null || string.IsNullOrWhiteSpace(tabId))
         {
             return null;
         }
 
+        CancelPendingSuspend(tabId);
+        string? imageDataUrl = null;
+
         try
         {
-            var captureParameters = new JsonObject
+            await RunOnWebViewThreadAsync(webView, async () =>
             {
-                ["format"] = "jpeg",
-                ["quality"] = 70,
-                ["fromSurface"] = true,
-                ["captureBeyondViewport"] = false,
-                ["optimizeForSpeed"] = true
-            };
-            var screenshotJson = await core.CallDevToolsProtocolMethodAsync(
-                "Page.captureScreenshot",
-                captureParameters.ToJsonString());
-            var screenshot = JsonNode.Parse(screenshotJson)?["data"]?.GetValue<string>();
-            return string.IsNullOrWhiteSpace(screenshot)
-                ? null
-                : $"data:image/jpeg;base64,{screenshot}";
+                if (!ReferenceEquals(_activeWebView, webView) ||
+                    !string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal) ||
+                    webView.CoreWebView2 is null)
+                {
+                    return;
+                }
+
+                if (webView.CoreWebView2.IsSuspended)
+                {
+                    webView.CoreWebView2.Resume();
+                    SetTabSleepingState(tabId, false);
+                }
+
+                var captureParameters = new JsonObject
+                {
+                    ["format"] = "jpeg",
+                    ["quality"] = 70,
+                    ["fromSurface"] = true,
+                    ["captureBeyondViewport"] = false,
+                    ["optimizeForSpeed"] = true
+                };
+                var screenshotJson = await webView.CoreWebView2.CallDevToolsProtocolMethodAsync(
+                    "Page.captureScreenshot",
+                    captureParameters.ToJsonString());
+                var screenshot = JsonNode.Parse(screenshotJson)?["data"]?.GetValue<string>();
+                imageDataUrl = string.IsNullOrWhiteSpace(screenshot)
+                    ? null
+                    : $"data:image/jpeg;base64,{screenshot}";
+            });
+
+            return imageDataUrl;
         }
         catch (Exception ex)
         {
@@ -542,6 +586,156 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         catch
         {
         }
+    }
+
+    private void PrepareInactiveTab(string tabId)
+    {
+        if (!_webViewsByTabId.TryGetValue(tabId, out var webView))
+        {
+            return;
+        }
+
+        webView.Visibility = Visibility.Collapsed;
+        _ = PauseMediaInTabAsync(tabId);
+        ScheduleSuspend(tabId, webView);
+    }
+
+    private void ScheduleSuspend(string tabId, Microsoft.UI.Xaml.Controls.WebView2 webView)
+    {
+        CancelPendingSuspend(tabId);
+
+        var cancellation = new CancellationTokenSource();
+        lock (_suspendDelayGate)
+        {
+            _suspendDelayByTabId[tabId] = cancellation;
+        }
+
+        _ = SuspendAfterDelayAsync(tabId, webView, cancellation);
+    }
+
+    private async Task SuspendAfterDelayAsync(
+        string tabId,
+        Microsoft.UI.Xaml.Controls.WebView2 webView,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await Task.Delay(InactiveTabSuspendDelay, cancellation.Token).ConfigureAwait(false);
+            await RunOnWebViewThreadAsync(webView, async () =>
+            {
+                if (cancellation.IsCancellationRequested ||
+                    string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal) ||
+                    webView.Visibility == Visibility.Visible ||
+                    webView.CoreWebView2 is null)
+                {
+                    return;
+                }
+
+                // Pause again immediately before suspension in case the page started
+                // media through a delayed script after the tab was first hidden.
+                await PauseMediaInTabAsync(tabId);
+
+                var suspended = await webView.CoreWebView2.TrySuspendAsync();
+                if (cancellation.IsCancellationRequested ||
+                    string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal))
+                {
+                    if (webView.CoreWebView2.IsSuspended)
+                    {
+                        webView.CoreWebView2.Resume();
+                    }
+
+                    SetTabSleepingState(tabId, false);
+                    return;
+                }
+
+                SetTabSleepingState(tabId, suspended && webView.CoreWebView2.IsSuspended);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            LocalMcpDiagnostics.Trace("TabSleep", $"Suspend failed for tab {tabId}: {ex.Message}");
+            await RunOnWebViewThreadAsync(webView, () =>
+            {
+                SetTabSleepingState(tabId, false);
+                return Task.CompletedTask;
+            });
+        }
+        finally
+        {
+            lock (_suspendDelayGate)
+            {
+                if (_suspendDelayByTabId.TryGetValue(tabId, out var current) &&
+                    ReferenceEquals(current, cancellation))
+                {
+                    _suspendDelayByTabId.Remove(tabId);
+                }
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private static Task RunOnWebViewThreadAsync(
+        Microsoft.UI.Xaml.Controls.WebView2 webView,
+        Func<Task> action)
+    {
+        if (webView.DispatcherQueue.HasThreadAccess)
+        {
+            return action();
+        }
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!webView.DispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                await action();
+                completion.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        }))
+        {
+            completion.TrySetException(new InvalidOperationException("The WebView dispatcher is unavailable."));
+        }
+
+        return completion.Task;
+    }
+
+    private void CancelPendingSuspend(string tabId)
+    {
+        CancellationTokenSource? cancellation;
+        lock (_suspendDelayGate)
+        {
+            _suspendDelayByTabId.Remove(tabId, out cancellation);
+        }
+
+        if (cancellation is not null)
+        {
+            cancellation.Cancel();
+        }
+    }
+
+    private void SetTabSleepingState(string tabId, bool isSleeping)
+    {
+        if (_tabSnapshotsById.TryGetValue(tabId, out var snapshot))
+        {
+            if (snapshot.IsSleeping == isSleeping)
+            {
+                return;
+            }
+
+            _tabSnapshotsById[tabId] = snapshot with { IsSleeping = isSleeping };
+        }
+
+        Props.UpdateTab(tabId, current => current.IsSleeping == isSleeping
+            ? current
+            : current with { IsSleeping = isSleeping });
     }
 
     private async Task CaptureScrollPositionAsync(string tabId)

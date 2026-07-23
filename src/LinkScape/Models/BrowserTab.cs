@@ -13,7 +13,8 @@ internal sealed record BrowserTab(
     bool IsHomeTab,
     int Order,
     double ScrollX,
-    double ScrollY) : IReactorKeyed
+    double ScrollY,
+    bool IsSleeping = false) : IReactorKeyed
 {
     string IReactorKeyed.Key => Id;
 

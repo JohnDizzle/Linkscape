@@ -2832,7 +2832,10 @@ internal static class BrowserChrome
         Action<string> onReloadTab)
     {
         return Border(
-            (FlexRow(
+            Grid(
+                [GridSize.Star()],
+                [GridSize.Star()],
+                (FlexRow(
                 BuildTabIcon(tab, isLoading),
                 Border(
                     VStack(4,
@@ -2880,11 +2883,25 @@ internal static class BrowserChrome
                 .Width(28)
                 .HAlign(HorizontalAlignment.Right)
                 .Flex(shrink: 0)
-            ) with
-            {
-                ColumnGap = 10
-            })
-            .HAlign(HorizontalAlignment.Stretch)
+                ) with
+                {
+                    ColumnGap = 10
+                })
+                .HAlign(HorizontalAlignment.Stretch)
+                .Grid(row: 0, column: 0),
+                Border(
+                    TextBlock("💤")
+                        .FontSize(11)
+                        .AutomationName("Sleeping tab"))
+                    .Width(18)
+                    .Height(18)
+                    .CornerRadius(9)
+                    .Background(Theme.LayerFill)
+                    .WithBorder(Theme.SurfaceStroke)
+                    .HAlign(HorizontalAlignment.Left)
+                    .VAlign(VerticalAlignment.Bottom)
+                    .IsVisible(tab.IsSleeping)
+                    .Grid(row: 0, column: 0))
         )
         .Height(ExpandedTabItemHeight)
         .Padding(12, 10)
@@ -3513,6 +3530,11 @@ internal static class BrowserChrome
                     TextWrapping = TextWrapping.Wrap,
                     MaxWidth = 320,
                     Opacity = 0.8
+                },
+                new TextBlock
+                {
+                    Text = tab.IsSleeping ? "Sleeping — resumes when selected" : "Active in memory",
+                    Opacity = 0.7
                 }
             }
         };

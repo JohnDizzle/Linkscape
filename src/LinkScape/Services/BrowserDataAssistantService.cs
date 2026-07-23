@@ -184,6 +184,7 @@ public static class BrowserDataAssistantService
         markdown.AppendLine($"- Selected tab: **{MarkdownLink(GetDisplayTitle(selectedTab), selectedTab?.Url)}**");
         markdown.AppendLine($"- Favorite tabs: **{orderedTabs.Count(tab => tab.IsFavorite)}**");
         markdown.AppendLine($"- Home tabs: **{orderedTabs.Count(tab => tab.IsHomeTab)}**");
+        markdown.AppendLine($"- Sleeping tabs: **{orderedTabs.Count(tab => tab.IsSleeping)}**");
         markdown.AppendLine();
 
         if (orderedTabs.Length == 0)
@@ -212,6 +213,11 @@ public static class BrowserDataAssistantService
             if (tab.IsHomeTab)
             {
                 badges.Add("home");
+            }
+
+            if (tab.IsSleeping)
+            {
+                badges.Add("sleeping");
             }
 
             var suffix = badges.Count > 0 ? $" · {string.Join(", ", badges)}" : string.Empty;
