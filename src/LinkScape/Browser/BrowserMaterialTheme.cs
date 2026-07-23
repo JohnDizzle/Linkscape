@@ -96,6 +96,66 @@ internal static class BrowserMaterialTheme
         material: FromArgb(0xF3, 0x2C, 0x2E, 0x35),
         highContrast: FromArgb(0xF4, 0x16, 0x16, 0x16));
 
+    public static Brush CreateActivityStrokeBrush(RotateTransform rotateTransform)
+    {
+        Color[] colors = CurrentPreset switch
+        {
+            FluentPreset =>
+            [
+                FromArgb(0xFF, 0x72, 0xE9, 0xFF),
+                FromArgb(0xFF, 0x8A, 0xB4, 0xFF),
+                FromArgb(0xFF, 0xC4, 0x9B, 0xFF),
+                FromArgb(0xFF, 0xFF, 0x91, 0xD0),
+                FromArgb(0xFF, 0x72, 0xE9, 0xFF)
+            ],
+            MaterialPreset =>
+            [
+                FromArgb(0xFF, 0xFF, 0x8F, 0xC7),
+                FromArgb(0xFF, 0xFF, 0xC4, 0x72),
+                FromArgb(0xFF, 0xC7, 0xEF, 0x83),
+                FromArgb(0xFF, 0x76, 0xE3, 0xD0),
+                FromArgb(0xFF, 0x9B, 0xB7, 0xFF),
+                FromArgb(0xFF, 0xFF, 0x8F, 0xC7)
+            ],
+            HighContrastPreset =>
+            [
+                FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                FromArgb(0xFF, 0xFF, 0xE8, 0x00),
+                FromArgb(0xFF, 0x00, 0xE5, 0xFF),
+                FromArgb(0xFF, 0xFF, 0xFF, 0xFF)
+            ],
+            _ =>
+            [
+                FromArgb(0xFF, 0xFF, 0x4D, 0x6D),
+                FromArgb(0xFF, 0xFF, 0xB3, 0x47),
+                FromArgb(0xFF, 0xF2, 0xE8, 0x5C),
+                FromArgb(0xFF, 0x50, 0xD8, 0x90),
+                FromArgb(0xFF, 0x42, 0xB9, 0xFF),
+                FromArgb(0xFF, 0xA7, 0x78, 0xFF),
+                FromArgb(0xFF, 0xFF, 0x4D, 0xB8),
+                FromArgb(0xFF, 0xFF, 0x4D, 0x6D)
+            ]
+        };
+
+        var stops = new GradientStopCollection();
+        for (var index = 0; index < colors.Length; index++)
+        {
+            stops.Add(new GradientStop
+            {
+                Color = colors[index],
+                Offset = (double)index / (colors.Length - 1)
+            });
+        }
+
+        return new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint = new Windows.Foundation.Point(1, 1),
+            RelativeTransform = rotateTransform,
+            GradientStops = stops
+        };
+    }
+
     public static string NormalizePreset(string? preset)
     {
         return preset?.Trim() switch

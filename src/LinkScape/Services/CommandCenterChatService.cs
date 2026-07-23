@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using LinkScape.Models;
 
 public static class CommandCenterChatService
 {
@@ -40,6 +41,11 @@ public static class CommandCenterChatService
         if (TryParseBrowserNavigationIntent(prompt, out var navigationIntent))
         {
             return SubmitBrowserNavigationPrompt(navigationIntent);
+        }
+
+        if (IsCapabilityHelpPrompt(prompt))
+        {
+            return BuildCapabilityHelpResponse(prompt);
         }
 
         if (IsToolCatalogPrompt(prompt))
@@ -118,6 +124,65 @@ public static class CommandCenterChatService
             ]);
     }
 
+    private static CommandCenterChatResponse BuildCapabilityHelpResponse(string prompt)
+    {
+        var topic = prompt["linker help".Length..].Trim().ToLowerInvariant();
+        var builder = new StringBuilder();
+
+        switch (topic)
+        {
+            case "navigation":
+                builder.AppendLine("## Navigate and browser actions");
+                builder.AppendLine();
+                builder.AppendLine("Linker can carry out common browser actions from a natural-language request:");
+                builder.AppendLine();
+                builder.AppendLine("- Open a web address or search");
+                builder.AppendLine("- Go back, forward, home, or reload");
+                builder.AppendLine("- Create, activate, find, close, or restore tabs");
+                builder.AppendLine();
+                builder.AppendLine("Try: `open github.com`, `go back`, or `find my GitHub tab`.");
+                break;
+
+            case "tabs":
+                builder.AppendLine("## Tabs");
+                builder.AppendLine();
+                builder.AppendLine("Linker can list and summarize open or saved tabs, find a tab by title or address, activate it, and help restore recently closed tabs.");
+                builder.AppendLine();
+                builder.AppendLine("Try: `show my active tabs` or `find GitHub in my tabs`.");
+                break;
+
+            case "history":
+                builder.AppendLine("## History");
+                builder.AppendLine();
+                builder.AppendLine("Linker can show recent activity, find visits, identify most-visited sites, and group history by day, month, or year. Grouped reports can also include favorites and collections.");
+                builder.AppendLine();
+                builder.AppendLine("Try: `show my recent history` or choose **Groups** inside the History menu.");
+                break;
+
+            case "collections":
+                builder.AppendLine("## Collections");
+                builder.AppendLine();
+                builder.AppendLine("Linker can list collections, show the pages in one, add or remove the current page, and use a collection as a startup set.");
+                builder.AppendLine();
+                builder.AppendLine("Try: `show my collections` or `add the current page to Personal`.");
+                break;
+
+            default:
+                builder.AppendLine("## What Linker can do");
+                builder.AppendLine();
+                builder.AppendLine("- **Navigate and act** — open addresses, search, go back or forward, reload, and go home");
+                builder.AppendLine("- **Manage tabs** — list, find, activate, create, close, and restore tabs");
+                builder.AppendLine("- **Explore history** — review recent activity, search visits, see most-visited sites, and group results");
+                builder.AppendLine("- **Use collections** — list collections, inspect them, and add or remove the current page");
+                builder.AppendLine("- **Work with favorites** — summarize or search saved favorites");
+                builder.AppendLine();
+                builder.AppendLine("Choose a topic from **Status** for examples. **Technical status** shows the underlying local tool diagnostics.");
+                break;
+        }
+
+        return new CommandCenterChatResponse(builder.ToString().TrimEnd());
+    }
+
     private static async Task<CommandCenterChatResponse> SubmitBrowserDataPromptAsync(
         string prompt,
         CommandCenterChatContext? context,
@@ -153,9 +218,13 @@ public static class CommandCenterChatService
         }
 
         var mcpResult = await WindowsMcpClientService.InvokeToolAsync(toolName, arguments, cancellationToken);
+        var tabActions = BuildTabActions(toolName, query);
         if (mcpResult.Succeeded)
         {
-            return new CommandCenterChatResponse(mcpResult.Message, ToolResults: [mcpResult]);
+            return new CommandCenterChatResponse(
+                mcpResult.Message,
+                ToolResults: [mcpResult],
+                TabActions: tabActions);
         }
 
         var fallbackResult = BrowserDataToolService.Invoke(toolName, arguments);
@@ -165,7 +234,31 @@ public static class CommandCenterChatService
             [
                 mcpResult,
                 new ChatToolResult(toolName, true, "Analyzed local browser history/favorites databases with direct local fallback.")
-            ]);
+            ],
+            TabActions: tabActions);
+    }
+
+    private static IReadOnlyList<ChatTabAction>? BuildTabActions(string toolName, string query)
+    {
+        if (toolName is not BrowserDataToolService.TabsSummaryToolName and not BrowserDataToolService.TabsSearchToolName)
+        {
+            return null;
+        }
+
+        IEnumerable<BrowserTab> tabs = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs") ?? [];
+        if (toolName == BrowserDataToolService.TabsSearchToolName && !string.IsNullOrWhiteSpace(query))
+        {
+            tabs = tabs.Where(tab =>
+                tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return tabs
+            .OrderBy(tab => tab.Order)
+            .ThenBy(tab => tab.DateTime)
+            .Take(20)
+            .Select(tab => new ChatTabAction(tab.Id, tab.Title, tab.Url))
+            .ToArray();
     }
 
     private static CommandCenterChatResponse SubmitBrowserNavigationPrompt(BrowserNavigationIntent intent)
@@ -279,15 +372,24 @@ public static class CommandCenterChatService
             return true;
         }
 
-        var tabMatch = Regex.Match(normalized, @"\b(?:go\s+to|switch\s+to|activate)\s+(?:my\s+)?(?<query>.+?)\s+tab\b", RegexOptions.IgnoreCase);
+        var tabMatch = Regex.Match(
+            normalized,
+            @"^(?:(?:active|activate|switch(?:\s+to)?)\s+(?:my\s+|the\s+)?(?<query>.+?)(?:\s+tab)?|go\s+to\s+(?:my\s+|the\s+)?(?<queryWithTab>.+?)\s+tab)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (tabMatch.Success)
         {
+            var query = (tabMatch.Groups["query"].Success
+                    ? tabMatch.Groups["query"].Value
+                    : tabMatch.Groups["queryWithTab"].Value)
+                .Trim()
+                .Trim('"', '\'');
+
             intent = new BrowserNavigationIntent(
                 new BrowserNavigationCommand(
                     BrowserNavigationToolNames.TabsFind,
                     new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
-                        ["query"] = tabMatch.Groups["query"].Value.Trim()
+                        ["query"] = query
                     }),
                 ActivateFirstMatch: true);
             return true;
@@ -338,6 +440,9 @@ public static class CommandCenterChatService
         prompt.Contains("open app", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("window", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("mcp", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCapabilityHelpPrompt(string prompt) =>
+        prompt.StartsWith("linker help", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsToolCatalogPrompt(string prompt) =>
         prompt.Contains("tools", StringComparison.OrdinalIgnoreCase) ||

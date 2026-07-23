@@ -60,4 +60,35 @@ public sealed class CommandCenterChatServiceTests
         Assert.IsTrue(selected);
         Assert.AreEqual(BrowserDataToolService.HistoryPeriodToolName, toolName);
     }
+
+    [DataTestMethod]
+    [DataRow("linker help overview", "What Linker can do")]
+    [DataRow("linker help navigation", "Navigate and browser actions")]
+    [DataRow("linker help tabs", "Tabs")]
+    [DataRow("linker help history", "History")]
+    [DataRow("linker help collections", "Collections")]
+    public async Task SubmitAsync_ReturnsPlainLanguageCapabilityHelp(string prompt, string expectedHeading)
+    {
+        var response = await CommandCenterChatService.SubmitAsync(prompt);
+
+        Assert.IsFalse(response.IsError);
+        StringAssert.Contains(response.Text, expectedHeading);
+        Assert.IsFalse(response.Text.Contains("| Tool |", StringComparison.Ordinal));
+    }
+
+    [DataTestMethod]
+    [DataRow("active MSN tab", "MSN")]
+    [DataRow("activate MSN tab", "MSN")]
+    [DataRow("switch MSN", "MSN")]
+    [DataRow("switch to MSN tab", "MSN")]
+    [DataRow("switch \"Partial TitleName\"", "Partial TitleName")]
+    [DataRow("go to my MSN tab", "MSN")]
+    public void TryParseBrowserNavigationPrompt_ActivatesTabByPartialTitle(string prompt, string expectedQuery)
+    {
+        var parsed = CommandCenterChatService.TryParseBrowserNavigationPrompt(prompt, out var command);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(BrowserNavigationToolNames.TabsFind, command.ToolName);
+        Assert.AreEqual(expectedQuery, command.Arguments["query"]);
+    }
 }

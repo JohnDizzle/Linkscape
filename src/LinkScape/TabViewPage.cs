@@ -1512,9 +1512,14 @@ class TabViewPage : Component
                         return new BrowserNavigationResult(false, "A tab title or URL query is required.");
                     }
 
-                    var matches = currentTabs.Where(tab =>
-                        tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                        tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase));
+                    var matches = currentTabs
+                        .Where(tab =>
+                            tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                            tab.Url.Contains(query, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(tab => string.Equals(tab.Title, query, StringComparison.OrdinalIgnoreCase))
+                        .ThenByDescending(tab => tab.Title.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                        .ThenByDescending(tab => tab.Title.Contains(query, StringComparison.OrdinalIgnoreCase))
+                        .ThenByDescending(tab => tab.Url.StartsWith(query, StringComparison.OrdinalIgnoreCase));
                     return new BrowserNavigationResult(true, string.Join('\n', matches.Select(tab =>
                         $"{tab.Id} | {tab.Title} | {tab.Url} | selected={string.Equals(tab.Id, _latestSelectedTabId, StringComparison.Ordinal)} | sleeping={tab.IsSleeping}")));
 

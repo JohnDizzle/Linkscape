@@ -22,9 +22,15 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private const double AssistantBubbleMaxWidth = 480;
     private const double UserBubbleMaxWidth = 320;
     private const int MaxExtractedLinks = 3;
+    private const int MaxTabActions = 8;
     private const string DefaultSearchProviderSettingKey = "browser.search.defaultProvider";
 
-    private sealed record ChatPanelMessage(string Text, bool IsUser, bool IsError = false, bool IsThinking = false);
+    private sealed record ChatPanelMessage(
+        string Text,
+        bool IsUser,
+        bool IsError = false,
+        bool IsThinking = false,
+        IReadOnlyList<ChatTabAction>? TabActions = null);
 
     private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
@@ -40,7 +46,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         var messages = UseState<IReadOnlyList<ChatPanelMessage>>(
         [
             new ChatPanelMessage(
-                "## Hi, I'm Linker\nAsk about local history, favorites, today's active sites, or type `mcp status` to see the local tools I can use.",
+                "## Hi, I'm Linker\nAsk about navigation, tabs, history, favorites, collections, or today's activity. Use **Status** for a quick guide to what I can do.",
                 false)
         ], threadSafe: true);
         var isSending = UseState(false, threadSafe: true);
@@ -149,7 +155,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 SetMessages(
                     pendingMessages
                         .Where(message => !message.IsThinking)
-                        .Append(new ChatPanelMessage(answer, false, response.IsError))
+                        .Append(new ChatPanelMessage(answer, false, response.IsError, TabActions: response.TabActions))
                         .ToArray());
             }
             catch (Exception ex)
@@ -190,30 +196,39 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 ("Summarize favorites", "summarize my favorites"),
                 ("Search favorites", $"search for {searchProviderName} in my favorites"),
                 ("Show recent favorites", "show my recent favorites")),
-            CreatePromptMenuPill("History", ApplyPrompt,
-                ("Today's activity", "history tell me today's active sites"),
-                ("Recent history", "show my recent history"),
-                ("Most visited", "what sites are most active in my history"),
-                ("Search history", $"search history for {searchProviderName}"),
-                ("This month", "show me history for this month"),
-                ("This year", "show me history for this year")),
+            CreateHistoryPromptMenuPill(
+                ApplyPrompt,
+                [
+                    ("Today's activity", "history tell me today's active sites"),
+                    ("Recent history", "show my recent history"),
+                    ("Most visited", "what sites are most active in my history"),
+                    ("Search history", $"search history for {searchProviderName}"),
+                    ("This month", "show me history for this month"),
+                    ("This year", "show me history for this year")
+                ],
+                [
+                    ("Group by day", "report history by day"),
+                    ("Group by month", "report history by month"),
+                    ("Group by year", "report history by year"),
+                    ("Include favorites", "report history by month with favorites"),
+                    ("Include collections", "report history by month with collections"),
+                    ("Favorites and collections", "report history by month with favorites and collections"),
+                    ("Archived by year", "break down archived history by year")
+                ]),
             CreatePromptMenuPill("Status", ApplyPrompt,
-                ("MCP tools", "mcp status")),
-            CreatePromptMenuPill("Group", ApplyPrompt,
-                ("Group by day", "report history by day"),
-                ("Group by month", "report history by month"),
-                ("Group by year", "report history by year"),
-                ("Include favorites", "report history by month with favorites"),
-                ("Include collections", "report history by month with collections"),
-                ("Favorites and collections", "report history by month with favorites and collections"),
-                ("Archived by year", "break down archived history by year"))) with
+                ("What Linker can do", "linker help overview"),
+                ("Navigate and actions", "linker help navigation"),
+                ("Tabs", "linker help tabs"),
+                ("History", "linker help history"),
+                ("Collections", "linker help collections"),
+                ("Technical status", "mcp status"))) with
         {
             ColumnGap = 6
         };
 
         var messageList = FlexColumn(
             [
-                .. messages.Value.Select(BuildMessageBubble),
+                .. messages.Value.Select(message => BuildMessageBubble(message, ActivateTabFromAction)),
                 Border(null)
                     .Height(1)
                     .Set(anchor => _messagesBottomAnchor = anchor)
@@ -221,6 +236,25 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         {
             RowGap = 8
         };
+
+        void ActivateTabFromAction(ChatTabAction tabAction)
+        {
+            var result = BrowserNavigationService.Invoke(
+                new BrowserNavigationCommand(
+                    BrowserNavigationToolNames.TabsActivate,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["tabId"] = tabAction.TabId
+                    }));
+
+            SetMessages(
+                messages.Value
+                    .Append(new ChatPanelMessage(
+                        result.Succeeded ? $"Switched to **{tabAction.Title}**." : result.Message,
+                        false,
+                        IsError: !result.Succeeded))
+                    .ToArray());
+        }
 
         var input = Border(
             FlexRow(
@@ -246,7 +280,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                         .Set(ConfigurePromptContextMenu)
                         .Flex(grow: 1, basis: 0) with
                 {
-                    PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about history, favorites, today, active sites, or mcp status...",
+                    PlaceholderText = isSending.Value ? "Analyzing browser data..." : "Ask about navigation, tabs, history, favorites, or collections...",
                     Suggestions = []
                 },
                 Button("Ask", () => SubmitPrompt())
@@ -342,7 +376,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         });
     }
 
-    private Element BuildMessageBubble(ChatPanelMessage message)
+    private Element BuildMessageBubble(ChatPanelMessage message, Action<ChatTabAction> activateTab)
     {
         Element messageContent = message.IsUser
             ? TextBlock(message.Text)
@@ -350,7 +384,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 .FontSize(MessageFontSize)
             : message.IsThinking
                 ? CreateThinkingIndicator()
-            : BuildAssistantMarkdownContent(message.Text);
+            : BuildAssistantMarkdownContent(message.Text, message.TabActions, activateTab);
 
         var content = FlexColumn(
             FlexRow(
@@ -490,8 +524,16 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         }
     }
 
-    private Element BuildAssistantMarkdownContent(string markdown)
+    private Element BuildAssistantMarkdownContent(
+        string markdown,
+        IReadOnlyList<ChatTabAction>? tabActions,
+        Action<ChatTabAction> activateTab)
     {
+        if (tabActions is { Count: > 0 })
+        {
+            return BuildTabActionContent(markdown, tabActions, activateTab);
+        }
+
         var links = ExtractMarkdownLinks(markdown)
             .DistinctBy(link => NormalizeLinkUrl(link.Url))
             .ToArray();
@@ -540,6 +582,88 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         {
             RowGap = 8
         };
+    }
+
+    private Element BuildTabActionContent(
+        string markdown,
+        IReadOnlyList<ChatTabAction> tabActions,
+        Action<ChatTabAction> activateTab)
+    {
+        var markdownContent = Border(Markdown(markdown, new MarkdownOptions
+            {
+                LinkBuilder = (children, uri) =>
+                    TextBlock(GetMarkdownLinkText(children, uri))
+            })
+            .HAlign(HorizontalAlignment.Stretch)
+            .MaxWidth(AssistantBubbleMaxWidth - 24))
+            .Padding(0)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MaxWidth(AssistantBubbleMaxWidth - 24);
+
+        return FlexColumn(
+            markdownContent,
+            Border(
+                FlexColumn(
+                    TextBlock("Switch to an existing tab")
+                        .FontSize(MetaFontSize)
+                        .Opacity(0.78),
+                    FlexColumn(
+                        tabActions
+                            .Take(MaxTabActions)
+                            .Select(tab => BuildTabActionButton(tab, activateTab).WithKey(tab.TabId))
+                            .ToArray()) with
+                    {
+                        RowGap = 6
+                    }) with
+                {
+                    RowGap = 6
+                })
+                .Padding(8, 7)
+                .CornerRadius(10)
+                .Background(BrowserMaterialTheme.GlassFillBrush)
+                .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
+                .MaxWidth(AssistantBubbleMaxWidth - 24)
+                .HAlign(HorizontalAlignment.Stretch)) with
+        {
+            RowGap = 8
+        };
+    }
+
+    private static ButtonElement BuildTabActionButton(
+        ChatTabAction tabAction,
+        Action<ChatTabAction> activateTab)
+    {
+        return Button(
+                (FlexRow(
+                    TextBlock(BrowserConstants.GlyphTabs)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(13)
+                        .Opacity(0.82),
+                    VStack(1,
+                        TextBlock(GetLinkActionLabel(tabAction.Title))
+                            .FontSize(13)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.NoWrap),
+                        TextBlock(GetLinkHost(tabAction.Url))
+                            .FontSize(11)
+                            .Opacity(0.68)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.NoWrap))
+                    .MinWidth(0)
+                    .Flex(grow: 1, basis: 0)) with
+                {
+                    ColumnGap = 8
+                })
+                .HAlign(HorizontalAlignment.Stretch),
+                () => activateTab(tabAction))
+            .AutomationName("Switch to tab " + tabAction.Title)
+            .ToolTip("Switch to " + tabAction.Title)
+            .Padding(9, 6)
+            .CornerRadius(8)
+            .Background(BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MinWidth(0);
     }
 
     private ButtonElement BuildExtractedLinkButton(MarkdownLink link)
@@ -887,6 +1011,49 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         return Button(label, () => { })
             .AutomationName(label)
             .ToolTip($"Show {label.ToLowerInvariant()} prompts")
+            .Padding(12, 6)
+            .CornerRadius(6)
+            .Background(BrowserMaterialTheme.PillFillBrush)
+            .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
+            .Set(button => button.Flyout = flyout);
+    }
+
+    private static ButtonElement CreateHistoryPromptMenuPill(
+        Action<string> applyPrompt,
+        IReadOnlyList<(string Label, string Prompt)> historyPrompts,
+        IReadOnlyList<(string Label, string Prompt)> groupPrompts)
+    {
+        var flyout = new MenuFlyout();
+        foreach (var prompt in historyPrompts)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = prompt.Label
+            };
+            item.Click += (_, _) => applyPrompt(prompt.Prompt);
+            flyout.Items.Add(item);
+        }
+
+        var groupsMenu = new MenuFlyoutSubItem
+        {
+            Text = "Groups"
+        };
+        foreach (var prompt in groupPrompts)
+        {
+            var item = new MenuFlyoutItem
+            {
+                Text = prompt.Label
+            };
+            item.Click += (_, _) => applyPrompt(prompt.Prompt);
+            groupsMenu.Items.Add(item);
+        }
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        flyout.Items.Add(groupsMenu);
+
+        return Button("History", () => { })
+            .AutomationName("History")
+            .ToolTip("Show history prompts and groups")
             .Padding(12, 6)
             .CornerRadius(6)
             .Background(BrowserMaterialTheme.PillFillBrush)

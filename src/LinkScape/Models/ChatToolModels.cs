@@ -4,7 +4,13 @@ public sealed record CommandCenterChatResponse(
     string Text,
     bool IsError = false,
     IReadOnlyList<ChatToolResult>? ToolResults = null,
-    string? ProviderResponseId = null);
+    string? ProviderResponseId = null,
+    IReadOnlyList<ChatTabAction>? TabActions = null);
+
+public sealed record ChatTabAction(
+    string TabId,
+    string Title,
+    string Url);
 
 public sealed record ChatToolResult(
     string ToolName,

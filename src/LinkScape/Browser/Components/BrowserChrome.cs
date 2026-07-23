@@ -1165,6 +1165,9 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredBackdropPreset)
+            ? NormalizeBackdropGradientPreset(configuredBackdropPreset)
+            : BackdropGradientPresetDefault;
         var selectedMaterialTheme = settingsSnapshot.TryGetValue(BrowserMaterialTheme.SettingKey, out var configuredMaterialTheme)
             ? BrowserMaterialTheme.NormalizePreset(configuredMaterialTheme)
             : BrowserMaterialTheme.DefaultPreset;
@@ -1260,12 +1263,25 @@ internal static class BrowserChrome
                 CreateSettingsFlyoutCard(
                     new TextBlock
                     {
-                        Text = "Material theme",
+                        Text = "Backdrop tint",
                         FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                     },
                     new TextBlock
                     {
-                        Text = "Applies to glass pills, tabs, badges, borders, and Linker chat messages.",
+                        Text = "Adds an optional color wash over the app material.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutBackdropPicker(selectedBackdropPreset, onSaveSettingValue)),
+                CreateSettingsFlyoutCard(
+                    new TextBlock
+                    {
+                        Text = "Control theme",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = "Mica works with every backdrop. Frost favors cool backdrops; Petal favors colorful backdrops. The activity rainbow follows this selection.",
                         TextWrapping = TextWrapping.Wrap,
                         Opacity = 0.76
                     },
@@ -1500,6 +1516,62 @@ internal static class BrowserChrome
         return panel;
     }
 
+    private static UIElement CreateSettingsFlyoutBackdropPicker(
+        string selectedPreset,
+        Action<string, string> onSaveSettingValue)
+    {
+        var rows = new StackPanel
+        {
+            Spacing = 8
+        };
+        var firstRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
+        var secondRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8
+        };
+        var presets = new[]
+        {
+            BackdropGradientPresetDefault,
+            "Aurora",
+            "Sunset",
+            "Ocean",
+            "Graphite",
+            "Forest",
+            "HighContrast"
+        };
+
+        for (var index = 0; index < presets.Length; index++)
+        {
+            var normalizedPreset = NormalizeBackdropGradientPreset(presets[index]);
+            var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
+            var displayName = string.Equals(normalizedPreset, "HighContrast", StringComparison.Ordinal)
+                ? "High contrast"
+                : normalizedPreset;
+            var button = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Content = displayName,
+                Background = isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush,
+                BorderBrush = isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush,
+                BorderThickness = new Thickness(1),
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(11, 6, 11, 6)
+            };
+            button.Click += (_, _) => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, "Select backdrop gradient preset: " + normalizedPreset);
+            (index < 4 ? firstRow : secondRow).Children.Add(button);
+        }
+
+        rows.Children.Add(firstRow);
+        rows.Children.Add(secondRow);
+        return rows;
+    }
+
     private static UIElement CreateSettingsFlyoutSettingsList(IReadOnlyDictionary<string, string> settingsSnapshot)
     {
         var settingsItems = settingsSnapshot
@@ -1662,7 +1734,7 @@ internal static class BrowserChrome
             CenterX = 0.5,
             CenterY = 0.5
         };
-        border.BorderBrush = CreateRainbowBorderBrush(rotateTransform);
+        border.BorderBrush = BrowserMaterialTheme.CreateActivityStrokeBrush(rotateTransform);
 
         var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
         {
@@ -1679,26 +1751,6 @@ internal static class BrowserChrome
         busyStoryboard.Children.Add(animation);
         border.Tag = busyStoryboard;
         busyStoryboard.Begin();
-    }
-
-    private static Brush CreateRainbowBorderBrush(RotateTransform rotateTransform)
-    {
-        return new LinearGradientBrush
-        {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(1, 1),
-            RelativeTransform = rotateTransform,
-            GradientStops = new GradientStopCollection
-            {
-                new() { Color = Microsoft.UI.Colors.Red, Offset = 0.00 },
-                new() { Color = Microsoft.UI.Colors.Orange, Offset = 0.18 },
-                new() { Color = Microsoft.UI.Colors.Yellow, Offset = 0.34 },
-                new() { Color = Microsoft.UI.Colors.LimeGreen, Offset = 0.50 },
-                new() { Color = Microsoft.UI.Colors.DeepSkyBlue, Offset = 0.66 },
-                new() { Color = Microsoft.UI.Colors.MediumPurple, Offset = 0.82 },
-                new() { Color = Microsoft.UI.Colors.HotPink, Offset = 1.00 }
-            }
-        };
     }
 
     private static Element BuildCompactTabsCard(
@@ -2741,7 +2793,7 @@ internal static class BrowserChrome
                 BuildBackdropPresetPicker(selectedBackdropPreset, onSaveSettingValue)),
             BuildInsetOptionCard(
                 "Control theme",
-                "Default keeps the original Mica look. Other choices repaint controls, pills, badges, borders, and chat messages.",
+                "Mica is balanced with every backdrop. Frost favors Ocean, Graphite, and Aurora; Petal favors Aurora, Sunset, and Forest. Themes repaint controls, pills, badges, borders, and chat messages.",
                 BuildMaterialThemePresetPicker(selectedMaterialTheme, onSaveSettingValue))
         );
     }
@@ -2811,7 +2863,11 @@ internal static class BrowserChrome
         var normalizedPreset = NormalizeBackdropGradientPreset(preset);
         var isSelected = string.Equals(selectedPreset, normalizedPreset, StringComparison.Ordinal);
 
-        return Button(normalizedPreset, () => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset))
+        var displayName = string.Equals(normalizedPreset, "HighContrast", StringComparison.Ordinal)
+            ? "High contrast"
+            : normalizedPreset;
+
+        return Button(displayName, () => onSaveSettingValue(BackdropGradientPresetSettingKey, normalizedPreset))
             .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
             .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White))
             .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
@@ -2859,7 +2915,9 @@ internal static class BrowserChrome
     {
         return preset switch
         {
-            BrowserMaterialTheme.DefaultThemePreset => "Default",
+            BrowserMaterialTheme.DefaultThemePreset => "Mica",
+            BrowserMaterialTheme.FluentPreset => "Frost",
+            BrowserMaterialTheme.MaterialPreset => "Petal",
             BrowserMaterialTheme.HighContrastPreset => "High contrast",
             _ => preset
         };
@@ -3145,24 +3203,29 @@ internal static class BrowserChrome
         }
 
         border.BorderThickness = new Thickness(2);
-        border.BorderBrush = BrowserMaterialTheme.LoadingStrokeBrush;
 
         if (border.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard)
         {
             return;
         }
 
+        var rotateTransform = new RotateTransform
+        {
+            CenterX = 0.5,
+            CenterY = 0.5
+        };
+        border.BorderBrush = BrowserMaterialTheme.CreateActivityStrokeBrush(rotateTransform);
+
         var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
         {
-            From = 0.58,
-            To = 1,
-            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(1.4)),
-            AutoReverse = true,
+            From = 0,
+            To = 360,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(2.2)),
             RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
             EnableDependentAnimation = true
         };
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, border);
-        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Opacity");
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, rotateTransform);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Angle");
 
         var loadingStoryboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
         loadingStoryboard.Children.Add(animation);
