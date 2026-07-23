@@ -2340,38 +2340,78 @@ internal static class BrowserChrome
         bool isStartup,
         Action<string> onCollectionNameChanged)
     {
-        var content = HStack(6,
-            TextBlock(collectionName)
-                .TextTrimming(TextTrimming.CharacterEllipsis)
-                .TextWrapping(TextWrapping.NoWrap)
-                .Set(textBlock =>
-                {
-                    textBlock.MaxLines = 1;
-                    textBlock.FontWeight = isSelected
-                        ? Microsoft.UI.Text.FontWeights.SemiBold
-                        : Microsoft.UI.Text.FontWeights.Normal;
-                }),
-            Border(
-                TextBlock(BrowserConstants.GlyphHome)
+        Microsoft.UI.Xaml.Controls.Border? underline = null;
+        var content = VStack(3,
+            HStack(6,
+                TextBlock(collectionName)
+                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                    .TextWrapping(TextWrapping.NoWrap)
+                    .Set(textBlock =>
+                    {
+                        textBlock.MaxLines = 1;
+                        textBlock.FontWeight = isSelected
+                            ? Microsoft.UI.Text.FontWeights.SemiBold
+                            : Microsoft.UI.Text.FontWeights.Normal;
+                    }),
+                TextBlock(isSelected ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline)
                     .FontFamily(BrowserConstants.IconFontFamily)
-                    .FontSize(10)
-                    .HAlign(HorizontalAlignment.Center)
-                    .VAlign(VerticalAlignment.Center))
-                .Width(18)
-                .Height(18)
-                .CornerRadius(4)
-                .Background(isSelected ? BrowserMaterialTheme.BadgeFillBrush : BrowserMaterialTheme.GlassStrongFillBrush)
-                .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
-                .ToolTip("Opens on startup")
-                .IsVisible(isStartup));
+                    .FontSize(12)
+                    .Foreground(BrowserMaterialTheme.SelectedStrokeBrush)
+                    .ToolTip("Startup collection")
+                    .IsVisible(isStartup))
+                .VAlign(VerticalAlignment.Center),
+            Border(null)
+                .Height(2)
+                .CornerRadius(1)
+                .Background(BrowserMaterialTheme.SelectedStrokeBrush)
+                .Opacity(isSelected ? 1 : 0)
+                .HAlign(HorizontalAlignment.Stretch)
+                .Set(border => underline = border));
 
         return Button(content, () => onCollectionNameChanged(collectionName))
             .AutomationName($"Open collection {collectionName}")
-            .Padding(12, 6)
+            .Padding(12, 5)
             .CornerRadius(6)
             .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
             .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
-            .Set(button => button.BorderThickness = new Thickness(isSelected ? 1.75 : 1));
+            .Set(button => ConfigureCollectionSelectorButton(button, underline, isSelected));
+    }
+
+    private static void ConfigureCollectionSelectorButton(
+        Microsoft.UI.Xaml.Controls.Button button,
+        Microsoft.UI.Xaml.Controls.Border? underline,
+        bool isSelected)
+    {
+        button.BorderThickness = new Thickness(1);
+        button.Tag = new CollectionSelectorHoverState(underline, isSelected);
+        button.PointerEntered -= OnCollectionSelectorPointerEntered;
+        button.PointerEntered += OnCollectionSelectorPointerEntered;
+        button.PointerExited -= OnCollectionSelectorPointerExited;
+        button.PointerExited += OnCollectionSelectorPointerExited;
+        button.PointerCanceled -= OnCollectionSelectorPointerExited;
+        button.PointerCanceled += OnCollectionSelectorPointerExited;
+        button.PointerCaptureLost -= OnCollectionSelectorPointerExited;
+        button.PointerCaptureLost += OnCollectionSelectorPointerExited;
+    }
+
+    private sealed record CollectionSelectorHoverState(
+        Microsoft.UI.Xaml.Controls.Border? Underline,
+        bool IsSelected);
+
+    private static void OnCollectionSelectorPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button { Tag: CollectionSelectorHoverState { Underline: { } underline } })
+        {
+            underline.Opacity = 1;
+        }
+    }
+
+    private static void OnCollectionSelectorPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Button { Tag: CollectionSelectorHoverState { Underline: { } underline } state })
+        {
+            underline.Opacity = state.IsSelected ? 1 : 0;
+        }
     }
 
     private static Element BuildCollectionItem(
