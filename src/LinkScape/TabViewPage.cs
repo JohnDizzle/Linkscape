@@ -1695,6 +1695,7 @@ class TabViewPage : Component
             new BrowserTitleBarProps(
                 _browserTitleBarController,
                 selectedTab,
+                tabs,
                 configuredHomeUrl,
                 settingsSnapshot.Value,
                 isTabsCollapsed,
@@ -1713,6 +1714,15 @@ class TabViewPage : Component
                 () => _browserWebViewHostController.GoForward(),
                 SubmitAddress,
                 NavigateActiveTab,
+                tabId =>
+                {
+                    var tabIndex = Array.FindIndex(tabs, tab => string.Equals(tab.Id, tabId, StringComparison.Ordinal));
+                    if (tabIndex >= 0)
+                    {
+                        SelectTab(tabIndex);
+                    }
+                },
+                url => OpenUriInNewTab(url, dismissCommandCenter: false),
                 selectedSearchProviderKey,
                 BrowserSearchProviders.Providers,
                 SetDefaultSearchProvider,
