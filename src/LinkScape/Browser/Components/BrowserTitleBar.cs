@@ -84,7 +84,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnRefresh,
             Props.OnForward,
             SetAddressBarDraft,
-            Props.OnSubmitAddress,
+            SubmitAddressAndCloseSearch,
             AttachAddressBox,
             Props.OnNavigateCurrentTab,
             Props.SelectedSearchProviderKey,
@@ -97,6 +97,12 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnCloseTab);
     }
 
+    private void SubmitAddressAndCloseSearch(string value)
+    {
+        CloseSearchPopup();
+        Props.OnSubmitAddress(value);
+    }
+
     private void AttachAddressBox(Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
     {
         if (!ReferenceEquals(_addressBox, addressBox))
@@ -104,9 +110,11 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             if (_addressBox is not null)
             {
                 _addressBox.KeyDown -= OnAddressBoxKeyDown;
+                _addressBox.LostFocus -= OnAddressBoxLostFocus;
             }
 
             addressBox.KeyDown += OnAddressBoxKeyDown;
+            addressBox.LostFocus += OnAddressBoxLostFocus;
         }
 
         _addressBox = addressBox;
@@ -128,7 +136,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
         _isAddressBarEditing = true;
         _addressBarText = value;
-        ScheduleLocalSearch(value);
+        if (IsAddressBoxFocused())
+        {
+            ScheduleLocalSearch(value);
+        }
     }
 
     private void SetAddressBarText(string value, bool preserveUserEdit = false)
@@ -161,6 +172,39 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             CloseSearchPopup();
             e.Handled = true;
         }
+    }
+
+    private async void OnAddressBoxLostFocus(object sender, RoutedEventArgs e)
+    {
+        await Task.Delay(50);
+
+        if (_addressBox?.XamlRoot is null)
+        {
+            CloseSearchPopup();
+            return;
+        }
+
+        var focusedElement = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(_addressBox.XamlRoot) as DependencyObject;
+        if (focusedElement is not null && IsInsideSearchPopup(focusedElement))
+        {
+            return;
+        }
+
+        CloseSearchPopup();
+    }
+
+    private bool IsInsideSearchPopup(DependencyObject element)
+    {
+        var popupChild = _searchPopup?.Child;
+        for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (ReferenceEquals(current, popupChild))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void ScheduleLocalSearch(string value)
@@ -201,6 +245,12 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
             _addressBox.DispatcherQueue.TryEnqueue(() =>
             {
+                if (!IsAddressBoxFocused())
+                {
+                    CloseSearchPopup();
+                    return;
+                }
+
                 _searchResults = results;
                 _searchError = string.Empty;
                 RenderSearchPopup(query);
@@ -250,9 +300,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         {
             return;
         }
-
-        var addressHadFocus = addressBox.FocusState != FocusState.Unfocused;
-        var selectionStart = FindAddressTextBox(addressBox)?.SelectionStart;
 
         _searchPopup ??= new Microsoft.UI.Xaml.Controls.Primitives.Popup
         {
@@ -349,20 +396,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         _searchPopup.HorizontalOffset = Math.Clamp(centeredOffset, leftLimit, Math.Max(leftLimit, rightLimit - popupWidth));
         _searchPopup.VerticalOffset = point.Y + addressBox.ActualHeight + 6;
         _searchPopup.IsOpen = true;
-
-        if (addressHadFocus)
-        {
-            addressBox.DispatcherQueue.TryEnqueue(() =>
-            {
-                addressBox.Focus(FocusState.Programmatic);
-                var editor = FindAddressTextBox(addressBox);
-                if (editor is not null && selectionStart is { } caret)
-                {
-                    editor.SelectionStart = Math.Min(caret, editor.Text.Length);
-                    editor.SelectionLength = 0;
-                }
-            });
-        }
     }
 
     private static Microsoft.UI.Xaml.Controls.TextBox? FindAddressTextBox(DependencyObject parent)
@@ -384,6 +417,18 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         }
 
         return null;
+    }
+
+    private bool IsAddressBoxFocused()
+    {
+        var addressBox = _addressBox;
+        if (addressBox is null)
+        {
+            return false;
+        }
+
+        return addressBox.FocusState != FocusState.Unfocused ||
+            FindAddressTextBox(addressBox)?.FocusState != FocusState.Unfocused;
     }
 
     private Microsoft.UI.Xaml.UIElement BuildSearchSourcePills(string query)

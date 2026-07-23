@@ -280,6 +280,11 @@ internal static class BrowserChrome
         if (sender is Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
         {
             UpdateAddressBarVisualState(addressBox);
+            addressBox.DispatcherQueue.TryEnqueue(() =>
+            {
+                var editor = FindAddressBarEditor(addressBox);
+                editor?.SelectAll();
+            });
         }
     }
 
@@ -311,8 +316,11 @@ internal static class BrowserChrome
 
         if (state.Chrome is not null)
         {
-            state.Chrome.BorderThickness = new Thickness(0);
-            state.Chrome.BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            state.Chrome.BorderThickness = isFocused ? new Thickness(1.5) : new Thickness(0);
+            state.Chrome.BorderBrush = isFocused
+                ? BrowserMaterialTheme.SelectedStrokeBrush
+                : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            state.Chrome.Shadow = isFocused ? new Microsoft.UI.Xaml.Media.ThemeShadow() : null;
         }
 
         if (state.Underline is not null)
@@ -322,6 +330,27 @@ internal static class BrowserChrome
                 isFocused ? 1d : hasText ? 0.35d : 0d,
                 isFocused ? 1d : hasText ? 0.82d : 0.6d);
         }
+    }
+
+    private static Microsoft.UI.Xaml.Controls.TextBox? FindAddressBarEditor(DependencyObject parent)
+    {
+        var childCount = VisualTreeHelper.GetChildrenCount(parent);
+        for (var index = 0; index < childCount; index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is Microsoft.UI.Xaml.Controls.TextBox editor)
+            {
+                return editor;
+            }
+
+            var descendant = FindAddressBarEditor(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
     }
 
     private static void AnimateAddressBarUnderline(
