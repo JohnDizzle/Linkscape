@@ -67,7 +67,7 @@ internal sealed record BrowserWebViewHostProps(
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 {
-    private static readonly TimeSpan InactiveTabSuspendDelay = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan InactiveTabSuspendDelay = TimeSpan.FromSeconds(180);
     private const string LinkerVirtualHostName = "linker.local";
     private const string LinkerAssetsFolderName = "Assets";
     private const string PauseMediaScript = """

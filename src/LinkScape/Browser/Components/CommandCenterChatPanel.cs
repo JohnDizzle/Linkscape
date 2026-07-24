@@ -663,7 +663,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .Background(BrowserMaterialTheme.PillFillBrush)
             .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .HAlign(HorizontalAlignment.Stretch)
-            .MinWidth(0);
+            .MinWidth(0)
+            .Set(ConfigureQuickViewHover);
     }
 
     private ButtonElement BuildExtractedLinkButton(MarkdownLink link)
@@ -711,7 +712,75 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .Background(BrowserMaterialTheme.PillFillBrush)
             .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .HAlign(HorizontalAlignment.Stretch)
-            .MinWidth(0);
+            .MinWidth(0)
+            .Set(ConfigureQuickViewHover);
+    }
+
+    private static void ConfigureQuickViewHover(Microsoft.UI.Xaml.Controls.Button button)
+    {
+        button.PointerEntered -= OnQuickViewPointerEntered;
+        button.PointerEntered += OnQuickViewPointerEntered;
+        button.PointerExited -= OnQuickViewPointerExited;
+        button.PointerExited += OnQuickViewPointerExited;
+        button.PointerCanceled -= OnQuickViewPointerExited;
+        button.PointerCanceled += OnQuickViewPointerExited;
+        button.PointerCaptureLost -= OnQuickViewPointerExited;
+        button.PointerCaptureLost += OnQuickViewPointerExited;
+    }
+
+    private static void OnQuickViewPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.Button button)
+        {
+            return;
+        }
+
+        if (button.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard existing)
+        {
+            existing.Stop();
+        }
+
+        var rotateTransform = new RotateTransform
+        {
+            CenterX = 0.5,
+            CenterY = 0.5
+        };
+
+        button.BorderThickness = new Thickness(1.5);
+        button.BorderBrush = BrowserMaterialTheme.CreateActivityStrokeBrush(rotateTransform);
+
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0,
+            To = 360,
+            Duration = new Microsoft.UI.Xaml.Duration(TimeSpan.FromSeconds(1.6)),
+            RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever,
+            EnableDependentAnimation = true
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, rotateTransform);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Angle");
+
+        var storyboard = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        storyboard.Children.Add(animation);
+        button.Tag = storyboard;
+        storyboard.Begin();
+    }
+
+    private static void OnQuickViewPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.Button button)
+        {
+            return;
+        }
+
+        if (button.Tag is Microsoft.UI.Xaml.Media.Animation.Storyboard storyboard)
+        {
+            storyboard.Stop();
+            button.Tag = null;
+        }
+
+        button.BorderThickness = new Thickness(1);
+        button.BorderBrush = BrowserMaterialTheme.GlassStrokeBrush;
     }
 
     private static string GetLinkActionLabel(string label)

@@ -16,12 +16,12 @@ internal static class BrowserChrome
     private const double ExpandedCommandCenterRailWidth = 560;
     private const double ActiveTabHeaderMinHeight = 134;
     private const double RailSectionSpacing = 14;
-    private const double ExpandedTabItemHeight = 68;
+    private const double ExpandedTabItemHeight = 74;
     private const double CollapsedTabItemHeight = 40;
     private const double CollapsedRailWidth = 56;
     private const double TabItemHoverScale = 1.04;
     private const double TabItemHorizontalInset = 4;
-    private const double SelectedTabBorderThickness = 1;
+    private const double SelectedTabBorderThickness = 1.25;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
     
@@ -72,12 +72,14 @@ internal static class BrowserChrome
         Action<string> onSubmitAddress,
         Action<Microsoft.UI.Xaml.Controls.AutoSuggestBox> onAddressBoxReady,
         Action<string> onNavigateCurrentTab,
+        Action<string> onOpenAddressInNewTab,
         string selectedSearchProviderKey,
         IReadOnlyList<BrowserSearchProvider> searchProviders,
         Action<string> onSelectSearchProvider,
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
         Action<string, string> onSaveSettingValue,
+        Action onOpenSelectedTabInNewWindow,
         Action onAddTab,
         Action onCloseTab)
     {
@@ -103,11 +105,23 @@ internal static class BrowserChrome
                     .ToolTip("Set current page as home")
                     .Height(32)
                     .Padding(10, 0)
-                    .CornerRadius(10),
+                    .CornerRadius(10)
+                    .Set(button =>
+                    {
+                        button.Style = GetGlassIconButtonStyle();
+                        ApplyGlassButtonDepth(button);
+                    }),
                 IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
                     "Toggle favorite",
+                    buttonSize: 32,
+                    iconSize: 15,
+                    useGlass: true),
+                IconButton(
+                    BrowserConstants.GlyphNewWindow,
+                    onOpenSelectedTabInNewWindow,
+                    "Open active tab in new LinkScape window",
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),
@@ -119,7 +133,7 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true)
-                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue, onOpenAiKeyDialog))
+                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue, onOpenAiKeyDialog, onOpenAddressInNewTab))
             ) with
             {
                 ColumnGap = 6
@@ -160,6 +174,7 @@ internal static class BrowserChrome
                     ColumnGap = 8
                 })
                 .Padding(0)
+                .VAlign(VerticalAlignment.Center)
                 .HAlign(HorizontalAlignment.Stretch)
                 .MinWidth(0),
                 Border(null)
@@ -173,7 +188,7 @@ internal static class BrowserChrome
             .MinWidth(0)
         )
         .Height(38)
-        .Padding(10, 1, 10, 0)
+        .Padding(10, 0)
         .CornerRadius(14)
         .Background(BrowserConstants.LayerFillDefaultBrush)
         .HAlign(HorizontalAlignment.Stretch)
@@ -440,6 +455,7 @@ internal static class BrowserChrome
             {
                 button.Style = GetGlassIconButtonStyle();
                 button.Flyout = flyout;
+                ApplyGlassButtonDepth(button);
             });
     }
 
@@ -447,7 +463,8 @@ internal static class BrowserChrome
         BrowserTab tab,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
-        Action<string> onReloadTab)
+        Action<string> onReloadTab,
+        Action<string> onOpenTabInNewWindow)
     {
         return CreateTabContextFlyout(
             tab,
@@ -455,7 +472,8 @@ internal static class BrowserChrome
             null,
             onToggleFavoriteTab,
             onCloseTab,
-            onReloadTab);
+            onReloadTab,
+            onOpenTabInNewWindow);
     }
 
     private static MenuFlyout CreateTabContextFlyout(
@@ -464,7 +482,8 @@ internal static class BrowserChrome
         Action<string, string, string>? onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
-        Action<string> onReloadTab)
+        Action<string> onReloadTab,
+        Action<string> onOpenTabInNewWindow)
     {
         var flyout = new MenuFlyout();
 
@@ -479,6 +498,12 @@ internal static class BrowserChrome
             Text = "Reload"
         };
         reloadItem.Click += (_, _) => onReloadTab(tab.Id);
+
+        var openInNewWindowItem = new MenuFlyoutItem
+        {
+            Text = "Open in new window"
+        };
+        openInNewWindowItem.Click += (_, _) => onOpenTabInNewWindow(tab.Id);
 
         var addToCollectionItem = new MenuFlyoutSubItem
         {
@@ -519,6 +544,7 @@ internal static class BrowserChrome
 
         flyout.Items.Add(favoriteItem);
         flyout.Items.Add(reloadItem);
+        flyout.Items.Add(openInNewWindowItem);
         flyout.Items.Add(addToCollectionItem);
         flyout.Items.Add(closeItem);
 
@@ -626,6 +652,7 @@ internal static class BrowserChrome
     Action<string> onToggleFavoriteTab,
     Action<string> onCloseTabFromContextMenu,
     Action<string> onReloadTab,
+    Action<string> onOpenTabInNewWindow,
     string activeCommandCenterSection,
     bool isCommandCenterExpanded,
     IReadOnlyList<HistoryItem> mostVisitedItems,
@@ -707,8 +734,8 @@ internal static class BrowserChrome
                 var isSelected = string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
                 return (isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(0).CornerRadius(12)
-                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, GetCollectionNames(collectionMembership, tab.Url), tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
+                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow).Padding(0).CornerRadius(12)
+                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, GetCollectionNames(collectionMembership, tab.Url), tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
             }) with
         {
             SelectedIndex = selectedIndex,
@@ -1185,7 +1212,8 @@ internal static class BrowserChrome
     private static Microsoft.UI.Xaml.Controls.Flyout CreateSettingsFlyout(
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
-        Action onOpenAiKeyDialog)
+        Action onOpenAiKeyDialog,
+        Action<string> onOpenAddressInNewTab)
     {
         var homeUrl = settingsSnapshot.TryGetValue(BrowserConstants.HomeUrlSettingKey, out var configuredHomeUrl)
             ? BrowserUrl.Normalize(configuredHomeUrl, BrowserConstants.HomeUrl)
@@ -1225,11 +1253,7 @@ internal static class BrowserChrome
                     Opacity = 0.76
                 },
                 CreateSettingsFlyoutCard(
-                    new TextBlock
-                    {
-                        Text = "Home page",
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-                    },
+                    CreateSettingsFlyoutCardHeader("Home page", homeUrl),
                     new TextBlock
                     {
                         Text = homeUrl,
@@ -1244,13 +1268,10 @@ internal static class BrowserChrome
                     },
                     CreateSettingsFlyoutActionButton(
                         "Reset home to default",
-                        () => onSaveSettingValue(BrowserConstants.HomeUrlSettingKey, BrowserConstants.HomeUrl))),
+                        () => onSaveSettingValue(BrowserConstants.HomeUrlSettingKey, BrowserConstants.HomeUrl)),
+                    CreateSettingsOpenSourceSection(onOpenAddressInNewTab)),
                 CreateSettingsFlyoutCard(
-                    new TextBlock
-                    {
-                        Text = "Open behavior",
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-                    },
+                    CreateSettingsFlyoutCardHeader("Open behavior", glyph: BrowserConstants.GlyphSettings),
                     CreateSettingsFlyoutToggle(
                         "Restore tabs from last session",
                         "When enabled, LinkScape saves open tabs and restores them on the next launch. When disabled, startup opens a fresh home page.",
@@ -1290,11 +1311,7 @@ internal static class BrowserChrome
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
                 CreateSettingsFlyoutCard(
-                    new TextBlock
-                    {
-                        Text = "Backdrop tint",
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-                    },
+                    CreateSettingsFlyoutCardHeader("Backdrop tint", glyph: BrowserConstants.GlyphGlobe),
                     new TextBlock
                     {
                         Text = "Adds an optional color wash over the app material.",
@@ -1303,11 +1320,7 @@ internal static class BrowserChrome
                     },
                     CreateSettingsFlyoutBackdropPicker(selectedBackdropPreset, onSaveSettingValue)),
                 CreateSettingsFlyoutCard(
-                    new TextBlock
-                    {
-                        Text = "Control theme",
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-                    },
+                    CreateSettingsFlyoutCardHeader("Control theme", glyph: BrowserConstants.GlyphSettings),
                     new TextBlock
                     {
                         Text = "Mica works with every backdrop. Frost favors cool backdrops; Petal favors colorful backdrops. The activity rainbow follows this selection.",
@@ -1316,11 +1329,7 @@ internal static class BrowserChrome
                     },
                     CreateSettingsFlyoutMaterialThemePicker(selectedMaterialTheme, onSaveSettingValue)),
                 CreateSettingsFlyoutCard(
-                    new TextBlock
-                    {
-                        Text = "Linker provider key",
-                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-                    },
+                    CreateSettingsFlyoutCardHeader("Linker provider key", glyph: BrowserConstants.GlyphChat),
                     new TextBlock
                     {
                         Text = anyAiKeySaved
@@ -1362,7 +1371,7 @@ internal static class BrowserChrome
     {
         var panel = new StackPanel
         {
-            Spacing = 8
+            Spacing = 10
         };
 
         foreach (var child in children)
@@ -1372,12 +1381,65 @@ internal static class BrowserChrome
 
         return new Microsoft.UI.Xaml.Controls.Border
         {
-            Padding = new Thickness(10),
+            Padding = new Thickness(12),
             Background = BrowserConstants.LayerFillDefaultBrush,
             BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
-            Child = panel
+            Child = panel,
+            Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow(),
+            Translation = new System.Numerics.Vector3(0, 1, 10)
+        };
+    }
+
+    private static UIElement CreateSettingsFlyoutCardHeader(string title, string? url = null, string? glyph = null)
+    {
+        UIElement icon = !string.IsNullOrWhiteSpace(url) && HasFaviconHost(url)
+            ? new Microsoft.UI.Xaml.Controls.Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(BrowserUrl.GetDomainFaviconUrl(url), UriKind.Absolute)),
+                Width = 16,
+                Height = 16,
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+            : new TextBlock
+            {
+                Text = string.IsNullOrWhiteSpace(glyph) ? BrowserConstants.GlyphGlobe : glyph,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 14,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+        return new StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Microsoft.UI.Xaml.Controls.Border
+                {
+                    Width = 28,
+                    Height = 28,
+                    Padding = new Thickness(4),
+                    CornerRadius = new CornerRadius(9),
+                    Background = BrowserMaterialTheme.PillFillBrush,
+                    BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+                    BorderThickness = new Thickness(1),
+                    Child = icon,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow(),
+                    Translation = new System.Numerics.Vector3(0, 1, 8)
+                },
+                new TextBlock
+                {
+                    Text = title,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
         };
     }
 
@@ -1393,6 +1455,164 @@ internal static class BrowserChrome
 
         button.Click += (_, _) => onClick();
         return button;
+    }
+
+    private static UIElement CreateSettingsOpenSourceSection(Action<string> onOpenAddressInNewTab)
+    {
+        const string repositoryUrl = "https://github.com/JohnDizzle/AI-Agent";
+        const string sponsorUrl = "https://paypal.me/johndizzleUS";
+        const string sponsorEmail = "fizzledbydizzle@live.com";
+
+        var openSourceRow = new StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            Spacing = 8,
+            Margin = new Thickness(0, 4, 0, 0),
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Open Source: GitHub",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                CreateSettingsIconButton(
+                    BrowserConstants.GlyphLink,
+                    "Open GitHub repository",
+                    () => onOpenAddressInNewTab(repositoryUrl))
+            }
+        };
+
+        var sponsorTextStack = new StackPanel
+        {
+            Spacing = 2,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = "Sponsor",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = "Developer continuing cloud certifications.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.72
+                },
+                new TextBlock
+                {
+                    Text = $"PayPal: {sponsorEmail}",
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.76
+                }
+            }
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(sponsorTextStack, 1);
+
+        var sponsorCard = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            CornerRadius = new CornerRadius(10),
+            Background = BrowserMaterialTheme.PillFillBrush,
+            BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+            BorderThickness = new Thickness(1),
+            Content = new Microsoft.UI.Xaml.Controls.Border
+            {
+                Padding = new Thickness(10),
+                CornerRadius = new CornerRadius(10),
+                Child = new Microsoft.UI.Xaml.Controls.Grid
+                {
+                    ColumnDefinitions =
+                    {
+                        new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto },
+                        new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
+                    },
+                    ColumnSpacing = 8,
+                    Children =
+                    {
+                        CreateSettingsIconTile(BrowserConstants.GlyphFavorite, "Sponsor"),
+                        sponsorTextStack
+                    },
+                }
+            }
+        };
+        ToolTipService.SetToolTip(sponsorCard, "Open PayPal sponsor page");
+        sponsorCard.Click += (_, _) => onOpenAddressInNewTab(sponsorUrl);
+
+        return new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                openSourceRow,
+                sponsorCard
+            }
+        };
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Button CreateSettingsIconButton(
+        string glyph,
+        string tooltip,
+        Action onClick)
+    {
+        var button = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 13,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            },
+            Width = 30,
+            Height = 30,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(10),
+            Style = GetGlassIconButtonStyle()
+        };
+
+        ToolTipService.SetToolTip(button, tooltip);
+        ApplyGlassButtonDepth(button);
+        button.Click += (_, _) => onClick();
+        return button;
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Border CreateSettingsIconTile(string glyph, string tooltip)
+    {
+        var tile = new Microsoft.UI.Xaml.Controls.Border
+        {
+            Width = 28,
+            Height = 28,
+            Padding = new Thickness(4),
+            CornerRadius = new CornerRadius(9),
+            Background = BrowserMaterialTheme.BadgeFillBrush,
+            BorderBrush = BrowserMaterialTheme.SelectedStrokeBrush,
+            BorderThickness = new Thickness(1),
+            Child = new TextBlock
+            {
+                Text = glyph,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 13,
+                Foreground = BrowserMaterialTheme.BadgeForegroundBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            },
+            VerticalAlignment = VerticalAlignment.Top
+        };
+
+        ToolTipService.SetToolTip(tile, tooltip);
+        return tile;
+    }
+
+    private static void OpenExternalUri(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(uri);
+        }
     }
 
     private static UIElement CreateSettingsFlyoutToggle(
@@ -1629,12 +1849,14 @@ internal static class BrowserChrome
         {
             rows.Children.Add(new Microsoft.UI.Xaml.Controls.Border
             {
-                Padding = new Thickness(8),
-                BorderBrush = LinkScape.Browser.BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = BrowserConstants.LayerFillDefaultBrush,
+                BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
                 BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
                 Child = new StackPanel
                 {
-                    Spacing = 2,
+                    Spacing = 4,
                     Children =
                     {
                         new TextBlock
@@ -1654,15 +1876,24 @@ internal static class BrowserChrome
             });
         }
 
-        return new ScrollViewer
-        {
-            Content = rows,
-            Height = 220,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollMode = ScrollMode.Enabled,
-            HorizontalScrollMode = ScrollMode.Disabled
-        };
+        return CreateSettingsFlyoutCard(
+            CreateSettingsFlyoutCardHeader("Settings values", glyph: BrowserConstants.GlyphSettings),
+            new TextBlock
+            {
+                Text = "Stored settings from settings.db.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.68,
+                Margin = new Thickness(0, 0, 0, 2)
+            },
+            new ScrollViewer
+            {
+                Content = rows,
+                Height = 220,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollMode = ScrollMode.Enabled,
+                HorizontalScrollMode = ScrollMode.Disabled
+            });
     }
 
     private static Element BuildCommandCenterButton(
@@ -3087,7 +3318,8 @@ internal static class BrowserChrome
         Action<string, string, string> onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
-        Action<string> onReloadTab)
+        Action<string> onReloadTab,
+        Action<string> onOpenTabInNewWindow)
     {
         return Border(
             BuildTabIcon(tab, isLoading, useTileChrome: false).CornerRadius(10).WithKey("CollapsedTabIcon" + tab.Id)
@@ -3102,7 +3334,7 @@ internal static class BrowserChrome
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -3119,7 +3351,8 @@ internal static class BrowserChrome
         Action<string, string, string> onAddUrlToCollection,
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
-        Action<string> onReloadTab)
+        Action<string> onReloadTab,
+        Action<string> onOpenTabInNewWindow)
     {
         return Border(
             Grid(
@@ -3195,13 +3428,13 @@ internal static class BrowserChrome
                     .Grid(row: 0, column: 0))
         )
         .Height(ExpandedTabItemHeight)
-        .Padding(12, 10)
+        .Padding(14, 12)
         .CornerRadius(10)
         .Set(border => border.Style = GetGlassCardStyle())
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -3657,18 +3890,22 @@ internal static class BrowserChrome
 
     private static Element BuildHistoryIcon(string url)
     {
-        return Border(
-            Image(BrowserUrl.GetDomainFaviconUrl(url))
+        var iconContent = HasFaviconHost(url)
+            ? Image(BrowserUrl.GetDomainFaviconUrl(url))
                 .AccessibilityHidden()
                 .Width(18)
                 .Height(18)
                 .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
+            : FluentIcon(BrowserConstants.GlyphGlobe, 15);
+
+        return Border(
+            iconContent
         )
         .Width(24)
         .Height(24)
         .CornerRadius(6)
-        .Background(Theme.LayerFill)
-        .WithBorder(Theme.SurfaceStroke)
+        .Background(BrowserMaterialTheme.PillFillBrush)
+        .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
         .Padding(2)
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
@@ -3715,13 +3952,13 @@ internal static class BrowserChrome
     }
     private static Element BuildTabFavicon(BrowserTab tab, bool useTileChrome = true)
     {
-        var iconContent = Uri.TryCreate(tab.Url, UriKind.Absolute, out _)
+        var iconContent = HasFaviconHost(tab.Url)
             ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
                 .AccessibilityHidden()
                 .Width(useTileChrome ? 16 : 18)
                 .Height(useTileChrome ? 16 : 18)
                 .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-            : FluentIcon(BrowserConstants.GlyphHome, useTileChrome ? 14 : 16);
+            : FluentIcon(BrowserConstants.GlyphGlobe, useTileChrome ? 14 : 16);
 
         if (!useTileChrome)
         {
@@ -3737,13 +3974,17 @@ internal static class BrowserChrome
         .Width(22)
         .Height(22)
         .CornerRadius(6)
-        .Background(Theme.LayerFill)
-        .WithBorder(Theme.SurfaceStroke)
+        .Background(BrowserMaterialTheme.PillFillBrush)
+        .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
         .Padding(2)
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
         .Flex(shrink: 0);
     }
+
+    private static bool HasFaviconHost(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
+        !string.IsNullOrWhiteSpace(uri.Host);
 
     private static Element FluentIcon(string glyph, double size = 14)
     {
@@ -3776,8 +4017,15 @@ internal static class BrowserChrome
                 if (useGlass)
                 {
                     button.Style = GetGlassIconButtonStyle();
+                    ApplyGlassButtonDepth(button);
                 }
             });
+    }
+
+    private static void ApplyGlassButtonDepth(Microsoft.UI.Xaml.Controls.Button button)
+    {
+        button.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+        button.Translation = new System.Numerics.Vector3(0, 1, 12);
     }
 
     private static Style GetGlassIconButtonStyle()
@@ -3786,8 +4034,8 @@ internal static class BrowserChrome
         {
             Setters =
             {
-                new Setter(Microsoft.UI.Xaml.Controls.Control.BackgroundProperty, BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush),
-                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderBrushProperty, BrowserConstants.SurfaceStrokeColorDefaultBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BackgroundProperty, BrowserMaterialTheme.PillFillBrush),
+                new Setter(Microsoft.UI.Xaml.Controls.Control.BorderBrushProperty, BrowserMaterialTheme.GlassStrokeBrush),
                 new Setter(Microsoft.UI.Xaml.Controls.Control.BorderThicknessProperty, new Thickness(1)),
                 new Setter(Microsoft.UI.Xaml.Controls.Control.CornerRadiusProperty, new CornerRadius(10))
             }

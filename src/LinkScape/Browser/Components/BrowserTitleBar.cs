@@ -40,6 +40,7 @@ internal sealed record BrowserTitleBarProps(
     Action OnSetCurrentPageAsHome,
     Action OnToggleFavorite,
     Action<string, string> OnSaveSettingValue,
+    Action OnOpenSelectedTabInNewWindow,
     Action OnAddTab,
     Action OnCloseTab);
 
@@ -87,12 +88,14 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             SubmitAddressAndCloseSearch,
             AttachAddressBox,
             Props.OnNavigateCurrentTab,
+            Props.OnOpenAddressInNewTab,
             Props.SelectedSearchProviderKey,
             Props.SearchProviders,
             Props.OnSelectSearchProvider,
             Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
             Props.OnSaveSettingValue,
+            Props.OnOpenSelectedTabInNewWindow,
             Props.OnAddTab,
             Props.OnCloseTab);
     }

@@ -1,4 +1,5 @@
 using Microsoft.Windows.AppLifecycle;
+using System.Diagnostics;
 using System.Net;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
@@ -11,8 +12,10 @@ internal static class ActivationRoutingService
     private const string MainInstanceKey = "main";
     private const string LinkScapeSchemePrefix = "link2scape://";
     private const string LinkScapeSchemePrefixAlt = "link2scape:";
+    private const string NewWindowUrlArgument = "--linkscape-new-window-url";
     private static readonly object SyncRoot = new();
     private static string? _pendingTarget;
+    private static bool _pendingTargetIsFreshWindow;
     private static bool _initialized;
 
     internal static event Action? ActivationRequested;
@@ -27,12 +30,20 @@ internal static class ActivationRoutingService
         var appInstance = AppInstance.GetCurrent();
         var activatedArgs = appInstance.GetActivatedEventArgs();
         var mainInstance = AppInstance.FindOrRegisterForKey(MainInstanceKey);
+        var hasCommandLineTarget = TryGetCommandLineTarget(Environment.GetCommandLineArgs(), out var commandLineTarget);
         var hasActivationTarget = TryGetActivationTarget(activatedArgs, out _);
 
-        if (!mainInstance.IsCurrent && hasActivationTarget)
+        if (!mainInstance.IsCurrent && hasActivationTarget && !hasCommandLineTarget)
         {
             await mainInstance.RedirectActivationToAsync(activatedArgs);
             return false;
+        }
+
+        if (!mainInstance.IsCurrent && hasCommandLineTarget)
+        {
+            _initialized = true;
+            StorePendingTarget(commandLineTarget, isFreshWindow: true);
+            return true;
         }
 
         if (!mainInstance.IsCurrent)
@@ -41,23 +52,73 @@ internal static class ActivationRoutingService
         }
 
         _initialized = true;
-        TryStorePendingTarget(activatedArgs);
+        if (hasCommandLineTarget)
+        {
+            StorePendingTarget(commandLineTarget, isFreshWindow: true);
+        }
+        else
+        {
+            TryStorePendingTarget(activatedArgs);
+        }
+
         mainInstance.Activated += OnAppActivated;
         return true;
     }
 
+    internal static bool OpenUrlInNewWindow(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url, UriKind.Absolute, out _))
+        {
+            return false;
+        }
+
+        var executablePath = Environment.ProcessPath;
+
+        if (string.IsNullOrWhiteSpace(executablePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = executablePath,
+                UseShellExecute = true
+            };
+
+            startInfo.ArgumentList.Add(NewWindowUrlArgument);
+            startInfo.ArgumentList.Add(url);
+            Process.Start(startInfo);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     internal static bool TryConsumePendingTarget(out string target)
+    {
+        return TryConsumePendingTarget(out target, out _);
+    }
+
+    internal static bool TryConsumePendingTarget(out string target, out bool isFreshWindow)
     {
         lock (SyncRoot)
         {
             if (string.IsNullOrWhiteSpace(_pendingTarget))
             {
                 target = string.Empty;
+                isFreshWindow = false;
                 return false;
             }
 
             target = _pendingTarget;
+            isFreshWindow = _pendingTargetIsFreshWindow;
             _pendingTarget = null;
+            _pendingTargetIsFreshWindow = false;
             return true;
         }
     }
@@ -79,12 +140,17 @@ internal static class ActivationRoutingService
             return false;
         }
 
+        StorePendingTarget(target, isFreshWindow: false);
+        return true;
+    }
+
+    private static void StorePendingTarget(string target, bool isFreshWindow)
+    {
         lock (SyncRoot)
         {
             _pendingTarget = target;
+            _pendingTargetIsFreshWindow = isFreshWindow;
         }
-
-        return true;
     }
 
     private static bool TryGetActivationTarget(AppActivationArguments? args, out string target)
@@ -102,6 +168,31 @@ internal static class ActivationRoutingService
             ExtendedActivationKind.File => TryGetFileTarget(args.Data as IFileActivatedEventArgs, out target),
             _ => false
         };
+    }
+
+    private static bool TryGetCommandLineTarget(string[] args, out string target)
+    {
+        target = string.Empty;
+
+        for (var index = 0; index < args.Length - 1; index++)
+        {
+            if (!string.Equals(args[index], NewWindowUrlArgument, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidate = args[index + 1].Trim();
+
+            if (!Uri.TryCreate(candidate, UriKind.Absolute, out _))
+            {
+                return false;
+            }
+
+            target = candidate;
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryGetProtocolTarget(IProtocolActivatedEventArgs? protocolArgs, out string target)

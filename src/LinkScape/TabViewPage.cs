@@ -65,9 +65,11 @@ class TabViewPage : Component
 
         string startupSelectedTabId;
 
-        if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget))
+        if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget, out var isFreshWindow))
         {
-            startupTabs = AddActivatedStartupTab(startupTabs, activationTarget, selectedSearchProviderDefault, out var activatedTab);
+            startupTabs = isFreshWindow
+                ? CreateFreshWindowTabs(activationTarget, selectedSearchProviderDefault, out var activatedTab)
+                : AddActivatedStartupTab(startupTabs, activationTarget, selectedSearchProviderDefault, out activatedTab);
             startupSelectedTabId = activatedTab.Id;
         }
         else
@@ -1387,6 +1389,24 @@ class TabViewPage : Component
             CloseTab(selectedTag);
         }
 
+        void OpenTabInNewWindow(string tabId)
+        {
+            var targetTab = (_latestTabs.Length > 0 ? _latestTabs : tabs)
+                .FirstOrDefault(tab => string.Equals(tab.Id, tabId, StringComparison.Ordinal));
+
+            if (targetTab is null)
+            {
+                return;
+            }
+
+            ActivationRoutingService.OpenUrlInNewWindow(targetTab.Url);
+        }
+
+        void OpenSelectedTabInNewWindow()
+        {
+            OpenTabInNewWindow(selectedTag);
+        }
+
         void ToggleFavoriteTab(string tabId)
         {
             var targetTab = (_latestTabs.Length > 0 ? _latestTabs : tabs)
@@ -1729,6 +1749,7 @@ class TabViewPage : Component
                 SetCurrentPageAsHome,
                 ToggleFavorite,
                 SaveSettingValue,
+                OpenSelectedTabInNewWindow,
                 AddTab,
                 CloseActiveTab));
 
@@ -1743,6 +1764,7 @@ class TabViewPage : Component
                 ToggleFavoriteTab,
                 CloseTab,
                 ReloadTab,
+                OpenTabInNewWindow,
                 activeCommandCenterSection,
                 isCommandCenterExpanded,
                 mostVisitedHistory.Value,
@@ -2058,6 +2080,17 @@ class TabViewPage : Component
 
         var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
         return BrowserTabActions.Add(currentTabs, normalizedTarget, out activatedTab, visitCount: 1);
+    }
+
+    private static BrowserTab[] CreateFreshWindowTabs(
+        string activationTarget,
+        string selectedSearchProviderKey,
+        out BrowserTab activatedTab)
+    {
+        var fallback = GetConfiguredHomeUrl();
+        var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
+        activatedTab = BrowserTab.CreateNew(1, normalizedTarget, visitCount: 1);
+        return [activatedTab];
     }
 
     private static IReadOnlyDictionary<string, string[]> BuildCollectionMembership(IReadOnlyList<TabCollection> collections)
