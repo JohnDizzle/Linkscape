@@ -257,9 +257,11 @@ internal static class BrowserChrome
             content.Children.Add(button);
         }
 
-        var uBlockEnabled = GetBooleanSetting(
-            settingsSnapshot,
-            BrowserExtensionService.Extensions[0].SettingKey);
+        var availableExtensions = BrowserExtensionService.Extensions
+            .Where(extension => extension.IsAvailable)
+            .ToArray();
+        var runningCount = availableExtensions.Count(extension =>
+            GetBooleanSetting(settingsSnapshot, extension.SettingKey));
         content.Children.Add(new Border
         {
             Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush,
@@ -274,14 +276,13 @@ internal static class BrowserChrome
                 {
                     new TextBlock
                     {
-                        Text = $"uBlock Origin Lite  •  {(uBlockEnabled ? "Running" : "Stopped")}",
+                        Text = $"{runningCount} of {availableExtensions.Length} extensions running",
                         FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
                     },
                     new TextBlock
                     {
-                        Text = uBlockEnabled
-                            ? "Blocking is active across LinkScape"
-                            : "Select Start to enable blocking",
+                        Text = string.Join("  •  ", availableExtensions.Select(extension =>
+                            $"{extension.DisplayName}: {(GetBooleanSetting(settingsSnapshot, extension.SettingKey) ? "On" : "Off")}")),
                         Opacity = 0.72
                     },
                 }

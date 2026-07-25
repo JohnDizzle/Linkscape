@@ -1824,7 +1824,9 @@ class TabViewPage : Component
                         System.Diagnostics.Debug.WriteLine(
                             $"DEBUG: {definition.DisplayName} {(enabled ? "started" : "stopped")}");
                         _browserWebViewHostController.ReloadWithNotice(
-                            $"Your ad blocker is now {(enabled ? "enabled" : "disabled")}.");
+                            string.Equals(definition.Id, "ublock-origin-lite", StringComparison.Ordinal)
+                                ? $"Your ad blocker is now {(enabled ? "enabled" : "disabled")}."
+                                : $"{definition.DisplayName} is now {(enabled ? "enabled" : "disabled")}.");
                     }
                     catch (Exception ex)
                     {

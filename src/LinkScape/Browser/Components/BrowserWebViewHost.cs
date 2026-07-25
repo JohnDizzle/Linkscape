@@ -105,7 +105,6 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
-    private bool _extensionStartupNoticeShown;
     private string? _pendingNavigationNotice;
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
         new(CreateBrowserEnvironmentAsync);
@@ -308,6 +307,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         var core = webView.CoreWebView2;
         ConfigureLinkerVirtualHost(core);
 
+        if (core is not null)
+        {
+            await BrowserExtensionService.RemoveRetiredExtensionsAsync(core.Profile);
+        }
+
         if (core?.IsSuspended == true)
         {
             core.Resume();
@@ -433,7 +437,6 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
                 await RestoreScrollPositionAsync(tab.Id, currentTab.ScrollX, currentTab.ScrollY);
-                ShowExtensionStartupNotice();
                 if (!string.IsNullOrWhiteSpace(_pendingNavigationNotice))
                 {
                     var message = _pendingNavigationNotice;
@@ -486,24 +489,6 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         AttachWebViewToHost(_webViewHost ?? host, webView);
 
-    }
-
-    private void ShowExtensionStartupNotice()
-    {
-        if (_extensionStartupNoticeShown)
-        {
-            return;
-        }
-
-        _extensionStartupNoticeShown = true;
-        var uBlock = BrowserExtensionService.Extensions[0];
-        var isEnabled = bool.TryParse(
-            SettingsService.GetValueOrDefault(uBlock.SettingKey, "false"),
-            out var enabled) &&
-            enabled;
-        BrowserNoticeService.Show(
-            $"Your ad blocker is currently {(isEnabled ? "enabled" : "disabled")}.",
-            "info");
     }
 
     private static void HandleCoreWebView2Initialized(

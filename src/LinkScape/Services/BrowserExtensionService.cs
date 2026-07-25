@@ -18,18 +18,15 @@ internal sealed record BrowserExtensionDefinition(
 
 internal static class BrowserExtensionService
 {
+    private const string RetiredDarkReaderInstalledIdKey =
+        "extensions.dark-reader.installedId";
+
     public static readonly IReadOnlyList<BrowserExtensionDefinition> Extensions =
     [
         new("ublock-origin-lite", "uBlock Origin Lite",
             "Blocks ads and trackers with Manifest V3 rules.",
             "extensions.ublockOriginLite.enabled", "uBlockOriginLite", "GPL-3.0",
-            "https://github.com/uBlockOrigin/uBOL-home"),
-        new("dark-mode", "Dark Mode",
-            "A comfortable theme for web pages. Coming next.",
-            "extensions.darkMode.enabled", null, "Not selected", string.Empty),
-        new("translate", "Translate",
-            "Translate pages without leaving LinkScape. Coming next.",
-            "extensions.translate.enabled", null, "Not selected", string.Empty)
+            "https://github.com/uBlockOrigin/uBOL-home")
     ];
 
     public static async Task SetEnabledAsync(
@@ -67,6 +64,25 @@ internal static class BrowserExtensionService
         {
             await extension.EnableAsync(enabled);
         }
+    }
+
+    public static async Task RemoveRetiredExtensionsAsync(CoreWebView2Profile profile)
+    {
+        var darkReaderId = SettingsService.GetValue(RetiredDarkReaderInstalledIdKey);
+        if (!string.IsNullOrWhiteSpace(darkReaderId))
+        {
+            var installed = await profile.GetBrowserExtensionsAsync();
+            var darkReader = installed.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, darkReaderId, StringComparison.Ordinal));
+
+            if (darkReader is not null)
+            {
+                await darkReader.RemoveAsync();
+            }
+        }
+
+        SettingsService.RemoveValue(RetiredDarkReaderInstalledIdKey);
+        SettingsService.RemoveValue("extensions.darkMode.enabled");
     }
 
     private static string GetInstalledIdSettingKey(BrowserExtensionDefinition definition) =>
