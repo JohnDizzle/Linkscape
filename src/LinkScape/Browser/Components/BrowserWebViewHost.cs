@@ -104,6 +104,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private readonly Dictionary<string, CancellationTokenSource> _suspendDelayByTabId = [];
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
+    private Microsoft.UI.Xaml.Controls.Primitives.Popup? _peekPopup;
+    private Microsoft.UI.Xaml.Controls.WebView2? _peekWebView;
     private string? _activeWebViewTabId;
     private string? _pendingNavigationNotice;
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
@@ -473,6 +475,32 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     Props.SetTitleFromCore(tab.Id, title);
                 }
             };
+
+            core.ContextMenuRequested += (sender, args) =>
+            {
+                if (!args.ContextMenuTarget.HasLinkUri ||
+                    !TryGetPeekUri(args.ContextMenuTarget.LinkUri, out var peekUri))
+                {
+                    return;
+                }
+
+                var location = args.Location;
+                var peekItem = core.Environment.CreateContextMenuItem(
+                    "Peek link",
+                    null,
+                    CoreWebView2ContextMenuItemKind.Command);
+                peekItem.CustomItemSelected += (sender, eventArgs) =>
+                {
+                    webView.DispatcherQueue.TryEnqueue(() =>
+                        _ = ShowPeekAsync(peekUri, location.X, location.Y));
+                };
+
+                args.MenuItems.Insert(0, peekItem);
+                args.MenuItems.Insert(1, core.Environment.CreateContextMenuItem(
+                    string.Empty,
+                    null,
+                    CoreWebView2ContextMenuItemKind.Separator));
+            };
         }
 
         if (isNewWebView)
@@ -512,6 +540,194 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             string.Empty,
             userDataFolder,
             options).AsTask();
+    }
+
+    private static bool TryGetPeekUri(string? rawUrl, out Uri uri)
+    {
+        if (Uri.TryCreate(rawUrl, UriKind.Absolute, out var candidate) &&
+            candidate.Scheme is "http" or "https" &&
+            !BrowserUrl.IsBlockedInternalUrl(candidate.AbsoluteUri))
+        {
+            uri = candidate;
+            return true;
+        }
+
+        uri = null!;
+        return false;
+    }
+
+    private async Task ShowPeekAsync(Uri uri, double linkX, double linkY)
+    {
+        ClosePeek();
+
+        var host = _webViewHost;
+        if (host?.XamlRoot is null)
+        {
+            return;
+        }
+
+        const double peekWidth = 640;
+        const double peekHeight = 480;
+        var rootSize = host.XamlRoot.Size;
+        var hostOrigin = host.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point());
+        var horizontalOffset = Math.Clamp(
+            hostOrigin.X + linkX + 16,
+            12,
+            Math.Max(12, rootSize.Width - peekWidth - 12));
+        var verticalOffset = Math.Clamp(
+            hostOrigin.Y + linkY + 16,
+            12,
+            Math.Max(12, rootSize.Height - peekHeight - 12));
+
+        var popup = new Microsoft.UI.Xaml.Controls.Primitives.Popup
+        {
+            XamlRoot = host.XamlRoot,
+            HorizontalOffset = horizontalOffset,
+            VerticalOffset = verticalOffset,
+            IsLightDismissEnabled = true,
+            ShouldConstrainToRootBounds = true
+        };
+
+        var peekWebView = new Microsoft.UI.Xaml.Controls.WebView2
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Margin = new Thickness(0, 44, 0, 0)
+        };
+
+        var title = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = $"Peek  •  {uri.Host}",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(2, 0, 10, 0)
+        };
+
+        var openButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new Microsoft.UI.Xaml.Controls.FontIcon
+            {
+                Glyph = BrowserConstants.GlyphTabs,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 13
+            },
+            Width = 32,
+            Height = 32,
+            MinWidth = 0,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(openButton, "Open in tab");
+        openButton.Click += (_, _) =>
+        {
+            var currentUri = peekWebView.CoreWebView2?.Source;
+            Props.OpenUriInNewTab(string.IsNullOrWhiteSpace(currentUri)
+                ? uri.AbsoluteUri
+                : currentUri);
+            ClosePeek();
+        };
+
+        var closeButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new Microsoft.UI.Xaml.Controls.FontIcon
+            {
+                Glyph = BrowserConstants.GlyphClose,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 12
+            },
+            Width = 32,
+            Height = 32,
+            MinWidth = 0,
+            Padding = new Thickness(0),
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(closeButton, "Close peek");
+        closeButton.Click += (_, _) => ClosePeek();
+
+        var toolbar = new Microsoft.UI.Xaml.Controls.Grid
+        {
+            Height = 44,
+            VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(8, 6, 6, 6),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x2C, 0x3F, 0x56))
+        };
+        toolbar.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star)
+        });
+        toolbar.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+        {
+            Width = GridLength.Auto
+        });
+        toolbar.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+        {
+            Width = GridLength.Auto
+        });
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(title, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(openButton, 1);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(closeButton, 2);
+        toolbar.Children.Add(title);
+        toolbar.Children.Add(openButton);
+        toolbar.Children.Add(closeButton);
+
+        var layout = new Microsoft.UI.Xaml.Controls.Grid();
+        layout.Children.Add(peekWebView);
+        layout.Children.Add(toolbar);
+        Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(toolbar, 1);
+
+        popup.Child = new Microsoft.UI.Xaml.Controls.Border
+        {
+            Width = peekWidth,
+            Height = peekHeight,
+            Background = BrowserConstants.CardBackgroundFillColorDefaultBrush,
+            BorderBrush = BrowserConstants.AccentFillColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Child = layout
+        };
+        popup.Closed += (_, _) => ClosePeek();
+
+        _peekPopup = popup;
+        _peekWebView = peekWebView;
+        popup.IsOpen = true;
+
+        await peekWebView.EnsureCoreWebView2Async(await BrowserEnvironment.Value);
+        if (_peekPopup != popup || !popup.IsOpen)
+        {
+            return;
+        }
+
+        ConfigureLinkerVirtualHost(peekWebView.CoreWebView2);
+        peekWebView.CoreWebView2.NewWindowRequested += (_, args) =>
+        {
+            args.Handled = true;
+            if (TryGetPeekUri(args.Uri, out var newTabUri))
+            {
+                Props.OpenUriInNewTab(newTabUri.AbsoluteUri);
+                ClosePeek();
+            }
+        };
+        peekWebView.Source = uri;
+    }
+
+    private void ClosePeek()
+    {
+        var popup = _peekPopup;
+        _peekPopup = null;
+
+        if (popup is not null)
+        {
+            popup.IsOpen = false;
+            popup.Child = null;
+        }
+
+        var webView = _peekWebView;
+        _peekWebView = null;
+        webView?.Close();
     }
 
     private async Task SetExtensionEnabledAsync(string extensionId, bool enabled)
