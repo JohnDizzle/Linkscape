@@ -1,6 +1,7 @@
 using LinkScape.Browser;
 using LinkScape.Browser.State;
 using LinkScape.Models;
+using LinkScape.Services;
 using Browser.Components;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
@@ -975,14 +976,76 @@ class TabViewPage : Component
             });
         }
 
+        async Task<bool> TryClearBrowserDataAsync(
+            Microsoft.Web.WebView2.Core.CoreWebView2BrowsingDataKinds dataKinds,
+            string successMessage)
+        {
+            try
+            {
+                await _browserWebViewHostController.ClearBrowsingDataAsync(dataKinds);
+                BrowserNoticeService.Show(successMessage);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not clear browsing data: {ex.Message}");
+                return false;
+            }
+        }
+
+        async void ClearBrowserCache()
+        {
+            await TryClearBrowserDataAsync(
+                Microsoft.Web.WebView2.Core.CoreWebView2BrowsingDataKinds.DiskCache,
+                "Cached browser files cleared.");
+        }
+
+        async void ClearBrowserCookies()
+        {
+            var confirmed = await ConfirmDestructiveActionAsync(
+                "Clear all cookies?",
+                "This signs you out of websites in LinkScape.",
+                "Clear cookies");
+
+            if (confirmed)
+            {
+                await TryClearBrowserDataAsync(
+                    Microsoft.Web.WebView2.Core.CoreWebView2BrowsingDataKinds.Cookies,
+                    "Browser cookies cleared.");
+            }
+        }
+
+        async void ClearCoreBrowsingHistory()
+        {
+            var confirmed = await ConfirmDestructiveActionAsync(
+                "Clear browser engine history?",
+                "This removes navigation history maintained by the browser engine. LinkScape's visible history is not changed.",
+                "Clear browser history");
+
+            if (confirmed)
+            {
+                await TryClearBrowserDataAsync(
+                    Microsoft.Web.WebView2.Core.CoreWebView2BrowsingDataKinds.BrowsingHistory,
+                    "Browser engine history cleared.");
+            }
+        }
+
         async void DeleteAllHistory()
         {
             var confirmed = await ConfirmDestructiveActionAsync(
                 "Delete all history?",
-                "This permanently removes all saved browsing history from LinkScape.",
+                "This permanently removes LinkScape history and the browser engine's navigation history.",
                 "Delete history");
 
             if (!confirmed)
+            {
+                return;
+            }
+
+            var coreHistoryCleared = await TryClearBrowserDataAsync(
+                Microsoft.Web.WebView2.Core.CoreWebView2BrowsingDataKinds.BrowsingHistory,
+                "Browser engine history cleared.");
+            if (!coreHistoryCleared)
             {
                 return;
             }
@@ -1749,6 +1812,28 @@ class TabViewPage : Component
                 SetCurrentPageAsHome,
                 ToggleFavorite,
                 SaveSettingValue,
+                async (extensionId, enabled) =>
+                {
+                    var definition = BrowserExtensionService.Extensions.First(extension =>
+                        string.Equals(extension.Id, extensionId, StringComparison.Ordinal));
+
+                    try
+                    {
+                        await _browserWebViewHostController.SetExtensionEnabledAsync(extensionId, enabled);
+                        SaveSettingValue(definition.SettingKey, enabled ? "true" : "false");
+                        System.Diagnostics.Debug.WriteLine(
+                            $"DEBUG: {definition.DisplayName} {(enabled ? "started" : "stopped")}");
+                        _browserWebViewHostController.ReloadWithNotice(
+                            $"Your ad blocker is now {(enabled ? "enabled" : "disabled")}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        BrowserNoticeService.Show($"Could not update {definition.DisplayName}: {ex.Message}");
+                    }
+                },
+                ClearBrowserCache,
+                ClearBrowserCookies,
+                ClearCoreBrowsingHistory,
                 OpenSelectedTabInNewWindow,
                 AddTab,
                 CloseActiveTab));
@@ -1968,7 +2053,11 @@ class TabViewPage : Component
 
         return Border(
             (FlexRow(
-                BrowserIcons.FluentIcon("⚠", 14),
+                BrowserIcons.FluentIcon(
+                    string.Equals(browserNotice.Severity, "info", StringComparison.OrdinalIgnoreCase)
+                        ? BrowserConstants.GlyphInfo
+                        : BrowserConstants.GlyphWarning,
+                    14),
                 (TextBlock(browserNotice.Message) with
                 {
                     TextWrapping = TextWrapping.WrapWholeWords

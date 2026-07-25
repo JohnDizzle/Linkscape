@@ -38,6 +38,11 @@ internal static class BrowserConstants
     public const string GlyphChat = "\uE8F2";
     public const string GlyphNewWindow = "\uE78B";
     public const string GlyphLink = "\uE71B";
+    public const string GlyphExtensions = "\uEA86";
+    public const string GlyphPlay = "\uE768";
+    public const string GlyphStop = "\uE71A";
+    public const string GlyphInfo = "\uE946";
+    public const string GlyphWarning = "\uE7BA";
     public static FontFamily TextFontFamily => new("Segoe UI");
     public static FontFamily IconFontFamily => new("Segoe Fluent Icons");
     public static Brush LayerFillDefaultBrush => GetBrush("LayerFillColorDefaultBrush");

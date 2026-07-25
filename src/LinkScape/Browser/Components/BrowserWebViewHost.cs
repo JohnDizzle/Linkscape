@@ -1,9 +1,11 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using LinkScape.Services;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,10 +21,13 @@ internal sealed class BrowserWebViewHostController
     internal Action? GoForwardCore { get; set; }
     internal Action<string>? GoForwardTabCore { get; set; }
     internal Action? ReloadCore { get; set; }
+    internal Action<string>? ReloadWithNoticeCore { get; set; }
     internal Action? RefreshLayoutCore { get; set; }
     internal Func<string, Task>? PauseMediaInTabAsyncCore { get; set; }
     internal Func<string, Task>? CaptureScrollPositionAsyncCore { get; set; }
     internal Func<Task<string?>>? CaptureActivePageImageAsyncCore { get; set; }
+    internal Func<string, bool, Task>? SetExtensionEnabledAsyncCore { get; set; }
+    internal Func<CoreWebView2BrowsingDataKinds, Task>? ClearBrowsingDataAsyncCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
 
@@ -40,6 +45,8 @@ internal sealed class BrowserWebViewHostController
 
     public void Reload() => ReloadCore?.Invoke();
 
+    public void ReloadWithNotice(string message) => ReloadWithNoticeCore?.Invoke(message);
+
     public void RefreshLayout() => RefreshLayoutCore?.Invoke();
 
     public Task PauseMediaInTabAsync(string tabId) =>
@@ -50,6 +57,12 @@ internal sealed class BrowserWebViewHostController
 
     public Task<string?> CaptureActivePageImageAsync() =>
         CaptureActivePageImageAsyncCore?.Invoke() ?? Task.FromResult<string?>(null);
+
+    public Task SetExtensionEnabledAsync(string extensionId, bool enabled) =>
+        SetExtensionEnabledAsyncCore?.Invoke(extensionId, enabled) ?? Task.CompletedTask;
+
+    public Task ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds dataKinds) =>
+        ClearBrowsingDataAsyncCore?.Invoke(dataKinds) ?? Task.CompletedTask;
 
 }
 
@@ -92,6 +105,10 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
+    private bool _extensionStartupNoticeShown;
+    private string? _pendingNavigationNotice;
+    private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
+        new(CreateBrowserEnvironmentAsync);
 
     protected override bool ShouldUpdate(BrowserWebViewHostProps? oldProps, BrowserWebViewHostProps? newProps)
     {
@@ -122,10 +139,17 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.GoForwardCore = () => _activeWebView?.GoForward();
         Props.Controller.GoForwardTabCore = tabId => _webViewsByTabId.GetValueOrDefault(tabId)?.GoForward();
         Props.Controller.ReloadCore = () => _activeWebView?.CoreWebView2?.Reload();
+        Props.Controller.ReloadWithNoticeCore = message =>
+        {
+            _pendingNavigationNotice = message;
+            _activeWebView?.CoreWebView2?.Reload();
+        };
         Props.Controller.RefreshLayoutCore = RefreshWebViewLayout;
         Props.Controller.PauseMediaInTabAsyncCore = PauseMediaInTabAsync;
         Props.Controller.CaptureScrollPositionAsyncCore = CaptureScrollPositionAsync;
         Props.Controller.CaptureActivePageImageAsyncCore = CaptureActiveViewportAsync;
+        Props.Controller.SetExtensionEnabledAsyncCore = SetExtensionEnabledAsync;
+        Props.Controller.ClearBrowsingDataAsyncCore = ClearBrowsingDataAsync;
 
         return Border(null)
             .Set(host =>
@@ -278,7 +302,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (webView.CoreWebView2 is null)
         {
-            await webView.EnsureCoreWebView2Async();
+            await webView.EnsureCoreWebView2Async(await BrowserEnvironment.Value);
         }
 
         var core = webView.CoreWebView2;
@@ -409,6 +433,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
                 await RestoreScrollPositionAsync(tab.Id, currentTab.ScrollX, currentTab.ScrollY);
+                ShowExtensionStartupNotice();
+                if (!string.IsNullOrWhiteSpace(_pendingNavigationNotice))
+                {
+                    var message = _pendingNavigationNotice;
+                    _pendingNavigationNotice = null;
+                    BrowserNoticeService.Show(message, "info");
+                }
 
             };
 
@@ -457,11 +488,75 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
     }
 
+    private void ShowExtensionStartupNotice()
+    {
+        if (_extensionStartupNoticeShown)
+        {
+            return;
+        }
+
+        _extensionStartupNoticeShown = true;
+        var uBlock = BrowserExtensionService.Extensions[0];
+        var isEnabled = bool.TryParse(
+            SettingsService.GetValueOrDefault(uBlock.SettingKey, "false"),
+            out var enabled) &&
+            enabled;
+        BrowserNoticeService.Show(
+            $"Your ad blocker is currently {(isEnabled ? "enabled" : "disabled")}.",
+            "info");
+    }
+
     private static void HandleCoreWebView2Initialized(
         Microsoft.UI.Xaml.Controls.WebView2 sender,
         Microsoft.UI.Xaml.Controls.CoreWebView2InitializedEventArgs args)
     {
         ConfigureLinkerVirtualHost(sender.CoreWebView2);
+    }
+
+    private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
+    {
+        var userDataFolder = Path.Combine(
+            Windows.Storage.ApplicationData.Current.LocalFolder.Path,
+            "WebView2");
+        var options = new CoreWebView2EnvironmentOptions
+        {
+            AreBrowserExtensionsEnabled = true, 
+         };
+
+        return CoreWebView2Environment.CreateWithOptionsAsync(
+            string.Empty,
+            userDataFolder,
+            options).AsTask();
+    }
+
+    private async Task SetExtensionEnabledAsync(string extensionId, bool enabled)
+    {
+        var definition = BrowserExtensionService.Extensions.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, extensionId, StringComparison.Ordinal));
+
+        if (definition is null)
+        {
+            throw new ArgumentException("Unknown browser extension.", nameof(extensionId));
+        }
+
+        var core = _activeWebView?.CoreWebView2;
+        if (core is null)
+        {
+            throw new InvalidOperationException("Open a browser tab before changing extensions.");
+        }
+
+        await BrowserExtensionService.SetEnabledAsync(core.Profile, definition, enabled);
+    }
+
+    private Task ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds dataKinds)
+    {
+        var core = _activeWebView?.CoreWebView2;
+        if (core is null)
+        {
+            throw new InvalidOperationException("Open a browser tab before clearing browsing data.");
+        }
+
+        return core.Profile.ClearBrowsingDataAsync(dataKinds).AsTask();
     }
 
     private async Task<string?> CaptureActiveViewportAsync()

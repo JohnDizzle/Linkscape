@@ -1,5 +1,6 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using LinkScape.Services;
 
 namespace Browser.Components;
 
@@ -79,6 +80,10 @@ internal static class BrowserChrome
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
         Action<string, string> onSaveSettingValue,
+        Action<string, bool> onToggleExtension,
+        Action onClearCache,
+        Action onClearCookies,
+        Action onClearBrowsingHistory,
         Action onOpenSelectedTabInNewWindow,
         Action onAddTab,
         Action onCloseTab)
@@ -126,6 +131,7 @@ internal static class BrowserChrome
                     iconSize: 15,
                     useGlass: true),
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
+                BuildExtensionsButton(settingsSnapshot, onToggleExtension),
                 IconButton(
                     BrowserConstants.GlyphSettings,
                     () => { },
@@ -133,7 +139,14 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true)
-                    .Set(button => button.Flyout = CreateSettingsFlyout(settingsSnapshot, onSaveSettingValue, onOpenAiKeyDialog, onOpenAddressInNewTab))
+                    .Set(button => button.Flyout = CreateSettingsFlyout(
+                        settingsSnapshot,
+                        onSaveSettingValue,
+                        onOpenAiKeyDialog,
+                        onOpenAddressInNewTab,
+                        onClearCache,
+                        onClearCookies,
+                        onClearBrowsingHistory))
             ) with
             {
                 ColumnGap = 6
@@ -145,6 +158,139 @@ internal static class BrowserChrome
         .WithBorder(Theme.SurfaceStroke)
         .HAlign(HorizontalAlignment.Stretch)
         .Flex(shrink: 0);
+    }
+
+    private static Element BuildExtensionsButton(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, bool> onToggleExtension)
+    {
+        var anyEnabled = BrowserExtensionService.Extensions.Any(extension =>
+            extension.IsAvailable &&
+            GetBooleanSetting(settingsSnapshot, extension.SettingKey));
+        var automationName = anyEnabled ? "Extensions — active" : "Extensions";
+
+        return Button(
+            Border(FluentIcon(BrowserConstants.GlyphExtensions, 15))
+                .Width(22)
+                .Height(22)
+                .CornerRadius(7)
+                .Background(new SolidColorBrush(Microsoft.UI.Colors.Transparent)),
+            () => { })
+            .AutomationName(automationName)
+            .ToolTip(automationName)
+            .Width(32)
+            .Height(32)
+            .Padding(0)
+            .Set(button =>
+            {
+                button.Style = GetGlassIconButtonStyle();
+                ApplyGlassButtonDepth(button);
+                button.Flyout = CreateExtensionsFlyout(settingsSnapshot, onToggleExtension);
+            });
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Flyout CreateExtensionsFlyout(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, bool> onToggleExtension)
+    {
+        var flyout = new Microsoft.UI.Xaml.Controls.Flyout();
+        var content = new StackPanel
+        {
+            Width = 310,
+            Spacing = 8
+        };
+
+        foreach (var extension in BrowserExtensionService.Extensions)
+        {
+            var enabled = GetBooleanSetting(settingsSnapshot, extension.SettingKey);
+            var button = new Microsoft.UI.Xaml.Controls.Button
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                IsEnabled = extension.IsAvailable,
+                Padding = new Thickness(10, 8, 10, 8),
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    Children =
+                    {
+                        new FontIcon
+                        {
+                            FontFamily = BrowserConstants.IconFontFamily,
+                            Glyph = enabled ? BrowserConstants.GlyphStop : BrowserConstants.GlyphPlay,
+                            FontSize = 14
+                        },
+                        new StackPanel
+                        {
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = extension.IsAvailable
+                                        ? $"{(enabled ? "Stop" : "Start")} {extension.DisplayName}"
+                                        : $"{extension.DisplayName} (coming next)",
+                                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                                },
+                                new TextBlock
+                                {
+                                    Text = extension.Description,
+                                    Opacity = 0.68,
+                                    TextWrapping = TextWrapping.Wrap
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            if (extension.IsAvailable)
+            {
+                button.BorderBrush = new SolidColorBrush(
+                    enabled ? Microsoft.UI.Colors.IndianRed : Microsoft.UI.Colors.LimeGreen);
+                button.BorderThickness = new Thickness(1.5);
+            }
+            button.Click += (_, _) =>
+            {
+                onToggleExtension(extension.Id, !enabled);
+                flyout.Hide();
+            };
+            content.Children.Add(button);
+        }
+
+        var uBlockEnabled = GetBooleanSetting(
+            settingsSnapshot,
+            BrowserExtensionService.Extensions[0].SettingKey);
+        content.Children.Add(new Border
+        {
+            Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush,
+            BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12, 10, 12, 10),
+            Child = new StackPanel
+            {
+                Spacing = 3,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = $"uBlock Origin Lite  •  {(uBlockEnabled ? "Running" : "Stopped")}",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    },
+                    new TextBlock
+                    {
+                        Text = uBlockEnabled
+                            ? "Blocking is active across LinkScape"
+                            : "Select Start to enable blocking",
+                        Opacity = 0.72
+                    },
+                }
+            }
+        });
+
+        flyout.Content = content;
+        flyout.FlyoutPresenterStyle = GetLinkerFlyoutPresenterStyle();
+        return flyout;
     }
 
     private static Element BuildAddressBar(
@@ -1213,7 +1359,10 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, string> onSaveSettingValue,
         Action onOpenAiKeyDialog,
-        Action<string> onOpenAddressInNewTab)
+        Action<string> onOpenAddressInNewTab,
+        Action onClearCache,
+        Action onClearCookies,
+        Action onClearBrowsingHistory)
     {
         var homeUrl = settingsSnapshot.TryGetValue(BrowserConstants.HomeUrlSettingKey, out var configuredHomeUrl)
             ? BrowserUrl.Normalize(configuredHomeUrl, BrowserConstants.HomeUrl)
@@ -1311,6 +1460,17 @@ internal static class BrowserChrome
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
                 CreateSettingsFlyoutCard(
+                    CreateSettingsFlyoutCardHeader("Clear browsing data", glyph: BrowserConstants.GlyphTrash),
+                    new TextBlock
+                    {
+                        Text = "Remove data stored by the browser engine. Clearing cookies signs you out of websites.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutActionButton("Clear cached files", onClearCache),
+                    CreateSettingsFlyoutActionButton("Clear cookies", onClearCookies),
+                    CreateSettingsFlyoutActionButton("Clear browsing history", onClearBrowsingHistory)),
+                CreateSettingsFlyoutCard(
                     CreateSettingsFlyoutCardHeader("Backdrop tint", glyph: BrowserConstants.GlyphGlobe),
                     new TextBlock
                     {
@@ -1355,6 +1515,7 @@ internal static class BrowserChrome
         return new Microsoft.UI.Xaml.Controls.Flyout
         {
             Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight,
+            FlyoutPresenterStyle = GetLinkerFlyoutPresenterStyle(),
             Content = new ScrollViewer
             {
                 Content = content,
@@ -1363,6 +1524,34 @@ internal static class BrowserChrome
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollMode = ScrollMode.Enabled,
                 HorizontalScrollMode = ScrollMode.Disabled
+            }
+        };
+    }
+
+    private static Style GetLinkerFlyoutPresenterStyle()
+    {
+        return new Style(typeof(Microsoft.UI.Xaml.Controls.FlyoutPresenter))
+        {
+            Setters =
+            {
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.BackgroundProperty,
+                    new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xF2, 0x23, 0x23, 0x26))),
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.ForegroundProperty,
+                    new SolidColorBrush(Microsoft.UI.Colors.White)),
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.BorderBrushProperty,
+                    BrowserConstants.AccentFillColorDefaultBrush),
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.BorderThicknessProperty,
+                    new Thickness(1)),
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.CornerRadiusProperty,
+                    new CornerRadius(16)),
+                new Setter(
+                    Microsoft.UI.Xaml.Controls.Control.PaddingProperty,
+                    new Thickness(12))
             }
         };
     }

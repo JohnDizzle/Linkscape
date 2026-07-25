@@ -40,6 +40,10 @@ internal sealed record BrowserTitleBarProps(
     Action OnSetCurrentPageAsHome,
     Action OnToggleFavorite,
     Action<string, string> OnSaveSettingValue,
+    Action<string, bool> OnToggleExtension,
+    Action OnClearCache,
+    Action OnClearCookies,
+    Action OnClearBrowsingHistory,
     Action OnOpenSelectedTabInNewWindow,
     Action OnAddTab,
     Action OnCloseTab);
@@ -95,6 +99,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
             Props.OnSaveSettingValue,
+            Props.OnToggleExtension,
+            Props.OnClearCache,
+            Props.OnClearCookies,
+            Props.OnClearBrowsingHistory,
             Props.OnOpenSelectedTabInNewWindow,
             Props.OnAddTab,
             Props.OnCloseTab);

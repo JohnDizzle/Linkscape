@@ -73,6 +73,7 @@
         <SubType>Designer</SubType>
       </AppxManifest>
       <Content Include="Assets\**\*.*" />
+      <Content Include="THIRD-PARTY-NOTICES.md" />
     </ItemGroup>
     <ItemGroup>
       <Content Update="Assets\LoadingLink.silver.svg">
