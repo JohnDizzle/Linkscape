@@ -171,6 +171,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             return;
         }
 
+        if (BrowserUrl.IsBlockedInternalUrl(url))
+        {
+            BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+            Props.SetLoadingStateFromCore(false);
+            return;
+        }
+
         try
         {
             if (webView.CoreWebView2 is not null)
@@ -372,9 +379,17 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 }
             }
 
-            webView.NavigationStarting += (_, _) =>
+            webView.NavigationStarting += (_, args) =>
             {
                 BrowserNoticeService.Clear();
+
+                if (BrowserUrl.IsBlockedInternalUrl(args.Uri))
+                {
+                    args.Cancel = true;
+                    BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    Props.SetLoadingStateFromCore(false);
+                    return;
+                }
 
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
@@ -404,6 +419,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
             core.NewWindowRequested += (_, e) =>
             {
+                if (BrowserUrl.IsBlockedInternalUrl(e.Uri))
+                {
+                    e.Handled = true;
+                    BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    return;
+                }
+
                 openUriInNewTab(e.Uri);
                 e.Handled = true;
             };
@@ -421,7 +443,10 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (isNewWebView)
         {
-            webView.Source = new Uri(tab.Url);
+            var initialUrl = BrowserUrl.IsBlockedInternalUrl(tab.Url)
+                ? BrowserConstants.HomeUrl
+                : tab.Url;
+            webView.Source = new Uri(initialUrl);
         }
         else if (core is not null)
         {

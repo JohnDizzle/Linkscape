@@ -11,6 +11,8 @@ using Windows.Win32.UI.WindowsAndMessaging;
 
 var commandLineArgs = Environment.GetCommandLineArgs();
 
+ConfigureWebView2BrowserArguments();
+
 if (await LocalMcpServerService.TryRunAsync(commandLineArgs))
 {
     return;
@@ -37,6 +39,8 @@ const int MinimumWindowWidth = 800;
 const int MinimumWindowHeight = 400;
 const int DefaultWindowWidth = 1200;
 const int DefaultWindowHeight = 800;
+const string WebView2AdditionalBrowserArgumentsKey = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+const string WebView2SingleSignOnPrimaryAccountArgument = "--allow-single-sign-on-os-primary-account";
 
 ReactorApp.Run<App>("LinkScape",
     configure: host =>
@@ -61,6 +65,24 @@ ReactorApp.Run<App>("LinkScape",
 
         host.Window.Closed += (_, _) => SaveWindowPlacement(appWindow);
     });
+
+static void ConfigureWebView2BrowserArguments()
+{
+    var existing = Environment.GetEnvironmentVariable(WebView2AdditionalBrowserArgumentsKey);
+    if (existing?.Contains(WebView2SingleSignOnPrimaryAccountArgument, StringComparison.OrdinalIgnoreCase) == true)
+    {
+        return;
+    }
+
+    var arguments = string.IsNullOrWhiteSpace(existing)
+        ? WebView2SingleSignOnPrimaryAccountArgument
+        : $"{existing} {WebView2SingleSignOnPrimaryAccountArgument}";
+
+    Environment.SetEnvironmentVariable(
+        WebView2AdditionalBrowserArgumentsKey,
+        arguments,
+        EnvironmentVariableTarget.Process);
+}
 
 static void RestoreWindowPlacement(AppWindow appWindow)
 {

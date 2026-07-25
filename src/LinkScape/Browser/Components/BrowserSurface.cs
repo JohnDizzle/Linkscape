@@ -104,6 +104,13 @@ internal sealed class BrowserSurfaceController
             return;
         }
 
+        if (BrowserUrl.IsBlockedInternalUrl(url))
+        {
+            BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+            setLoadingState(false);
+            return;
+        }
+
         try
         {
             if (webView.CoreWebView2 is not null)
@@ -364,8 +371,16 @@ internal sealed class BrowserSurfaceController
                 }
             }
 
-            webView.NavigationStarting += (_, _) =>
+            webView.NavigationStarting += (_, args) =>
             {
+                if (BrowserUrl.IsBlockedInternalUrl(args.Uri))
+                {
+                    args.Cancel = true;
+                    BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    _setLoadingStateFromCore?.Invoke(false);
+                    return;
+                }
+
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
                     _setLoadingStateFromCore?.Invoke(true);
@@ -387,6 +402,13 @@ internal sealed class BrowserSurfaceController
 
             core.NewWindowRequested += (_, e) =>
             {
+                if (BrowserUrl.IsBlockedInternalUrl(e.Uri))
+                {
+                    e.Handled = true;
+                    BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    return;
+                }
+
                 openUriInNewTab(e.Uri);
                 e.Handled = true;
             };
@@ -404,7 +426,10 @@ internal sealed class BrowserSurfaceController
 
         if (isNewWebView)
         {
-            webView.Source = new Uri(tab.Url);
+            var initialUrl = BrowserUrl.IsBlockedInternalUrl(tab.Url)
+                ? BrowserConstants.HomeUrl
+                : tab.Url;
+            webView.Source = new Uri(initialUrl);
         }
         else if (core is not null)
         {

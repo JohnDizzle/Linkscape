@@ -59,6 +59,23 @@ internal static class BrowserUrl
             StringComparison.OrdinalIgnoreCase) == 0;
     }
 
+    public static bool IsBlockedInternalUrl(string? raw)
+    {
+        var input = (raw ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return false;
+        }
+
+        if (Uri.TryCreate(input, UriKind.Absolute, out var uri))
+        {
+            return string.Equals(uri.Scheme, "edge", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return input.StartsWith("edge://", StringComparison.OrdinalIgnoreCase) ||
+            input.StartsWith("edge:", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool IsSameDomain(string? left, string? right)
     {
         return TryGetComparableHost(left, out var leftHost) &&
@@ -80,6 +97,11 @@ internal static class BrowserUrl
     private static bool TryNormalizeAbsoluteUrlCore(string input, out string normalizedUrl)
     {
         normalizedUrl = string.Empty;
+
+        if (IsBlockedInternalUrl(input))
+        {
+            return false;
+        }
 
         if (Uri.TryCreate(input, UriKind.Absolute, out var absoluteUri) &&
             (absoluteUri.IsFile || !string.IsNullOrWhiteSpace(absoluteUri.Host)))
