@@ -311,7 +311,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (core is not null)
         {
-            await BrowserExtensionService.RemoveRetiredExtensionsAsync(core.Profile);
+            await BrowserExtensionService.MaintainExtensionsAsync(core.Profile);
         }
 
         if (core?.IsSuspended == true)
