@@ -292,7 +292,24 @@ public static class CommandCenterChatService
         return new CommandCenterChatResponse(
             result.Message,
             IsError: !result.Succeeded,
-            ToolResults: [new ChatToolResult(intent.Command.ToolName, result.Succeeded, result.Message)]);
+            ToolResults: [new ChatToolResult(intent.Command.ToolName, result.Succeeded, result.Message)],
+            LinkActions: BuildNavigationLinkActions(intent.Command));
+    }
+
+    private static IReadOnlyList<ChatLinkAction>? BuildNavigationLinkActions(BrowserNavigationCommand command)
+    {
+        if (command.ToolName is not BrowserNavigationToolNames.Navigate and not BrowserNavigationToolNames.TabsOpen ||
+            !command.Arguments.TryGetValue("url", out var url) ||
+            string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        var title = url.Contains("portal.azure.com", StringComparison.OrdinalIgnoreCase)
+            ? "Open Azure portal"
+            : "Open link";
+
+        return [new ChatLinkAction(title, url)];
     }
 
     public static bool TryParseBrowserSearchPrompt(string prompt, out string toolName, out string query)
@@ -392,6 +409,13 @@ public static class CommandCenterChatService
                         ["query"] = query
                     }),
                 ActivateFirstMatch: true);
+            return true;
+        }
+
+        if (Regex.IsMatch(normalized, @"\b(?:azure|tenant|portal)\b", RegexOptions.IgnoreCase) &&
+            Regex.IsMatch(normalized, @"\b(?:open|go|take|navigate|sign)\b", RegexOptions.IgnoreCase))
+        {
+            intent = Create(BrowserNavigationToolNames.TabsOpen, ("url", "https://portal.azure.com"));
             return true;
         }
 

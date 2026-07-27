@@ -164,20 +164,82 @@ internal static class LinkerAiChatService
             return new ProviderChatCompletion("## Azure OpenAI needs setup\nAdd your Azure endpoint and deployment name in the Linker provider key dialog.");
         }
 
-        var endpoint = credential.Endpoint.TrimEnd('/');
-        var deployment = Uri.EscapeDataString(credential.Deployment);
-        var body = new JsonObject
+        if (!AzureOpenAiEndpoint.TryCreate(credential.Endpoint, out var endpoint, out var error))
         {
-            ["messages"] = BuildMessages(BuildSystemInstructions(context), prompt),
-            ["max_tokens"] = MaxOutputTokens,
-            ["temperature"] = 0.4
-        };
+            return new ProviderChatCompletion($"## Azure OpenAI endpoint needs attention\n{error}");
+        }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-10-21");
+        if (ShouldAttachPageImage(prompt, context))
+        {
+            var responsesBody = BuildAzureOpenAiResponsesBody(credential, prompt, context);
+            using var responsesRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                AzureOpenAiEndpoint.BuildResponsesUrl(endpoint));
+            responsesRequest.Headers.Add("api-key", credential.ApiKey);
+            responsesRequest.Content = CreateJsonContent(responsesBody);
+
+            return await SendAndExtractAsync(responsesRequest, ExtractResponsesCompletion, cancellationToken);
+        }
+
+        var body = BuildAzureOpenAiChatBody(credential, endpoint, prompt, context);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            AzureOpenAiEndpoint.BuildChatCompletionsUrl(endpoint, credential.Deployment));
         request.Headers.Add("api-key", credential.ApiKey);
         request.Content = CreateJsonContent(body);
 
         return await SendAndExtractAsync(request, root => new ProviderChatCompletion(ExtractChatCompletionText(root)), cancellationToken);
+    }
+
+    internal static JsonObject BuildAzureOpenAiResponsesBody(
+        LinkerAiProviderCredential credential,
+        string prompt,
+        CommandCenterChatContext? context)
+    {
+        var body = new JsonObject
+        {
+            ["model"] = credential.Deployment.Trim(),
+            ["instructions"] = BuildSystemInstructions(context),
+            ["input"] = BuildResponsesInput(prompt, context),
+            ["max_output_tokens"] = MaxOutputTokens
+        };
+
+        return body;
+    }
+
+    internal static JsonObject BuildAzureOpenAiChatBody(
+        LinkerAiProviderCredential credential,
+        AzureOpenAiEndpointInfo endpoint,
+        string prompt,
+        CommandCenterChatContext? context)
+    {
+        var deployment = credential.Deployment.Trim();
+        var body = new JsonObject
+        {
+            ["messages"] = BuildMessages(BuildSystemInstructions(context), prompt)
+        };
+
+        if (RequiresCompletionTokenLimit(deployment))
+        {
+            body["max_completion_tokens"] = MaxOutputTokens;
+        }
+        else
+        {
+            body["max_tokens"] = MaxOutputTokens;
+        }
+
+        if (!UsesFixedSamplingDefaults(deployment))
+        {
+            body["temperature"] = 0.4;
+        }
+
+        if (endpoint.Kind == AzureOpenAiEndpointKind.OpenAiV1)
+        {
+            body["model"] = deployment;
+        }
+
+        return body;
     }
 
     private static async Task<ProviderChatCompletion> SubmitAnthropicAsync(
@@ -457,6 +519,21 @@ internal static class LinkerAiChatService
 
     private static string GetProviderEndpoint(LinkerAiProviderCredential credential, string defaultEndpoint) =>
         string.IsNullOrWhiteSpace(credential.Endpoint) ? defaultEndpoint : credential.Endpoint;
+
+    private static bool RequiresCompletionTokenLimit(string model) =>
+        IsReasoningModelFamily(model);
+
+    private static bool UsesFixedSamplingDefaults(string model) =>
+        IsReasoningModelFamily(model);
+
+    private static bool IsReasoningModelFamily(string model)
+    {
+        model = model?.Trim() ?? string.Empty;
+        return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o3", StringComparison.OrdinalIgnoreCase) ||
+            model.StartsWith("o4", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool ShouldEnableWebSearch(string prompt, string? previousResponseId)
     {

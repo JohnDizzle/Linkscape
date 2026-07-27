@@ -5,10 +5,15 @@ public sealed record CommandCenterChatResponse(
     bool IsError = false,
     IReadOnlyList<ChatToolResult>? ToolResults = null,
     string? ProviderResponseId = null,
-    IReadOnlyList<ChatTabAction>? TabActions = null);
+    IReadOnlyList<ChatTabAction>? TabActions = null,
+    IReadOnlyList<ChatLinkAction>? LinkActions = null);
 
 public sealed record ChatTabAction(
     string TabId,
+    string Title,
+    string Url);
+
+public sealed record ChatLinkAction(
     string Title,
     string Url);
 

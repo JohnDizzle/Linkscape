@@ -30,7 +30,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         bool IsUser,
         bool IsError = false,
         bool IsThinking = false,
-        IReadOnlyList<ChatTabAction>? TabActions = null);
+        IReadOnlyList<ChatTabAction>? TabActions = null,
+        IReadOnlyList<ChatLinkAction>? LinkActions = null);
 
     private readonly DispatcherQueue? _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private Microsoft.UI.Xaml.Controls.ScrollViewer? _messagesScrollViewer;
@@ -155,7 +156,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 SetMessages(
                     pendingMessages
                         .Where(message => !message.IsThinking)
-                        .Append(new ChatPanelMessage(answer, false, response.IsError, TabActions: response.TabActions))
+                        .Append(new ChatPanelMessage(answer, false, response.IsError, TabActions: response.TabActions, LinkActions: response.LinkActions))
                         .ToArray());
             }
             catch (Exception ex)
@@ -384,7 +385,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
                 .FontSize(MessageFontSize)
             : message.IsThinking
                 ? CreateThinkingIndicator()
-            : BuildAssistantMarkdownContent(message.Text, message.TabActions, activateTab);
+            : BuildAssistantMarkdownContent(message.Text, message.TabActions, message.LinkActions, activateTab);
 
         var content = FlexColumn(
             FlexRow(
@@ -527,6 +528,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
     private Element BuildAssistantMarkdownContent(
         string markdown,
         IReadOnlyList<ChatTabAction>? tabActions,
+        IReadOnlyList<ChatLinkAction>? linkActions,
         Action<ChatTabAction> activateTab)
     {
         if (tabActions is { Count: > 0 })
@@ -534,7 +536,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             return BuildTabActionContent(markdown, tabActions, activateTab);
         }
 
-        var links = ExtractMarkdownLinks(markdown)
+        var links = (linkActions?.Select(action => new MarkdownLink(action.Title, action.Url)) ?? ExtractAnswerLinks(markdown))
             .DistinctBy(link => NormalizeLinkUrl(link.Url))
             .ToArray();
         var markdownContent = Border(Markdown(markdown, new MarkdownOptions
@@ -582,6 +584,33 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         {
             RowGap = 8
         };
+    }
+
+    private static IEnumerable<MarkdownLink> ExtractAnswerLinks(string markdown)
+    {
+        foreach (var link in ExtractMarkdownLinks(markdown))
+        {
+            yield return link;
+        }
+
+        var markdownLinkUrls = ExtractMarkdownLinks(markdown)
+            .Select(link => NormalizeLinkUrl(link.Url))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in Regex.Matches(
+            markdown ?? string.Empty,
+            @"(?<url>https?://[^\s<>)\]""]+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            var url = match.Groups["url"].Value.Trim().TrimEnd('.', ',', ';', ':', '!', '?');
+            if (string.IsNullOrWhiteSpace(url) ||
+                markdownLinkUrls.Contains(NormalizeLinkUrl(url)))
+            {
+                continue;
+            }
+
+            yield return new MarkdownLink(GetLinkHost(url), url);
+        }
     }
 
     private Element BuildTabActionContent(
@@ -833,7 +862,7 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         var link = messages
             .Where(message => !message.IsUser)
             .Reverse()
-            .SelectMany(message => ExtractMarkdownLinks(message.Text))
+            .SelectMany(message => message.LinkActions?.Select(action => new MarkdownLink(action.Title, action.Url)) ?? ExtractAnswerLinks(message.Text))
             .FirstOrDefault(candidate => IsLinkMatch(candidate, query));
 
         if (link is null)

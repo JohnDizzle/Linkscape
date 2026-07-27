@@ -174,8 +174,12 @@ internal static class LinkerAiCredentialService
         LinkerAiProviderCredential credential,
         CancellationToken cancellationToken)
     {
-        var endpoint = credential.Endpoint.TrimEnd('/');
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{endpoint}/openai/models?api-version=2024-10-21");
+        if (!AzureOpenAiEndpoint.TryCreate(credential.Endpoint, out var endpoint, out var error))
+        {
+            return new LinkerAiKeyTestResult(false, error);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, AzureOpenAiEndpoint.BuildModelsUrl(endpoint));
         request.Headers.Add("api-key", credential.ApiKey);
         return await SendTestRequestAsync(request, "Azure OpenAI", cancellationToken);
     }
