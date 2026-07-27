@@ -100,6 +100,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
     private readonly Dictionary<string, BrowserTab> _tabSnapshotsById = [];
     private readonly HashSet<string> _hookedWebViewTabs = [];
+    private readonly HashSet<string> _pendingInitialScrollRestoreTabs = [];
     private readonly object _suspendDelayGate = new();
     private readonly Dictionary<string, CancellationTokenSource> _suspendDelayByTabId = [];
     private Microsoft.UI.Xaml.Controls.WebView2? _activeWebView;
@@ -238,6 +239,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         _hookedWebViewTabs.Remove(tabId);
+        _pendingInitialScrollRestoreTabs.Remove(tabId);
 
         if (string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal))
         {
@@ -294,6 +296,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             webView.CoreWebView2Initialized += HandleCoreWebView2Initialized;
 
             _webViewsByTabId[tab.Id] = webView;
+            _pendingInitialScrollRestoreTabs.Add(tab.Id);
             isNewWebView = true;
             Props.SetNavAvailability(false, false);
         }
@@ -367,7 +370,9 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                         DateTime = DateTime.Now,
                         VisitedCount = urlChanged
                             ? current.VisitedCount + 1
-                            : current.VisitedCount
+                            : current.VisitedCount,
+                        ScrollX = urlChanged ? 0 : current.ScrollX,
+                        ScrollY = urlChanged ? 0 : current.ScrollY
                     };
                 });
 
@@ -438,7 +443,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 SyncTabFromCore(completeLoading: true);
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
-                await RestoreScrollPositionAsync(tab.Id, currentTab.ScrollX, currentTab.ScrollY);
+                if (_pendingInitialScrollRestoreTabs.Remove(tab.Id))
+                {
+                    await RestoreScrollPositionAsync(
+                        tab.Id,
+                        currentTab.ScrollX,
+                        currentTab.ScrollY);
+                }
+
                 if (!string.IsNullOrWhiteSpace(_pendingNavigationNotice))
                 {
                     var message = _pendingNavigationNotice;
