@@ -27,6 +27,10 @@ internal sealed class BrowserWebViewHostController
     internal Func<string, Task>? CaptureScrollPositionAsyncCore { get; set; }
     internal Func<Task<string?>>? CaptureActivePageImageAsyncCore { get; set; }
     internal Func<string, bool, Task>? SetExtensionEnabledAsyncCore { get; set; }
+    internal Func<Task<IReadOnlyList<InstalledChromeExtension>>>? GetChromeExtensionsAsyncCore { get; set; }
+    internal Func<string, bool, Task>? SetChromeExtensionEnabledAsyncCore { get; set; }
+    internal Func<string, Task>? RemoveChromeExtensionAsyncCore { get; set; }
+    internal Func<InstalledChromeExtension, Task>? OpenChromeExtensionPopupAsyncCore { get; set; }
     internal Func<CoreWebView2BrowsingDataKinds, Task>? ClearBrowsingDataAsyncCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
@@ -60,6 +64,19 @@ internal sealed class BrowserWebViewHostController
 
     public Task SetExtensionEnabledAsync(string extensionId, bool enabled) =>
         SetExtensionEnabledAsyncCore?.Invoke(extensionId, enabled) ?? Task.CompletedTask;
+
+    public Task<IReadOnlyList<InstalledChromeExtension>> GetChromeExtensionsAsync() =>
+        GetChromeExtensionsAsyncCore?.Invoke() ??
+        Task.FromResult<IReadOnlyList<InstalledChromeExtension>>([]);
+
+    public Task SetChromeExtensionEnabledAsync(string extensionId, bool enabled) =>
+        SetChromeExtensionEnabledAsyncCore?.Invoke(extensionId, enabled) ?? Task.CompletedTask;
+
+    public Task RemoveChromeExtensionAsync(string extensionId) =>
+        RemoveChromeExtensionAsyncCore?.Invoke(extensionId) ?? Task.CompletedTask;
+
+    public Task OpenChromeExtensionPopupAsync(InstalledChromeExtension extension) =>
+        OpenChromeExtensionPopupAsyncCore?.Invoke(extension) ?? Task.CompletedTask;
 
     public Task ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds dataKinds) =>
         ClearBrowsingDataAsyncCore?.Invoke(dataKinds) ?? Task.CompletedTask;
@@ -107,6 +124,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private Microsoft.UI.Xaml.Controls.Primitives.Popup? _peekPopup;
     private Microsoft.UI.Xaml.Controls.WebView2? _peekWebView;
+    private Microsoft.UI.Xaml.Controls.Primitives.Popup? _extensionPopup;
+    private Microsoft.UI.Xaml.Controls.WebView2? _extensionPopupWebView;
     private string? _activeWebViewTabId;
     private string? _pendingNavigationNotice;
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
@@ -151,6 +170,10 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.CaptureScrollPositionAsyncCore = CaptureScrollPositionAsync;
         Props.Controller.CaptureActivePageImageAsyncCore = CaptureActiveViewportAsync;
         Props.Controller.SetExtensionEnabledAsyncCore = SetExtensionEnabledAsync;
+        Props.Controller.GetChromeExtensionsAsyncCore = GetChromeExtensionsAsync;
+        Props.Controller.SetChromeExtensionEnabledAsyncCore = SetChromeExtensionEnabledAsync;
+        Props.Controller.RemoveChromeExtensionAsyncCore = RemoveChromeExtensionAsync;
+        Props.Controller.OpenChromeExtensionPopupAsyncCore = OpenChromeExtensionPopupAsync;
         Props.Controller.ClearBrowsingDataAsyncCore = ClearBrowsingDataAsync;
 
         return Border(null)
@@ -478,6 +501,21 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 e.Handled = true;
             };
 
+            core.DownloadStarting += (downloadSender, args) =>
+            {
+                if (!ChromeWebStoreExtensionService.TryGetExtensionId(
+                        core.Source,
+                        out var extensionId))
+                {
+                    return;
+                }
+
+                args.Cancel = true;
+                args.Handled = true;
+                webView.DispatcherQueue.TryEnqueue(() =>
+                    _ = InstallChromeWebStoreExtensionAsync(core.Profile, extensionId));
+            };
+
             core.DocumentTitleChanged += (_, _) =>
             {
                 var title = core.DocumentTitle;
@@ -759,6 +797,194 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         await BrowserExtensionService.SetEnabledAsync(core.Profile, definition, enabled);
+    }
+
+    private Task<IReadOnlyList<InstalledChromeExtension>> GetChromeExtensionsAsync()
+    {
+        var core = _activeWebView?.CoreWebView2;
+        return core is null
+            ? Task.FromResult<IReadOnlyList<InstalledChromeExtension>>([])
+            : ChromeWebStoreExtensionService.GetInstalledAsync(core.Profile);
+    }
+
+    private Task SetChromeExtensionEnabledAsync(string extensionId, bool enabled)
+    {
+        var core = _activeWebView?.CoreWebView2 ??
+            throw new InvalidOperationException("Open a browser tab before changing extensions.");
+        return ChromeWebStoreExtensionService.SetEnabledAsync(core.Profile, extensionId, enabled);
+    }
+
+    private Task RemoveChromeExtensionAsync(string extensionId)
+    {
+        var core = _activeWebView?.CoreWebView2 ??
+            throw new InvalidOperationException("Open a browser tab before removing extensions.");
+        return ChromeWebStoreExtensionService.RemoveAsync(core.Profile, extensionId);
+    }
+
+    private async Task OpenChromeExtensionPopupAsync(InstalledChromeExtension extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension.PopupUrl))
+        {
+            throw new InvalidOperationException("This extension does not provide a toolbar popup.");
+        }
+
+        CloseExtensionPopup();
+        var host = _webViewHost;
+        if (host?.XamlRoot is null)
+        {
+            return;
+        }
+
+        const double popupWidth = 400;
+        const double popupHeight = 540;
+        var rootSize = host.XamlRoot.Size;
+        var popup = new Microsoft.UI.Xaml.Controls.Primitives.Popup
+        {
+            XamlRoot = host.XamlRoot,
+            HorizontalOffset = Math.Max(12, rootSize.Width - popupWidth - 16),
+            VerticalOffset = 76,
+            IsLightDismissEnabled = true,
+            ShouldConstrainToRootBounds = true
+        };
+        var webView = new Microsoft.UI.Xaml.Controls.WebView2
+        {
+            Margin = new Thickness(0, 44, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+        var title = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = extension.Name,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        var close = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new Microsoft.UI.Xaml.Controls.FontIcon
+            {
+                Glyph = BrowserConstants.GlyphClose,
+                FontFamily = BrowserConstants.IconFontFamily,
+                FontSize = 12
+            },
+            Width = 32,
+            Height = 32,
+            MinWidth = 0,
+            Padding = new Thickness(0)
+        };
+        close.Click += (_, _) => CloseExtensionPopup();
+
+        var toolbar = new Microsoft.UI.Xaml.Controls.Grid
+        {
+            Height = 44,
+            VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(12, 6, 6, 6),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Microsoft.UI.ColorHelper.FromArgb(0xFF, 0x2C, 0x3F, 0x56))
+        };
+        toolbar.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star)
+        });
+        toolbar.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition
+        {
+            Width = GridLength.Auto
+        });
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(close, 1);
+        toolbar.Children.Add(title);
+        toolbar.Children.Add(close);
+
+        var layout = new Microsoft.UI.Xaml.Controls.Grid();
+        layout.Children.Add(webView);
+        layout.Children.Add(toolbar);
+        Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(toolbar, 1);
+        popup.Child = new Microsoft.UI.Xaml.Controls.Border
+        {
+            Width = popupWidth,
+            Height = popupHeight,
+            Background = BrowserConstants.CardBackgroundFillColorDefaultBrush,
+            BorderBrush = BrowserConstants.AccentFillColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Child = layout
+        };
+        popup.Closed += (_, _) => CloseExtensionPopup();
+        _extensionPopup = popup;
+        _extensionPopupWebView = webView;
+        popup.IsOpen = true;
+
+        await webView.EnsureCoreWebView2Async(await BrowserEnvironment.Value);
+        if (_extensionPopup == popup && popup.IsOpen)
+        {
+            webView.Source = new Uri(extension.PopupUrl);
+        }
+    }
+
+    private void CloseExtensionPopup()
+    {
+        var popup = _extensionPopup;
+        _extensionPopup = null;
+        if (popup is not null)
+        {
+            popup.IsOpen = false;
+            popup.Child = null;
+        }
+
+        var webView = _extensionPopupWebView;
+        _extensionPopupWebView = null;
+        webView?.Close();
+    }
+
+    private async Task InstallChromeWebStoreExtensionAsync(
+        CoreWebView2Profile profile,
+        string extensionId)
+    {
+        try
+        {
+            BrowserNoticeService.Show("Checking the Chrome extension package…", "info");
+            var package = await ChromeWebStoreExtensionService.DownloadAndPrepareAsync(extensionId);
+            var permissionSummary = package.Permissions.Count == 0
+                ? "This extension does not declare additional permissions."
+                : string.Join(
+                    Environment.NewLine,
+                    package.Permissions.Take(8).Select(permission => $"• {permission}")) +
+                  (package.Permissions.Count > 8
+                      ? $"{Environment.NewLine}• and {package.Permissions.Count - 8} more"
+                      : string.Empty);
+
+            var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+            {
+                XamlRoot = _webViewHost?.XamlRoot,
+                Title = $"Add {package.Name}?",
+                Content =
+                    $"Version {package.Version} · {package.ManifestVersion}" +
+                    $"{Environment.NewLine}{Environment.NewLine}" +
+                    "Requested permissions:" +
+                    $"{Environment.NewLine}{permissionSummary}",
+                PrimaryButtonText = "Add extension",
+                CloseButtonText = "Cancel",
+                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
+            };
+            if (dialog.XamlRoot is null ||
+                await dialog.ShowAsync() != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+            {
+                BrowserNoticeService.Show("Extension installation canceled.", "info");
+                return;
+            }
+
+            var installed = await ChromeWebStoreExtensionService.InstallAsync(profile, package);
+            BrowserNoticeService.Show(
+                $"{package.Name} was added to LinkScape and is currently " +
+                $"{(installed.IsEnabled ? "enabled" : "disabled")}.",
+                "success");
+        }
+        catch (Exception ex)
+        {
+            BrowserNoticeService.Show(
+                $"Could not add the Chrome extension: {ex.Message}",
+                "error");
+        }
     }
 
     private Task ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds dataKinds)

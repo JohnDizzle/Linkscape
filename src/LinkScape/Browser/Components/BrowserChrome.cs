@@ -1,6 +1,7 @@
 using LinkScape.Browser;
 using LinkScape.Models;
 using LinkScape.Services;
+using System.Threading.Tasks;
 
 namespace Browser.Components;
 
@@ -81,6 +82,10 @@ internal static class BrowserChrome
         Action onToggleFavorite,
         Action<string, string> onSaveSettingValue,
         Action<string, bool> onToggleExtension,
+        Func<Task<IReadOnlyList<InstalledChromeExtension>>> onGetChromeExtensions,
+        Func<string, bool, Task> onSetChromeExtensionEnabled,
+        Func<string, Task> onRemoveChromeExtension,
+        Func<InstalledChromeExtension, Task> onOpenChromeExtensionPopup,
         Action onClearCache,
         Action onClearCookies,
         Action onClearBrowsingHistory,
@@ -131,7 +136,13 @@ internal static class BrowserChrome
                     iconSize: 15,
                     useGlass: true),
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
-                BuildExtensionsButton(settingsSnapshot, onToggleExtension),
+                BuildExtensionsButton(
+                    settingsSnapshot,
+                    onToggleExtension,
+                    onGetChromeExtensions,
+                    onSetChromeExtensionEnabled,
+                    onRemoveChromeExtension,
+                    onOpenChromeExtensionPopup),
                 IconButton(
                     BrowserConstants.GlyphSettings,
                     () => { },
@@ -162,7 +173,11 @@ internal static class BrowserChrome
 
     private static Element BuildExtensionsButton(
         IReadOnlyDictionary<string, string> settingsSnapshot,
-        Action<string, bool> onToggleExtension)
+        Action<string, bool> onToggleExtension,
+        Func<Task<IReadOnlyList<InstalledChromeExtension>>> onGetChromeExtensions,
+        Func<string, bool, Task> onSetChromeExtensionEnabled,
+        Func<string, Task> onRemoveChromeExtension,
+        Func<InstalledChromeExtension, Task> onOpenChromeExtensionPopup)
     {
         var anyEnabled = BrowserExtensionService.Extensions.Any(extension =>
             extension.IsAvailable &&
@@ -185,13 +200,23 @@ internal static class BrowserChrome
             {
                 button.Style = GetGlassIconButtonStyle();
                 ApplyGlassButtonDepth(button);
-                button.Flyout = CreateExtensionsFlyout(settingsSnapshot, onToggleExtension);
+                button.Flyout = CreateExtensionsFlyout(
+                    settingsSnapshot,
+                    onToggleExtension,
+                    onGetChromeExtensions,
+                    onSetChromeExtensionEnabled,
+                    onRemoveChromeExtension,
+                    onOpenChromeExtensionPopup);
             });
     }
 
     private static Microsoft.UI.Xaml.Controls.Flyout CreateExtensionsFlyout(
         IReadOnlyDictionary<string, string> settingsSnapshot,
-        Action<string, bool> onToggleExtension)
+        Action<string, bool> onToggleExtension,
+        Func<Task<IReadOnlyList<InstalledChromeExtension>>> onGetChromeExtensions,
+        Func<string, bool, Task> onSetChromeExtensionEnabled,
+        Func<string, Task> onRemoveChromeExtension,
+        Func<InstalledChromeExtension, Task> onOpenChromeExtensionPopup)
     {
         var flyout = new Microsoft.UI.Xaml.Controls.Flyout();
         var content = new StackPanel
@@ -289,6 +314,163 @@ internal static class BrowserChrome
             }
         });
 
+        content.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "From Chrome Web Store",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(2, 8, 2, 0)
+        });
+        var chromeSection = new StackPanel { Spacing = 8 };
+        content.Children.Add(chromeSection);
+
+        async Task LoadChromeExtensionsAsync()
+        {
+            chromeSection.Children.Clear();
+            chromeSection.Children.Add(new Microsoft.UI.Xaml.Controls.ProgressRing
+            {
+                IsActive = true,
+                Width = 22,
+                Height = 22,
+                HorizontalAlignment = HorizontalAlignment.Left
+            });
+
+            try
+            {
+                var extensions = await onGetChromeExtensions();
+                chromeSection.Children.Clear();
+                if (extensions.Count == 0)
+                {
+                    chromeSection.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+                    {
+                        Text = "No Chrome Web Store extensions installed.",
+                        Opacity = 0.68,
+                        TextWrapping = TextWrapping.Wrap
+                    });
+                    return;
+                }
+
+                foreach (var extension in extensions)
+                {
+                    var extensionValue = extension;
+                    var openButton = new Microsoft.UI.Xaml.Controls.Button
+                    {
+                        Content = "Open",
+                        IsEnabled = extensionValue.IsEnabled &&
+                                    !string.IsNullOrWhiteSpace(extensionValue.PopupUrl),
+                        MinWidth = 64
+                    };
+                    openButton.Click += async (_, _) =>
+                    {
+                        flyout.Hide();
+                        try
+                        {
+                            await onOpenChromeExtensionPopup(extensionValue);
+                        }
+                        catch (Exception ex)
+                        {
+                            BrowserNoticeService.Show(
+                                $"Could not open {extensionValue.Name}: {ex.Message}",
+                                "error");
+                        }
+                    };
+
+                    var toggleButton = new Microsoft.UI.Xaml.Controls.Button
+                    {
+                        Content = extensionValue.IsEnabled ? "Disable" : "Enable",
+                        MinWidth = 70
+                    };
+                    toggleButton.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            await onSetChromeExtensionEnabled(
+                                extensionValue.Id,
+                                !extensionValue.IsEnabled);
+                            BrowserNoticeService.Show(
+                                $"{extensionValue.Name} is now " +
+                                $"{(!extensionValue.IsEnabled ? "enabled" : "disabled")}.",
+                                "success");
+                            await LoadChromeExtensionsAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            BrowserNoticeService.Show(
+                                $"Could not update {extensionValue.Name}: {ex.Message}",
+                                "error");
+                        }
+                    };
+
+                    var removeButton = new Microsoft.UI.Xaml.Controls.Button
+                    {
+                        Content = "Remove",
+                        MinWidth = 70
+                    };
+                    removeButton.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            await onRemoveChromeExtension(extensionValue.Id);
+                            BrowserNoticeService.Show(
+                                $"{extensionValue.Name} was removed from LinkScape.",
+                                "success");
+                            await LoadChromeExtensionsAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            BrowserNoticeService.Show(
+                                $"Could not remove {extensionValue.Name}: {ex.Message}",
+                                "error");
+                        }
+                    };
+
+                    var actions = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 6,
+                        Children = { openButton, toggleButton, removeButton }
+                    };
+                    chromeSection.Children.Add(new Border
+                    {
+                        Background = BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush,
+                        BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(10),
+                        Padding = new Thickness(10),
+                        Child = new StackPanel
+                        {
+                            Spacing = 7,
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = extensionValue.Name,
+                                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                                    TextTrimming = TextTrimming.CharacterEllipsis
+                                },
+                                new TextBlock
+                                {
+                                    Text = $"Version {extensionValue.Version}  •  " +
+                                           $"{(extensionValue.IsEnabled ? "Enabled" : "Disabled")}",
+                                    Opacity = 0.68
+                                },
+                                actions
+                            }
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                chromeSection.Children.Clear();
+                chromeSection.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+                {
+                    Text = $"Could not load installed extensions: {ex.Message}",
+                    TextWrapping = TextWrapping.Wrap
+                });
+            }
+        }
+
+        flyout.Opening += (_, _) => _ = LoadChromeExtensionsAsync();
         flyout.Content = content;
         flyout.FlyoutPresenterStyle = GetLinkerFlyoutPresenterStyle();
         return flyout;

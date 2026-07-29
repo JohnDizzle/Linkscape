@@ -1,5 +1,6 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using LinkScape.Services;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -41,6 +42,10 @@ internal sealed record BrowserTitleBarProps(
     Action OnToggleFavorite,
     Action<string, string> OnSaveSettingValue,
     Action<string, bool> OnToggleExtension,
+    Func<Task<IReadOnlyList<InstalledChromeExtension>>> OnGetChromeExtensions,
+    Func<string, bool, Task> OnSetChromeExtensionEnabled,
+    Func<string, Task> OnRemoveChromeExtension,
+    Func<InstalledChromeExtension, Task> OnOpenChromeExtensionPopup,
     Action OnClearCache,
     Action OnClearCookies,
     Action OnClearBrowsingHistory,
@@ -100,6 +105,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnToggleFavorite,
             Props.OnSaveSettingValue,
             Props.OnToggleExtension,
+            Props.OnGetChromeExtensions,
+            Props.OnSetChromeExtensionEnabled,
+            Props.OnRemoveChromeExtension,
+            Props.OnOpenChromeExtensionPopup,
             Props.OnClearCache,
             Props.OnClearCookies,
             Props.OnClearBrowsingHistory,

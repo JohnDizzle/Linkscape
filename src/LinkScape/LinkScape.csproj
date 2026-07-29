@@ -11,7 +11,13 @@
       <WindowsPackageType>MSIX</WindowsPackageType>
       <EnableMsixTooling>true</EnableMsixTooling>
 
+      <!--
+          Store packages must carry both runtimes. WindowsAppSDKSelfContained
+          bundles WinUI/Windows App SDK; SelfContained bundles the .NET runtime
+          so a clean Windows installation does not need .NET Desktop Runtime 10.
+      -->
       <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+      <SelfContained>true</SelfContained>
       <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
       <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
       <Nullable>enable</Nullable>

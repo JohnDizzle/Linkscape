@@ -1833,6 +1833,13 @@ class TabViewPage : Component
                         BrowserNoticeService.Show($"Could not update {definition.DisplayName}: {ex.Message}");
                     }
                 },
+                () => _browserWebViewHostController.GetChromeExtensionsAsync(),
+                (extensionId, enabled) =>
+                    _browserWebViewHostController.SetChromeExtensionEnabledAsync(extensionId, enabled),
+                extensionId =>
+                    _browserWebViewHostController.RemoveChromeExtensionAsync(extensionId),
+                extension =>
+                    _browserWebViewHostController.OpenChromeExtensionPopupAsync(extension),
                 ClearBrowserCache,
                 ClearBrowserCookies,
                 ClearCoreBrowsingHistory,
