@@ -12,6 +12,7 @@
       <EnableMsixTooling>true</EnableMsixTooling>
 
       <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+      <SelfContained>true</SelfContained>
       <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
       <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
       <Nullable>enable</Nullable>
