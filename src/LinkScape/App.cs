@@ -1,13 +1,11 @@
 using LinkScape.Browser;
+using LinkScape.Browser.Messages;
+using LinkScape.Services;
+using CommunityToolkit.Mvvm.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
-using Microsoft.UI.Windowing;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Media.Imaging;
-using Windows.Graphics;
-
-using Windows.Win32.UI.WindowsAndMessaging;
 
 var commandLineArgs = Environment.GetCommandLineArgs();
 
@@ -28,27 +26,19 @@ HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
 TabCollectionService.EnsureDatabase();
-const string WindowPositionXSettingKey = "window.position.x";
-const string WindowPositionYSettingKey = "window.position.y";
-const string WindowWidthSettingKey = "window.size.width";
-const string WindowHeightSettingKey = "window.size.height";
-const string WindowMaximizedSettingKey = "window.state.maximized";
-const int MinimumWindowX = 0;
-const int MinimumWindowY = 0;
-const int MinimumWindowWidth = 800;
-const int MinimumWindowHeight = 400;
-const int DefaultWindowWidth = 1200;
-const int DefaultWindowHeight = 800;
 const string WebView2AdditionalBrowserArgumentsKey = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
 const string WebView2SingleSignOnPrimaryAccountArgument = "--allow-single-sign-on-os-primary-account";
+
+var services = new ServiceCollection();
+_ = services.AddSingleton<WeakReferenceMessenger>();
+_ = services.AddSingleton<IMessenger, WeakReferenceMessenger>(provider =>
+    provider.GetRequiredService<WeakReferenceMessenger>());
+LinkScapeServiceProvider.Initialize(services.BuildServiceProvider());
 
 ReactorApp.Run<App>("LinkScape",
     configure: host =>
     {
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(host.Window);
-        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        MainWindowActivation.Register(host.Window, appWindow);
+        MainWindowActivation.Register(host.Window);
         var restored = false;
 
         host.Window.Activated += (s, e) =>
@@ -59,11 +49,11 @@ ReactorApp.Run<App>("LinkScape",
             }
 
             restored = true;
-            RestoreWindowPlacement(appWindow);
+            MainWindowActivation.RestoreWindowPlacement();
             
         };
 
-        host.Window.Closed += (_, _) => SaveWindowPlacement(appWindow);
+        host.Window.Closed += (_, _) => MainWindowActivation.SaveWindowPlacement();
     });
 
 static void ConfigureWebView2BrowserArguments()
@@ -84,195 +74,6 @@ static void ConfigureWebView2BrowserArguments()
         EnvironmentVariableTarget.Process);
 }
 
-static void RestoreWindowPlacement(AppWindow appWindow)
-{
-    var width = ReadIntSetting(WindowWidthSettingKey) ?? DefaultWindowWidth;
-    var height = ReadIntSetting(WindowHeightSettingKey) ?? DefaultWindowHeight;
-    var x = ReadIntSetting(WindowPositionXSettingKey);
-    var y = ReadIntSetting(WindowPositionYSettingKey);
-
-    width = width < MinimumWindowWidth ? DefaultWindowWidth : width;
-    height = height < MinimumWindowHeight ? DefaultWindowHeight : height;
-    var hasValidPosition = x is not null &&
-        y is not null &&
-        IsValidWindowPosition(appWindow, x.Value, y.Value, width, height);
-
-    try
-    {
-        if (width >= MinimumWindowWidth && height >= MinimumWindowHeight)
-        {
-            if (hasValidPosition)
-            {
-                appWindow.MoveAndResize(
-                    new RectInt32(
-                        x!.Value,
-                        y!.Value,
-                        width,
-                        height));
-            }
-            else
-            {
-                appWindow.Resize(
-                    new SizeInt32(
-                        width,
-                        height));
-            }
-        }
-
-        if (appWindow.Presenter is OverlappedPresenter presenter &&
-            bool.TryParse(SettingsService.GetValue(WindowMaximizedSettingKey), out var isMaximized) &&
-            isMaximized)
-        {
-            presenter.Maximize();
-        }
-    }
-    catch
-    {
-    }
-}
-
-static void SaveWindowPlacement(AppWindow appWindow)
-{
-    try
-    {
-        var position = appWindow.Position;
-        var size = appWindow.Size;
-        var isMaximized = appWindow.Presenter is OverlappedPresenter presenter &&
-            presenter.State == OverlappedPresenterState.Maximized;
-
-        if (size.Width >= MinimumWindowWidth &&
-            size.Height >= MinimumWindowHeight &&
-            IsValidWindowPosition(appWindow, position.X, position.Y, size.Width, size.Height))
-        {
-            SettingsService.SetValue(WindowPositionXSettingKey, position.X.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            SettingsService.SetValue(WindowPositionYSettingKey, position.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            SettingsService.SetValue(WindowWidthSettingKey, size.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            SettingsService.SetValue(WindowHeightSettingKey, size.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
-
-        SettingsService.SetValue(WindowMaximizedSettingKey, isMaximized ? "true" : "false");
-    }
-    catch
-    {
-    }
-}
-
-static int? ReadIntSetting(string key)
-{
-    return int.TryParse(
-        SettingsService.GetValue(key),
-        System.Globalization.NumberStyles.Integer,
-        System.Globalization.CultureInfo.InvariantCulture,
-        out var value)
-        ? value
-        : null;
-}
-
-static bool IsValidWindowPosition(AppWindow appWindow, int x, int y, int width, int height)
-{
-    if (x < MinimumWindowX || y < MinimumWindowY)
-    {
-        return false;
-    }
-
-    try
-    {
-        var displayArea = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest);
-        var workArea = displayArea.WorkArea;
-        var visibleInset = 80;
-        var right = x + width;
-        var bottom = y + height;
-
-        return right > workArea.X + visibleInset &&
-            bottom > workArea.Y + visibleInset &&
-            x < workArea.X + workArea.Width - visibleInset &&
-            y < workArea.Y + workArea.Height - visibleInset;
-    }
-    catch
-    {
-        return true;
-    }
-}
-
-internal static class MainWindowActivation
-{
-    private const int MinimumRestoredWidth = 800;
-    private const int MinimumRestoredHeight = 400;
-    private const int DefaultRestoredWidth = 1200;
-    private const int DefaultRestoredHeight = 800;
-    private static readonly object SyncRoot = new();
-    private static Window? _window;
-    private static AppWindow? _appWindow;
-    private static nint _hwnd;
-
-    internal static void Register(Window window, AppWindow appWindow)
-    {
-        lock (SyncRoot)
-        {
-            _window = window;
-            _appWindow = appWindow;
-            _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
-        }
-    }
-
-    internal static void RestoreAndActivate()
-    {
-        Window? window;
-        AppWindow? appWindow;
-        nint hwnd;
-
-        lock (SyncRoot)
-        {
-            window = _window;
-            appWindow = _appWindow;
-            hwnd = _hwnd;
-        }
-
-        if (window is null || appWindow is null || hwnd == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            var windowHandle = new HWND(hwnd);
-
-            if (appWindow.Presenter is OverlappedPresenter presenter &&
-                presenter.State != OverlappedPresenterState.Restored)
-            {
-                presenter.Restore();
-            }
-
-            if (PInvoke.IsIconic(windowHandle))
-            {
-                PInvoke.ShowWindow(windowHandle, SHOW_WINDOW_CMD.SW_RESTORE);
-            }
-
-            var size = appWindow.Size;
-
-            if (size.Width < MinimumRestoredWidth || size.Height < MinimumRestoredHeight)
-            {
-                appWindow.Resize(new SizeInt32(DefaultRestoredWidth, DefaultRestoredHeight));
-            }
-
-            window.Activate();
-            _ = PInvoke.SetForegroundWindow(windowHandle);
-        }
-        catch
-        {
-            // logerror("Failed to restore and activate main window", ex);
-        }
-    }
-
-    internal static Microsoft.UI.Xaml.XamlRoot? GetXamlRoot()
-    {
-        lock (SyncRoot)
-        {
-            return _window?.Content?.XamlRoot;
-        }
-    }
-}
-
 class App : Component
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
@@ -281,7 +82,10 @@ class App : Component
     private static bool _unhandledExceptionHandlerRegistered;
     private bool _errorListenerRegistered;
     private bool _settingsListenerRegistered;
+    private bool _fullScreenPresentationMessengerRegistered;
+    private Action<bool>? _setFullScreenPresentationState;
     private bool _startupSplashDismissScheduled;
+    private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
 
     public override Element Render()
     {
@@ -292,9 +96,13 @@ class App : Component
                     LinkScape.AppBackdropBrushes.DefaultPreset)));
         var fatalError = UseState<Exception?>(LinkScape.AppErrorStateService.CurrentError, threadSafe: true);
         var isShowingStartupSplash = UseState(true, threadSafe: true);
+        var isFullScreenPresentationActive = UseState(
+            MainWindowActivation.IsFullScreenPresentationActive,
+            threadSafe: true);
 
         RegisterSettingsListener(backdropGradientPreset.Set);
         RegisterErrorListener(fatalError.Set);
+        RegisterFullScreenPresentationMessenger(isFullScreenPresentationActive.Set);
         RegisterUnhandledExceptionHandler();
         ScheduleStartupSplashDismissal(isShowingStartupSplash.Set);
 
@@ -305,7 +113,7 @@ class App : Component
                 ? BuildErrorSurface(backdropGradientPreset.Value, fatalError.Value)
                 : isShowingStartupSplash.Value
                     ? LinkScape.AppLoadingSurface.Build()
-                : BuildMainSurface(backdropGradientPreset.Value);
+                : BuildMainSurface(backdropGradientPreset.Value, isFullScreenPresentationActive.Value);
         }
         catch (Exception ex)
         {
@@ -379,6 +187,22 @@ class App : Component
         }
     }
 
+    private void RegisterFullScreenPresentationMessenger(Action<bool> setIsFullScreenPresentationActive)
+    {
+        _setFullScreenPresentationState = setIsFullScreenPresentationActive;
+
+        if (_fullScreenPresentationMessengerRegistered)
+        {
+            return;
+        }
+
+        _fullScreenPresentationMessengerRegistered = true;
+        Messenger.Register<App, WebViewFullScreenPresentationChangedMessage>(
+            this,
+            static (recipient, message) =>
+                recipient._setFullScreenPresentationState?.Invoke(message.IsFullScreen));
+    }
+
     private void RegisterErrorListener(Action<Exception?> setFatalError)
     {
         if (_errorListenerRegistered)
@@ -395,10 +219,12 @@ class App : Component
         }
     }
 
-    private static Element BuildMainSurface(string backdropGradientPreset)
+    private static Element BuildMainSurface(string backdropGradientPreset, bool isFullScreenPresentationActive)
     {
         return FlexColumn(
-            TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),
+            TitleBar("LinkScape Browser")
+                .Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png")
+                .IsVisible(!isFullScreenPresentationActive),
             Component<LinkScape.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )

@@ -11,7 +11,10 @@ namespace Browser.Components;
 internal sealed record CommandCenterChatPanelProps(
     Action<string> OnOpenLinkInNewTab,
     Action OnOpenAiKeyDialog,
-    Func<CommandCenterChatContext> GetChatContext);
+    Func<CommandCenterChatContext> GetChatContext,
+    Action OnToggleCompact,
+    Action OnClose,
+    bool IsCompact = false);
 
 internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelProps>
 {
@@ -294,6 +297,58 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .CornerRadius(12)
             .Background(BrowserMaterialTheme.ChatSurfaceBrush)
             .WithBorder(BrowserMaterialTheme.GlassStrokeBrush);
+
+        if (Props.IsCompact)
+        {
+            var latestMessage = messages.Value
+                .LastOrDefault(message => !message.IsUser) ??
+                messages.Value.LastOrDefault();
+
+            return FlexColumn(
+                FlexRow(
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphFullScreen, 12), Props.OnToggleCompact)
+                        .AutomationName("Expand Linker")
+                        .ToolTip("Expand Linker")
+                        .Width(30)
+                        .Height(30)
+                        .Padding(0)
+                        .CornerRadius(15)
+                        .Background(BrowserConstants.LayerFillDefaultBrush),
+                    Border(null)
+                        .Flex(grow: 1, basis: 0),
+                    Button("Key", Props.OnOpenAiKeyDialog)
+                        .AutomationName("Open Linker provider key")
+                        .ToolTip("Open Linker provider key")
+                        .Height(28)
+                        .Padding(10, 0)
+                        .CornerRadius(14),
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 11), Props.OnClose)
+                        .AutomationName("Close Linker")
+                        .ToolTip("Close Linker")
+                        .Width(30)
+                        .Height(30)
+                        .Padding(0)
+                        .CornerRadius(15)
+                        .Background(BrowserConstants.LayerFillDefaultBrush)) with
+                {
+                    ColumnGap = 8
+                },
+                Border(
+                    latestMessage is null
+                        ? TextBlock("Linker is ready.")
+                            .TextWrapping(TextWrapping.Wrap)
+                            .Opacity(0.78)
+                        : BuildMessageBubble(latestMessage, ActivateTabFromAction)
+                            .HAlign(HorizontalAlignment.Stretch))
+                    .Padding(10)
+                    .CornerRadius(12)
+                    .Background(BrowserMaterialTheme.ChatSurfaceBrush)
+                    .WithBorder(BrowserMaterialTheme.GlassStrokeBrush),
+                input) with
+            {
+                RowGap = 6
+            };
+        }
 
         var provider = LinkerAiCredentialService.SelectedProvider;
         var keyButtonText = LinkerAiCredentialService.HasAnyApiKey()

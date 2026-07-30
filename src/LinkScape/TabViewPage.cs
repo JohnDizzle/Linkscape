@@ -1,8 +1,10 @@
 using LinkScape.Browser;
+using LinkScape.Browser.Messages;
 using LinkScape.Browser.State;
 using LinkScape.Models;
 using LinkScape.Services;
 using Browser.Components;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Controls;
 using System.Text.Json;
@@ -54,6 +56,9 @@ class TabViewPage : Component
     private readonly string _startupSelectedTabId;
     private Action<string>? _openActivatedTarget;
     private bool _browserNoticeListenerRegistered;
+    private bool _fullScreenPresentationMessengerRegistered;
+    private Action<bool>? _setFullScreenPresentationState;
+    private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
 
     public TabViewPage()
     {
@@ -128,6 +133,7 @@ class TabViewPage : Component
         var isCommandCenterBusy = UseState(false, threadSafe: true);
         var isCommandCenterHighlighted = UseState(false, threadSafe: true);
         var commandCenterBusyText = UseState(string.Empty, threadSafe: true);
+        var isLinkerCompactState = UseState(false);
         var historyImportBrowserProfiles = UseState<IReadOnlyDictionary<string, BrowserImportProfile[]>>(
             new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase),
             threadSafe: true);
@@ -139,12 +145,16 @@ class TabViewPage : Component
         var isRailTabsExpanded = session.Value.IsRailTabsExpanded;
         var settingsSnapshot = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
         var browserNotice = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
+        var isFullScreenPresentationActive = UseState(
+            global::MainWindowActivation.IsFullScreenPresentationActive,
+            threadSafe: true);
         var selectedSearchProviderKey = session.Value.SelectedSearchProviderKey;
         var isCommandCenterOpen = session.Value.IsCommandCenterOpen;
         var isChatBladeOpen = session.Value.IsChatOpen;
         var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot.Value);
 
         RegisterBrowserNoticeListener(browserNotice.Set);
+        RegisterFullScreenPresentationMessenger(isFullScreenPresentationActive.Set);
 
         if (!_importBrowserNamesLoadStarted)
         {
@@ -313,6 +323,11 @@ class TabViewPage : Component
         void CloseChatBlade()
         {
             UpdateBrowserSession(state => BrowserSessionStore.SetChatOpen(state, false));
+        }
+
+        void ToggleLinkerCompact()
+        {
+            isLinkerCompactState.Set(!isLinkerCompactState.Value);
         }
 
         void CompactCommandCenterForBrowsing()
@@ -1928,6 +1943,13 @@ class TabViewPage : Component
                 SetLoadingIfNeeded,
                 () => RefreshHistoryState()));
 
+        var browserSurfaceInset = isFullScreenPresentationActive.Value
+            ? 0
+            : isTabsCollapsed
+                ? BrowserSurfaceInsetCollapsed
+                : BrowserSurfaceInsetExpanded;
+        var browserSurfaceCornerRadius = isFullScreenPresentationActive.Value ? 0 : 12;
+
         var browserSurface = Border(
             Grid(
                 [GridSize.Star()],
@@ -1936,39 +1958,49 @@ class TabViewPage : Component
                     Border(
                         Border(null)
                             .Width(1)
-                            .Background(Theme.SurfaceStroke)
-                            .Opacity(isTabsCollapsed ? 0.16 : 0.36)
-                            .HAlign(HorizontalAlignment.Right)
-                            .VAlign(VerticalAlignment.Stretch)
+                        .Background(Theme.SurfaceStroke)
+                        .Opacity(isTabsCollapsed ? 0.16 : 0.36)
+                        .HAlign(HorizontalAlignment.Right)
+                        .VAlign(VerticalAlignment.Stretch)
                     )
-                    .Width(isTabsCollapsed ? BrowserSurfaceInsetCollapsed : BrowserSurfaceInsetExpanded)
-                    .VAlign(VerticalAlignment.Stretch).CornerRadius(14)
+                    .Width(browserSurfaceInset)
+                    .VAlign(VerticalAlignment.Stretch)
+                    .CornerRadius(isFullScreenPresentationActive.Value ? 0 : 14)
                     .Flex(shrink: 0),
                     browserContent
                         .HAlign(HorizontalAlignment.Stretch)
                         .Flex(grow: 1, basis: 0)
-                ).CornerRadius(12)
+                ).CornerRadius(browserSurfaceCornerRadius)
                 with
                 {
                     ColumnGap = 0
                 })
                 .Grid(row: 0, column: 0)
             )
-            .CornerRadius(12)
+            .CornerRadius(browserSurfaceCornerRadius)
         )
         .HAlign(HorizontalAlignment.Stretch)
         .VAlign(VerticalAlignment.Stretch)
         .MinWidth(0)
-        .CornerRadius(12)
+        .CornerRadius(browserSurfaceCornerRadius)
         .Flex(grow: 1, basis: 0);
 
-        var chatOverlay = Border(
-            FlexColumn(
-                FlexRow(
+        var isLinkerCompact = isLinkerCompactState.Value;
+        var fullLinkerOverlay = Border(
+            (FlexColumn(
+                (FlexRow(
                     TextBlock("Linker")
                         .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
                         .VAlign(VerticalAlignment.Center)
                         .Flex(grow: 1, basis: 0),
+                    Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphBackToWindow, 12), ToggleLinkerCompact)
+                        .AutomationName("Compact Linker")
+                        .ToolTip("Compact Linker")
+                        .Width(34)
+                        .Height(34)
+                        .Padding(0)
+                        .CornerRadius(17)
+                        .Background(BrowserConstants.LayerFillDefaultBrush),
                     Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphHelp, 12), () => OpenUriInNewTab(BrowserConstants.LinkerHelpUrl, dismissCommandCenter: false))
                         .AutomationName("Open Linker help")
                         .ToolTip("Open Linker help")
@@ -1986,7 +2018,7 @@ class TabViewPage : Component
                         .Background(BrowserConstants.LayerFillDefaultBrush)) with
                 {
                     ColumnGap = 10
-                },
+                }),
                 Component<CommandCenterChatPanel, CommandCenterChatPanelProps>(
                     new CommandCenterChatPanelProps(
                         url => OpenUriInNewTab(url, dismissCommandCenter: false),
@@ -1995,39 +2027,113 @@ class TabViewPage : Component
                             selectedTab.Url,
                             selectedTab.Title,
                             ActiveTabId: selectedTab.Id,
-                            CaptureActivePageImageAsync: _browserWebViewHostController.CaptureActivePageImageAsync)))
+                            CaptureActivePageImageAsync: _browserWebViewHostController.CaptureActivePageImageAsync),
+                        ToggleLinkerCompact,
+                        CloseChatBlade))
                     .Flex(grow: 1, basis: 0)) with
             {
                 RowGap = 12
-            })
+            }))
             .Width(520)
             .Padding(12)
             .Margin(12)
             .CornerRadius(18)
             .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xF2, 0x23, 0x23, 0x26)))
             .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
-            .IsVisible(isChatBladeOpen)
+            .IsVisible(isChatBladeOpen && !isLinkerCompact)
             .HAlign(HorizontalAlignment.Right)
             .VAlign(VerticalAlignment.Stretch)
+            .Grid(row: 0, column: 0);
+
+        var compactLinkerOverlay = Border(
+            (FlexRow(
+                TextBlock("Linker")
+                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
+                    .VAlign(VerticalAlignment.Center),
+                TextBlock("Double-click to expand")
+                    .Opacity(0.7)
+                    .VAlign(VerticalAlignment.Center)
+                    .Flex(grow: 1, basis: 0),
+                Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphFullScreen, 12), ToggleLinkerCompact)
+                    .AutomationName("Expand Linker")
+                    .ToolTip("Expand Linker")
+                    .Width(32)
+                    .Height(32)
+                    .Padding(0)
+                    .CornerRadius(16)
+                    .Background(BrowserConstants.LayerFillDefaultBrush),
+                Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 11), CloseChatBlade)
+                    .AutomationName("Close Linker")
+                    .ToolTip("Close Linker")
+                    .Width(32)
+                    .Height(32)
+                    .Padding(0)
+                    .CornerRadius(16)
+                    .Background(BrowserConstants.LayerFillDefaultBrush)) with
+            {
+                ColumnGap = 10
+            }))
+            .Width(380)
+            .Height(56)
+            .Padding(12, 8)
+            .Margin(12, 12, 12, 16)
+            .CornerRadius(18)
+            .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xF2, 0x23, 0x23, 0x26)))
+            .WithBorder(BrowserConstants.AccentFillColorDefaultBrush)
+            .IsVisible(isChatBladeOpen && isLinkerCompact)
+            .HAlign(HorizontalAlignment.Right)
+            .VAlign(VerticalAlignment.Bottom)
+            .Set(border =>
+            {
+                border.DoubleTapped -= OnCompactLinkerDoubleTapped;
+                border.DoubleTapped += OnCompactLinkerDoubleTapped;
+                border.Tag = (Action)ToggleLinkerCompact;
+            })
             .Grid(row: 0, column: 0);
 
         var mainContent = Grid(
             [GridSize.Star()],
             [GridSize.Star()],
             FlexRow(
-                tabRail,
+                tabRail.IsVisible(!isFullScreenPresentationActive.Value),
                 browserSurface
             )
             .Backdrop(BackdropKind.Transparent)
             .Grid(row: 0, column: 0),
-            chatOverlay)
+            fullLinkerOverlay,
+            compactLinkerOverlay)
             .Flex(grow: 1, basis: 0);
 
         return FlexColumn(
-            titleBar,
+            titleBar.IsVisible(!isFullScreenPresentationActive.Value),
             BuildBrowserNoticeBanner(browserNotice.Value),
             mainContent
         );
+    }
+
+    private static void OnCompactLinkerDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args)
+    {
+        if (sender is FrameworkElement { Tag: Action toggleCompact })
+        {
+            args.Handled = true;
+            toggleCompact();
+        }
+    }
+
+    private void RegisterFullScreenPresentationMessenger(Action<bool> setIsFullScreenPresentationActive)
+    {
+        _setFullScreenPresentationState = setIsFullScreenPresentationActive;
+
+        if (_fullScreenPresentationMessengerRegistered)
+        {
+            return;
+        }
+
+        _fullScreenPresentationMessengerRegistered = true;
+        Messenger.Register<TabViewPage, WebViewFullScreenPresentationChangedMessage>(
+            this,
+            static (recipient, message) =>
+                recipient._setFullScreenPresentationState?.Invoke(message.IsFullScreen));
     }
 
     private void RegisterBrowserNoticeListener(Action<BrowserNotice?> setBrowserNotice)

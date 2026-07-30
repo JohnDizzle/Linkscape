@@ -1,6 +1,8 @@
 using LinkScape.Browser;
+using LinkScape.Browser.Messages;
 using LinkScape.Models;
 using LinkScape.Services;
+using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
 using System.Text.Json;
@@ -109,6 +111,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private Microsoft.UI.Xaml.Controls.WebView2? _peekWebView;
     private string? _activeWebViewTabId;
     private string? _pendingNavigationNotice;
+    private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
         new(CreateBrowserEnvironmentAsync);
 
@@ -233,6 +236,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             if (_webViewHost?.Child == closedWebView)
             {
                 _webViewHost.Child = null;
+            }
+
+            if (string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal))
+            {
+                Messenger.Send(new WebViewFullScreenPresentationRequestMessage(false));
             }
 
             closedWebView.Close();
@@ -488,6 +496,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 }
             };
 
+            core.ContainsFullScreenElementChanged += (_, _) =>
+            {
+                if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
+                {
+                    Messenger.Send(new WebViewFullScreenPresentationRequestMessage(core.ContainsFullScreenElement));
+                }
+            };
+
             core.ContextMenuRequested += (sender, args) =>
             {
                 if (!args.ContextMenuTarget.HasLinkUri ||
@@ -527,6 +543,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
         }
 
+        Messenger.Send(new WebViewFullScreenPresentationRequestMessage(core?.ContainsFullScreenElement == true));
         AttachWebViewToHost(_webViewHost ?? host, webView);
 
     }

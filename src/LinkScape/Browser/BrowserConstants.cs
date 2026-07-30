@@ -37,6 +37,8 @@ internal static class BrowserConstants
     public const string GlyphMagnifyGlass = "\uE721";
     public const string GlyphChat = "\uE8F2";
     public const string GlyphNewWindow = "\uE78B";
+    public const string GlyphFullScreen = "\uE740";
+    public const string GlyphBackToWindow = "\uE73F";
     public const string GlyphLink = "\uE71B";
     public const string GlyphExtensions = "\uEA86";
     public const string GlyphPlay = "\uE768";

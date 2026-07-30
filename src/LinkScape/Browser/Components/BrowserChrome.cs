@@ -17,11 +17,11 @@ internal static class BrowserChrome
     private const double ExpandedCommandCenterRailWidth = 560;
     private const double ActiveTabHeaderMinHeight = 134;
     private const double RailSectionSpacing = 14;
-    private const double ExpandedTabItemHeight = 74;
-    private const double CollapsedTabItemHeight = 40;
-    private const double CollapsedRailWidth = 56;
+    private const double ExpandedTabItemHeight = 88;
+    private const double CollapsedTabItemHeight = 36;
+    private const double CollapsedRailWidth = 64;
     private const double TabItemHoverScale = 1.04;
-    private const double TabItemHorizontalInset = 4;
+    private const double TabItemHorizontalInset = 6;
     private const double SelectedTabBorderThickness = 1.25;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
@@ -1268,6 +1268,22 @@ internal static class BrowserChrome
             _ => Border(null)
         };
 
+        var contentViewport = activeCommandCenterSection is "History" or "Favorites" or "Collections"
+            ? content
+                .MinHeight(0)
+                .Flex(grow: 1, shrink: 1, basis: 0)
+            : ScrollViewer(content)
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    scrollViewer.VerticalScrollMode = ScrollMode.Enabled;
+                    scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                })
+                .VAlign(VerticalAlignment.Stretch)
+                .MinHeight(0)
+                .Flex(grow: 1, shrink: 1, basis: 0);
+
         var blade = Border(
             FlexColumn(
                 HStack(6,
@@ -1291,24 +1307,14 @@ internal static class BrowserChrome
                         useGlass: true)
                     .Margin(0, 0, 2, 0)
                 ).HAlign(HorizontalAlignment.Right),
-                ScrollViewer(content)
-                    .Set(scrollViewer =>
-                    {
-                        scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-                        scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
-                        scrollViewer.VerticalScrollMode = ScrollMode.Enabled;
-                        scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
-                    })
-                    .VAlign(VerticalAlignment.Stretch)
-                    .MinHeight(0)
-                    .Flex(grow: 1, shrink: 1, basis: 0)
+                contentViewport
             )
             .MinHeight(0)
         )
-            .Padding(14)
+            .Padding(isCommandCenterExpanded ? 14 : 18)
             .CornerRadius(14)
             .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
-            .WithBorder(Theme.SurfaceStroke)
+            .Set(ApplyCommandCenterNormalBorder)
             .Margin(0, isCommandCenterExpanded ? 6 : 0, 0, 4)
             .MinHeight(0)
             .Set(border => ApplyCommandCenterBusyState(border, shouldHighlight));
@@ -2167,8 +2173,7 @@ internal static class BrowserChrome
                 border.Tag = null;
             }
 
-            border.BorderThickness = new Thickness(0);
-            border.ClearValue(Microsoft.UI.Xaml.Controls.Border.BorderBrushProperty);
+            ApplyCommandCenterNormalBorder(border);
             return;
         }
 
@@ -2201,6 +2206,12 @@ internal static class BrowserChrome
         busyStoryboard.Children.Add(animation);
         border.Tag = busyStoryboard;
         busyStoryboard.Begin();
+    }
+
+    private static void ApplyCommandCenterNormalBorder(Microsoft.UI.Xaml.Controls.Border border)
+    {
+        border.BorderBrush = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0x35, 0xFF, 0xFF, 0xFF));
+        border.BorderThickness = new Thickness(1);
     }
 
     private static Element BuildCompactTabsCard(
@@ -2436,35 +2447,55 @@ internal static class BrowserChrome
             item => BuildHistoryListItem(item, tabCollections, GetCollectionNames(collectionMembership, item.Url), onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, openInNewTabByDefault))
             .ToArray();
 
-        return VStack(18,
+        var header = VStack(10,
             TextBlock("History")
-                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)
-                ,
-            HStack(14,
-                Border(
-                    AutoSuggestBox(historyFilter, onHistoryFilterChanged, submitted => onHistoryFilterChanged(submitted))
-                   .AutomationName("History Filter")
-                    with
-                        {
-                            PlaceholderText = "Filter history"
-                        }
-                ).HAlign(HorizontalAlignment.Left)
-                .Padding(0)
-                .Flex(grow: 1, basis: 0),
-                HStack(8,
-                    Button("Import", () => { })
-                        .IsEnabled(!isImportRunning)
-                        .Set(button => button.Flyout = CreateBrowserImportFlyout(
-                            historyImportBrowserProfiles,
-                            onImportHistory,
-                            onImportBrowserHistory,
-                            onImportBrowserHistoryProfile,
-                            isImportRunning)),
-                    Button("Delete all history", onDeleteAllHistory)
-                        .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
-                        .AutomationName("Delete all history")
-                ).HAlign(HorizontalAlignment.Right)
-            ),
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+            AutoSuggestBox(historyFilter, onHistoryFilterChanged, submitted => onHistoryFilterChanged(submitted))
+                .AutomationName("History Filter")
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0) with
+            {
+                PlaceholderText = "Filter history"
+            },
+            HStack(8,
+                Border(null)
+                    .Flex(grow: 1, basis: 0),
+                Button("Import", () => { })
+                    .IsEnabled(!isImportRunning)
+                    .Set(button => button.Flyout = CreateBrowserImportFlyout(
+                        historyImportBrowserProfiles,
+                        onImportHistory,
+                        onImportBrowserHistory,
+                        onImportBrowserHistoryProfile,
+                        isImportRunning)),
+                Button("Delete all history", onDeleteAllHistory)
+                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                    .AutomationName("Delete all history"))
+                .HAlign(HorizontalAlignment.Stretch));
+
+        var body = isImportRunning
+            ? BuildCommandCenterLoadingState(
+                "Gathering history items...",
+                BuildCommandCenterLoadingRows(4).ToArray())
+            : historyItems.Length == 0
+            ? Border(
+                TextBlock("No history items.")
+                    .Opacity(0.7)
+            )
+            .Padding(8, 4)
+            : Border(
+                VStack(10,
+                    VStack(0, historyItems)
+                        .HAlign(HorizontalAlignment.Stretch),
+                    BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
+                    .HAlign(HorizontalAlignment.Stretch)
+            )
+            .Padding(4, 0)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MinWidth(0);
+
+        return FlexColumn(
+            header,
             string.IsNullOrWhiteSpace(historyImportStatus)
                 ? Border(null).IsVisible(false)
                 : Border(
@@ -2474,26 +2505,20 @@ internal static class BrowserChrome
                 .Padding(8)
                 .CornerRadius(8)
                 .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
-            isImportRunning
-                ? BuildCommandCenterLoadingState(
-                    "Gathering history items…",
-                    BuildCommandCenterLoadingRows(4).ToArray())
-                : historyItems.Length == 0
-                ? Border(
-                    TextBlock("No history items.")
-                        .Opacity(0.7)
-                )
-                .Padding(8, 4)
-                : Border(
-                    VStack(10,
-                        VStack(0, historyItems)
-                            .HAlign(HorizontalAlignment.Stretch),
-                        BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
-                        .HAlign(HorizontalAlignment.Stretch)
-                )
-                .Padding(4, 0)
-                .HAlign(HorizontalAlignment.Stretch)
-                .MinWidth(0));
+            ScrollViewer(body)
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    scrollViewer.VerticalScrollMode = ScrollMode.Enabled;
+                    scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                })
+                .VAlign(VerticalAlignment.Stretch)
+                .MinHeight(0)
+                .Flex(grow: 1, shrink: 1, basis: 0)) with
+        {
+            RowGap = 12
+        };
     }
 
     private static IEnumerable<Element> BuildGroupedHistoryItems(
@@ -2635,18 +2660,19 @@ internal static class BrowserChrome
         var openInNewTabByDefault = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var topItems = mostVisitedItems.ToArray();
         var rows = new List<Element>();
+        var columnCount = isCommandCenterExpanded ? 3 : 2;
 
-        for (var index = 0; index < topItems.Length; index += 2)
+        for (var index = 0; index < topItems.Length; index += columnCount)
         {
             var cards = new List<Element>();
 
-            for (var column = index; column < Math.Min(index + 2, topItems.Length); column++)
+            for (var column = index; column < Math.Min(index + columnCount, topItems.Length); column++)
             {
                 cards.Add(BuildMostVisitedItem(topItems[column], tabCollections, GetCollectionNames(collectionMembership, topItems[column].Url), onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, openInNewTabByDefault)
                     .Flex(grow: 1, basis: 0));
             }
 
-            while (cards.Count < 2)
+            while (cards.Count < columnCount)
             {
                 cards.Add(Border(null)
                     .Width(100)
@@ -2654,10 +2680,10 @@ internal static class BrowserChrome
                     .Flex(grow: 1, basis: 0));
             }
 
-            rows.Add(HStack(8, cards.ToArray()));
+            rows.Add(HStack(isCommandCenterExpanded ? 10 : 8, cards.ToArray()));
         }
 
-        return VStack(16,
+        return VStack(isCommandCenterExpanded ? 18 : 20,
             TextBlock("Most visited")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
             isLoading
@@ -2670,8 +2696,9 @@ internal static class BrowserChrome
                         .Opacity(0.7)
                 )
                 .Padding(8, 4)
-                : VStack(10, rows.ToArray())
-                    .Padding(0, 0, 6, 0)).VAlign(VerticalAlignment.Center);
+                : VStack(isCommandCenterExpanded ? 10 : 14, rows.ToArray())
+                    .Padding(0, 0, isCommandCenterExpanded ? 4 : 8, 0))
+            .VAlign(isCommandCenterExpanded ? VerticalAlignment.Top : VerticalAlignment.Center);
     }
 
     private static Element BuildFavoritesBladeContent(
@@ -2702,34 +2729,53 @@ internal static class BrowserChrome
             favoriteRows.Add(BuildFavoriteTabItem(favoriteItems[index], tabCollections, GetCollectionNames(collectionMembership, favoriteItems[index].Url), onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, openInNewTabByDefault));
         }
 
-        return VStack(10,
+        var header = VStack(10,
             TextBlock("Favorites")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            HStack(14,
-                Border(
-                    AutoSuggestBox(favoritesFilter, onFavoritesFilterChanged, submitted => onFavoritesFilterChanged(submitted))
-                    .AutomationName("Favorites Filter") with
-                    {
-                        PlaceholderText = "Filter favorites"
-                    }
-                )
-                .HAlign(HorizontalAlignment.Left)
-                .Padding(0)
-                .Flex(grow: 1, basis: 0),
-                HStack(8,
-                    Button("Import", () => { })
-                        .IsEnabled(!isImportRunning)
-                        .Set(button => button.Flyout = CreateBrowserImportFlyout(
-                            favoritesImportBrowserProfiles,
-                            onImportFavorites,
-                            onImportBrowserFavorites,
-                            onImportBrowserFavoritesProfile,
-                            isImportRunning)),
-                    Button("Delete all favorites", onDeleteAllFavorites)
-                        .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
-                        .AutomationName("Delete all favorites")
-                ).HAlign(HorizontalAlignment.Right)
-            ),
+            AutoSuggestBox(favoritesFilter, onFavoritesFilterChanged, submitted => onFavoritesFilterChanged(submitted))
+                .AutomationName("Favorites Filter")
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0) with
+            {
+                PlaceholderText = "Filter favorites"
+            },
+            HStack(8,
+                Border(null)
+                    .Flex(grow: 1, basis: 0),
+                Button("Import", () => { })
+                    .IsEnabled(!isImportRunning)
+                    .Set(button => button.Flyout = CreateBrowserImportFlyout(
+                        favoritesImportBrowserProfiles,
+                        onImportFavorites,
+                        onImportBrowserFavorites,
+                        onImportBrowserFavoritesProfile,
+                        isImportRunning)),
+                Button("Delete all favorites", onDeleteAllFavorites)
+                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                    .AutomationName("Delete all favorites"))
+                .HAlign(HorizontalAlignment.Stretch));
+
+        var body = isImportRunning
+            ? BuildCommandCenterLoadingState(
+                "Gathering favorite items...",
+                BuildCommandCenterLoadingRows(4).ToArray())
+            : favoriteItems.Count == 0
+            ? Border(
+                TextBlock("No favorites yet. Star a tab or import bookmarks from another browser.")
+                    .Opacity(0.7)
+                    .TextWrapping(TextWrapping.Wrap)
+            )
+            .Padding(8, 4)
+            : Border(
+                VStack(6, favoriteRows.ToArray())
+                    .HAlign(HorizontalAlignment.Stretch)
+            )
+            .Padding(4, 0)
+            .HAlign(HorizontalAlignment.Stretch)
+            .MinWidth(0);
+
+        return FlexColumn(
+            header,
             string.IsNullOrWhiteSpace(favoritesImportStatus)
                 ? Border(null).IsVisible(false)
                 : Border(
@@ -2739,24 +2785,20 @@ internal static class BrowserChrome
                 .Padding(8)
                 .CornerRadius(8)
                 .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
-            isImportRunning
-                ? BuildCommandCenterLoadingState(
-                    "Gathering favorite items…",
-                    BuildCommandCenterLoadingRows(4).ToArray())
-                : favoriteItems.Count == 0
-                ? Border(
-                    TextBlock("No favorites yet. Star a tab or import bookmarks from another browser.")
-                        .Opacity(0.7)
-                        .TextWrapping(TextWrapping.Wrap)
-                )
-                .Padding(8, 4)
-                : Border(
-                    VStack(6, favoriteRows.ToArray())
-                        .HAlign(HorizontalAlignment.Stretch)
-                )
-                .Padding(4, 0)
-                .HAlign(HorizontalAlignment.Stretch)
-                .MinWidth(0));
+            ScrollViewer(body)
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    scrollViewer.VerticalScrollMode = ScrollMode.Enabled;
+                    scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                })
+                .VAlign(VerticalAlignment.Stretch)
+                .MinHeight(0)
+                .Flex(grow: 1, shrink: 1, basis: 0)) with
+        {
+            RowGap = 12
+        };
     }
 
     private static Element BuildCollectionsBladeContent(
@@ -2788,22 +2830,27 @@ internal static class BrowserChrome
             .Select(item => BuildCollectionItem(item, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem))
             .ToArray();
 
-        return VStack(12,
+        var header = VStack(10,
             TextBlock("Collections")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+            AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
+                .AutomationName("Collection filter or name")
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0) with
+            {
+                PlaceholderText = "Filter or create collection"
+            },
             HStack(8,
-                AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
-                    .AutomationName("Collection name")
-                    .Flex(grow: 1, basis: 0) with
-                {
-                    PlaceholderText = "Collection name"
-                },
+                Border(null)
+                    .Flex(grow: 1, basis: 0),
                 Button("Create", onCreateCollection)
                     .AutomationName("Create collection"),
                 Button("Add current tab", onAddCurrentTabToCollection)
                     .AutomationName("Add current tab to collection"),
                 Button("Use at startup", onSetStartupCollection)
-                    .AutomationName("Set startup collection")),
+                    .AutomationName("Set startup collection")));
+
+        var body = VStack(12,
             collectionButtons.Length == 0
                 ? Border(
                     TextBlock("No collections yet. Enter a name and add the current tab.")
@@ -2815,14 +2862,6 @@ internal static class BrowserChrome
                     ColumnGap = 6,
                     RowGap = 6
                 },
-            string.IsNullOrWhiteSpace(collectionStatus)
-                ? Border(null).IsVisible(false)
-                : Border(
-                    TextBlock(collectionStatus)
-                        .TextWrapping(TextWrapping.Wrap))
-                    .Padding(8)
-                    .CornerRadius(8)
-                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
             itemRows.Length == 0
                 ? Border(
                     TextBlock("No items in this collection yet.")
@@ -2834,6 +2873,31 @@ internal static class BrowserChrome
                     .Padding(4, 0)
                     .HAlign(HorizontalAlignment.Stretch)
                     .MinWidth(0));
+
+        return FlexColumn(
+            header,
+            string.IsNullOrWhiteSpace(collectionStatus)
+                ? Border(null).IsVisible(false)
+                : Border(
+                    TextBlock(collectionStatus)
+                        .TextWrapping(TextWrapping.Wrap))
+                    .Padding(8)
+                    .CornerRadius(8)
+                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
+            ScrollViewer(body)
+                .Set(scrollViewer =>
+                {
+                    scrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+                    scrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    scrollViewer.VerticalScrollMode = ScrollMode.Enabled;
+                    scrollViewer.HorizontalScrollMode = ScrollMode.Disabled;
+                })
+                .VAlign(VerticalAlignment.Stretch)
+                .MinHeight(0)
+                .Flex(grow: 1, shrink: 1, basis: 0)) with
+        {
+            RowGap = 12
+        };
     }
 
     private static ButtonElement BuildCollectionSelectorButton(
@@ -3436,8 +3500,8 @@ internal static class BrowserChrome
     {
         var style = new Style(typeof(ListViewItem));
         var itemMargin = isTabsCollapsed
-            ? new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6)
-            : new Thickness(TabItemHorizontalInset, 6, TabItemHorizontalInset, 6);
+            ? new Thickness(TabItemHorizontalInset, 8, TabItemHorizontalInset, 8)
+            : new Thickness(TabItemHorizontalInset, 8, TabItemHorizontalInset, 8);
 
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
         style.Setters.Add(new Setter(FrameworkElement.MarginProperty, itemMargin));
@@ -3512,9 +3576,17 @@ internal static class BrowserChrome
         Action<string> onOpenTabInNewWindow)
     {
         return Border(
-            BuildTabIcon(tab, isLoading, useTileChrome: false).CornerRadius(10).WithKey("CollapsedTabIcon" + tab.Id)
+            Border(
+                BuildTabIcon(tab, isLoading, useTileChrome: false).WithKey("CollapsedTabIcon" + tab.Id)
+                    .HAlign(HorizontalAlignment.Center)
+                    .VAlign(VerticalAlignment.Center)
+            )
+            .Width(26)
+            .Height(26)
+            .CornerRadius(9)
+            .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0x10, 0xFF, 0xFF, 0xFF)))
                 .HAlign(HorizontalAlignment.Center)
-                .VAlign(VerticalAlignment.Center).CornerRadius(8)
+                .VAlign(VerticalAlignment.Center)
         )
         .Width(CollapsedTabItemHeight)
         .Height(CollapsedTabItemHeight)
@@ -3551,7 +3623,7 @@ internal static class BrowserChrome
                 (FlexRow(
                 BuildTabIcon(tab, isLoading),
                 Border(
-                    VStack(4,
+                    VStack(6,
                         TextBlock(tab.Title)
                             .TextTrimming(TextTrimming.CharacterEllipsis)
                             .TextWrapping(TextWrapping.Wrap)
@@ -3559,7 +3631,7 @@ internal static class BrowserChrome
                             {
                                 textBlock.FontFamily = BrowserConstants.TextFontFamily;
                                 textBlock.MaxLines = collectionNames.Count > 0 ? 1 : 2;
-                                textBlock.MinHeight = collectionNames.Count > 0 ? 20 : 34;
+                                textBlock.MinHeight = collectionNames.Count > 0 ? 22 : 38;
                                 textBlock.MinWidth = 0;
                             }),
                         BuildCollectionBadgeRow(collectionNames, maxBadges: 1))
@@ -3589,16 +3661,16 @@ internal static class BrowserChrome
                             .Flex(shrink: 0)
                     ) with
                     {
-                        RowGap = 4
+                        RowGap = 6
                     })
                     .VAlign(VerticalAlignment.Stretch)
                 )
-                .Width(28)
+                .Width(34)
                 .HAlign(HorizontalAlignment.Right)
                 .Flex(shrink: 0)
                 ) with
                 {
-                    ColumnGap = 10
+                    ColumnGap = 12
                 })
                 .HAlign(HorizontalAlignment.Stretch)
                 .Grid(row: 0, column: 0),
@@ -3618,7 +3690,7 @@ internal static class BrowserChrome
                     .Grid(row: 0, column: 0))
         )
         .Height(ExpandedTabItemHeight)
-        .Padding(14, 12)
+        .Padding(16, 14)
         .CornerRadius(10)
         .Set(border => border.Style = GetGlassCardStyle())
         .HAlign(HorizontalAlignment.Stretch)
@@ -4114,8 +4186,8 @@ internal static class BrowserChrome
         if (!useTileChrome)
         {
             return ProgressRing()
-                .Width(16)
-                .Height(16)
+                .Width(15)
+                .Height(15)
                 .IsActive(true)
                 .IsVisible(true)
                 .HAlign(HorizontalAlignment.Center)
@@ -4145,10 +4217,10 @@ internal static class BrowserChrome
         var iconContent = HasFaviconHost(tab.Url)
             ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
                 .AccessibilityHidden()
-                .Width(useTileChrome ? 16 : 18)
-                .Height(useTileChrome ? 16 : 18)
+                .Width(useTileChrome ? 16 : 17)
+                .Height(useTileChrome ? 16 : 17)
                 .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-            : FluentIcon(BrowserConstants.GlyphGlobe, useTileChrome ? 14 : 16);
+            : FluentIcon(BrowserConstants.GlyphGlobe, useTileChrome ? 14 : 15);
 
         if (!useTileChrome)
         {
@@ -4161,15 +4233,19 @@ internal static class BrowserChrome
         return Border(
             iconContent
         )
-        .Width(22)
-        .Height(22)
-        .CornerRadius(6)
-        .Background(BrowserMaterialTheme.PillFillBrush)
-        .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
-        .Padding(2)
+        .Width(30)
+        .Height(30)
+        .CornerRadius(8)
+        .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0x18, 0xFF, 0xFF, 0xFF)))
+        .Padding(5)
         .HAlign(HorizontalAlignment.Center)
         .VAlign(VerticalAlignment.Center)
-        .Flex(shrink: 0);
+        .Flex(shrink: 0)
+        .Set(border =>
+        {
+            border.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+            border.Translation = new System.Numerics.Vector3(0, 1, 10);
+        });
     }
 
     private static bool HasFaviconHost(string url) =>
