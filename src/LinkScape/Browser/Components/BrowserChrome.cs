@@ -1,6 +1,11 @@
 using LinkScape.Browser;
 using LinkScape.Models;
 using LinkScape.Services;
+using System;
+using System.Threading.Tasks;
+using Windows.Services.Store;
+using Windows.System;
+using WinRT.Interop;
 
 namespace Browser.Components;
 
@@ -132,6 +137,32 @@ internal static class BrowserChrome
                     useGlass: true),
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
                 BuildExtensionsButton(settingsSnapshot, onToggleExtension),
+                // Sponsor / Rate button - launches Store rate & review flow for packaged app
+                IconButton(
+                    BrowserConstants.GlyphHeart,
+                    () => { },
+                    "Sponsor / Rate",
+                    buttonSize: 32,
+                    iconSize: 15,
+                    useGlass: true)
+                     .Set(button =>
+                     {
+                         var flyout = CreateSponsorFlyout(onOpenAddressInNewTab);
+                         button.Flyout = flyout;
+
+                         // Ensure clicking the button opens the flyout
+                         button.Click += (_, _) =>
+                         {
+                             try
+                             {
+                                 flyout.ShowAt(button);
+                             }
+                             catch
+                             {
+                                 // swallow failures (optional: log)
+                             }
+                         };
+                     }),
                 IconButton(
                     BrowserConstants.GlyphSettings,
                     () => { },
@@ -160,6 +191,187 @@ internal static class BrowserChrome
         .Flex(shrink: 0);
     }
 
+    private static async Task LaunchStoreReviewAsync()
+    {
+        try
+        {
+            var context = StoreContext.GetDefault();
+
+            if (MainWindowActivation.Hwnd != nint.Zero)
+            {
+                InitializeWithWindow.Initialize(context, MainWindowActivation.Hwnd);
+                await context.RequestRateAndReviewAppAsync();
+            }
+        }
+        catch
+        {
+            try
+            {
+                var uri = new Uri("ms-windows-store://review/?ProductId=9NLNN451LC7T");
+                await Windows.System.Launcher.LaunchUriAsync(uri);
+            }
+            catch
+            {
+            }
+        }
+    }
+    private static Microsoft.UI.Xaml.Controls.Flyout CreateSponsorFlyout(Action<string> onOpenAddressInNewTab)
+    {
+        const string repositoryUrl = "https://github.com/JohnDizzle/AI-Agent";
+        const string sponsorUrl = "https://paypal.me/johndizzleUS";
+        const string storeUri = "ms-windows-store://review/?ProductId=9NLNN451LC7T";
+
+        // Header + description
+        var header = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "⭐ Support & Rate LinkScape",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 14
+        };
+
+        var description = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "If you like LinkScape, please rate it in the Microsoft Store or sponsor the project.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.78,
+            FontSize = 12
+        };
+
+        // Buttons (created as locals so we don't rely on Children indices)
+        var rateButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "⭐ Rate",
+            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(8),
+            MinWidth = 120,
+            MinHeight = 36,
+            Margin = new Thickness(0, 0, 0, 0)
+        };
+
+        var contactButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "✉️ Contact support",
+            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(8),
+            MinWidth = 160,
+            MinHeight = 36
+        };
+
+        var sponsorButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "💖 Sponsor on PayPal",
+            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(8),
+            MinWidth = 160,
+            MinHeight = 36
+        };
+
+        var viewRepoButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "🐙 View GitHub Repository",
+            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(8),
+            MinWidth = 160,
+            MinHeight = 36
+        };
+
+        // Small labelled sections
+        var sponsorLabel = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "Sponsor",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 13
+        };
+
+        var sponsorDescription = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "Help fund ongoing development and cloud certifications.",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.78,
+            FontSize = 12
+        };
+
+        var openSourceLabel = new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = "Open Source",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 13
+        };
+
+        // Build the layout
+        var horizontalRatePanel = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            Spacing = 8,
+            Children = { rateButton }
+        };
+
+        var content = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Spacing = 10,
+            Width = 320,
+            Children =
+        {
+            header,
+            description,
+            horizontalRatePanel,
+            // divider replacement for Separator
+            new Microsoft.UI.Xaml.Controls.Border
+            {
+                Height = 1,
+                Background = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                Margin = new Thickness(0,6,0,6)
+            },
+            sponsorLabel,
+            sponsorDescription,
+            contactButton,
+            sponsorButton,
+            // divider replacement for Separator
+            new Microsoft.UI.Xaml.Controls.Border
+            {
+                Height = 1,
+                Background = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                Margin = new Thickness(0,6,0,6)
+            },
+            openSourceLabel,
+            viewRepoButton
+        }
+        };
+
+        var flyout = new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedRight,
+            FlyoutPresenterStyle = GetLinkerFlyoutPresenterStyle(),
+            Content = content
+        };
+
+        // Handlers
+        rateButton.Click += async (_, _) =>
+        {
+            await LaunchStoreReviewAsync();
+            flyout.Hide();
+        };
+
+        contactButton.Click += async (_, _) =>
+        {
+            await Windows.System.Launcher.LaunchUriAsync(new ($"mailto:fizzledbydizzle@live.com"));
+            flyout.Hide();
+        };
+
+        sponsorButton.Click += (_, _) =>
+        {
+            onOpenAddressInNewTab(sponsorUrl);
+            flyout.Hide();
+        };
+
+        viewRepoButton.Click += (_, _) =>
+        {
+            onOpenAddressInNewTab(repositoryUrl);
+            flyout.Hide();
+        };
+
+        return flyout;
+    }
     private static Element BuildExtensionsButton(
         IReadOnlyDictionary<string, string> settingsSnapshot,
         Action<string, bool> onToggleExtension)
@@ -4257,7 +4469,23 @@ internal static class BrowserChrome
         return TextBlock(glyph)
             .Set(textBlock =>
             {
-                textBlock.FontFamily = BrowserConstants.IconFontFamily;
+                var useEmojiFont = false;
+                if (!string.IsNullOrEmpty(glyph))
+                {
+                    // common red-heart emoji codepoints or surrogate pairs -> use emoji font
+                    if (glyph.IndexOf('\u2764') >= 0 || glyph.IndexOf('\uFE0F') >= 0)
+                    {
+                        useEmojiFont = true;
+                    }
+                    else if (glyph.Length > 0 && char.IsSurrogate(glyph[0]))
+                    {
+                        useEmojiFont = true;
+                    }
+                }
+
+                textBlock.FontFamily = useEmojiFont
+                    ? new Microsoft.UI.Xaml.Media.FontFamily("Segoe UI Emoji")
+                    : BrowserConstants.IconFontFamily;
                 textBlock.FontSize = size;
             })
             .VAlign(VerticalAlignment.Center)

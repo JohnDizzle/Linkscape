@@ -45,6 +45,9 @@ internal static class BrowserConstants
     public const string GlyphStop = "\uE71A";
     public const string GlyphInfo = "\uE946";
     public const string GlyphWarning = "\uE7BA";
+    // use emoji red heart (U+2764 U+FE0F)
+    // use emoji red heart (U+2764 U+FE0F)
+    public const string GlyphHeart = "\u2764\uFE0F";
     public static FontFamily TextFontFamily => new("Segoe UI");
     public static FontFamily IconFontFamily => new("Segoe Fluent Icons");
     public static Brush LayerFillDefaultBrush => GetBrush("LayerFillColorDefaultBrush");

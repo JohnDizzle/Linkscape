@@ -31,6 +31,16 @@ internal static class MainWindowActivation
     private static bool _isFullScreenPresentationActive;
     private static bool _restoreMaximizedAfterFullScreen;
     private static bool _messengerRegistered;
+    public static nint Hwnd
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _hwnd;
+            }
+        }
+    }
     private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
 
     internal static bool IsFullScreenPresentationActive
