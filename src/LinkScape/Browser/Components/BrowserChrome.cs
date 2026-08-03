@@ -24,7 +24,7 @@ internal static class BrowserChrome
     private const double RailSectionSpacing = 14;
     private const double ExpandedTabItemHeight = 88;
     private const double CollapsedTabItemHeight = 36;
-    private const double CollapsedRailWidth = 64;
+    private const double CollapsedRailWidth = 56;
     private const double TabItemHoverScale = 1.04;
     private const double TabItemHorizontalInset = 6;
     private const double SelectedTabBorderThickness = 1.25;
@@ -3894,8 +3894,7 @@ internal static class BrowserChrome
                     .Width(18)
                     .Height(18)
                     .CornerRadius(9)
-                    .Background(BrowserMaterialTheme.BadgeFillBrush)
-                    .WithBorder(BrowserMaterialTheme.SelectedStrokeBrush)
+                    .Padding(1)
                     .HAlign(HorizontalAlignment.Left)
                     .VAlign(VerticalAlignment.Bottom)
                     .IsVisible(tab.IsSleeping)
