@@ -170,14 +170,18 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true)
-                    .Set(button => button.Flyout = CreateSettingsFlyout(
-                        settingsSnapshot,
-                        onSaveSettingValue,
-                        onOpenAiKeyDialog,
-                        onOpenAddressInNewTab,
-                        onClearCache,
-                        onClearCookies,
-                        onClearBrowsingHistory))
+                    .Set(button =>
+                    {
+                        button.Flyout = CreateSettingsFlyout(
+                            settingsSnapshot,
+                            onSaveSettingValue,
+                            onOpenAiKeyDialog,
+                            onOpenAddressInNewTab,
+                            onClearCache,
+                            onClearCookies,
+                            onClearBrowsingHistory);
+                        AppUpdateService.RegisterFlyoutAnchor(button);
+                    })
             ) with
             {
                 ColumnGap = 6
@@ -1590,6 +1594,7 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var automaticDailyUpdateChecks = GetBooleanSetting(settingsSnapshot, AppUpdateService.AutomaticDailyChecksSettingKey, true);
         var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredBackdropPreset)
             ? NormalizeBackdropGradientPreset(configuredBackdropPreset)
             : BackdropGradientPresetDefault;
@@ -1678,6 +1683,22 @@ internal static class BrowserChrome
                         "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
+                CreateSettingsFlyoutCard(
+                    CreateSettingsFlyoutCardHeader("LinkScape updates", glyph: BrowserConstants.GlyphRefresh),
+                    new TextBlock
+                    {
+                        Text = "Keep LinkScape current through Microsoft Store. Update prompts and progress appear beside Settings in the upper-right corner.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutToggle(
+                        "Check for updates daily",
+                        "When enabled, LinkScape checks once every 24 hours. You choose whether to install an available update now or later.",
+                        automaticDailyUpdateChecks,
+                        nextValue => onSaveSettingValue(AppUpdateService.AutomaticDailyChecksSettingKey, nextValue ? "true" : "false")),
+                    CreateSettingsFlyoutActionButton(
+                        "Check for updates now",
+                        () => _ = AppUpdateService.CheckForUpdatesNowAsync())),
                 CreateSettingsFlyoutCard(
                     CreateSettingsFlyoutCardHeader("Clear browsing data", glyph: BrowserConstants.GlyphTrash),
                     new TextBlock
@@ -3376,6 +3397,7 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var automaticDailyUpdateChecks = GetBooleanSetting(settingsSnapshot, AppUpdateService.AutomaticDailyChecksSettingKey, true);
 
         return VStack(10,
             TextBlock("Settings")
@@ -3424,6 +3446,25 @@ internal static class BrowserChrome
                         "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))
+                )
+            )
+            .Padding(10)
+            .WithBorder(Theme.SurfaceStroke),
+            Border(
+                VStack(10,
+                    TextBlock("LinkScape updates")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock("Keep LinkScape current through Microsoft Store. Update prompts and progress appear beside Settings in the upper-right corner.")
+                        .TextWrapping(TextWrapping.Wrap)
+                        .Opacity(0.76),
+                    BuildBooleanSettingRow(
+                        "Check for updates daily",
+                        "When enabled, LinkScape checks once every 24 hours and lets you install now or later.",
+                        automaticDailyUpdateChecks,
+                        nextValue => onSaveSettingValue(AppUpdateService.AutomaticDailyChecksSettingKey, nextValue ? "true" : "false")),
+                    Button("Check for updates now", () => _ = AppUpdateService.CheckForUpdatesNowAsync())
+                        .CornerRadius(999)
+                        .Padding(12, 6)
                 )
             )
             .Padding(10)

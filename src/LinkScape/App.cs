@@ -85,6 +85,7 @@ class App : Component
     private bool _fullScreenPresentationMessengerRegistered;
     private Action<bool>? _setFullScreenPresentationState;
     private bool _startupSplashDismissScheduled;
+    private bool _dailyUpdateCheckScheduled;
     private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
 
     public override Element Render()
@@ -105,6 +106,7 @@ class App : Component
         RegisterFullScreenPresentationMessenger(isFullScreenPresentationActive.Set);
         RegisterUnhandledExceptionHandler();
         ScheduleStartupSplashDismissal(isShowingStartupSplash.Set);
+        ScheduleDailyUpdateCheck();
 
         try
         {
@@ -247,6 +249,23 @@ class App : Component
         {
             await System.Threading.Tasks.Task.Delay(StartupSplashDurationMilliseconds);
             setIsShowingStartupSplash(false);
+        });
+    }
+
+    private void ScheduleDailyUpdateCheck()
+    {
+        if (_dailyUpdateCheckScheduled)
+        {
+            return;
+        }
+
+        _dailyUpdateCheckScheduled = true;
+
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(StartupSplashDurationMilliseconds + 750);
+            _ = MainWindowActivation.TryEnqueue(
+                () => _ = AppUpdateService.CheckForUpdatesIfDueAsync());
         });
     }
 

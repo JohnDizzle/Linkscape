@@ -307,6 +307,29 @@ internal static class MainWindowActivation
         }
     }
 
+    internal static bool TryEnqueue(Action callback)
+    {
+        Window? window;
+
+        lock (SyncRoot)
+        {
+            window = _window;
+        }
+
+        if (window is null)
+        {
+            return false;
+        }
+
+        if (window.DispatcherQueue.HasThreadAccess)
+        {
+            callback();
+            return true;
+        }
+
+        return window.DispatcherQueue.TryEnqueue(() => callback());
+    }
+
     private static int? ReadIntSetting(string key)
     {
         return int.TryParse(
