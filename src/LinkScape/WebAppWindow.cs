@@ -1,3 +1,4 @@
+using LinkScape.Browser;
 using LinkScape.Models;
 using Microsoft.UI.Windowing;
 using Microsoft.Web.WebView2.Core;
@@ -32,12 +33,13 @@ internal sealed class WebAppWindow : Window
     // (X, Y, Width, Height), and restore them the next time the app opens.
     // Use the default 600x900 bottom-right placement only on first launch.
     private const int InitialWidth = 600;
-    private const int InitialHeight = 960;
+    private const int InitialHeight = 720;
     private const double ChromeHeight = 38;
 
     private readonly InstalledWebApp _app;
     private readonly Microsoft.UI.Xaml.Controls.WebView2 _webView;
     private bool _isClosed;
+    private Microsoft.UI.Xaml.Controls.Button? _backButton;
 
     internal WebAppWindow(InstalledWebApp app)
     {
@@ -86,9 +88,15 @@ internal sealed class WebAppWindow : Window
             {
                 BrowserNoticeService.Show($"The app attempted to open a new window to {args.Uri}, which is outside the app's scope. This action was blocked.");
             }
-
-           
         };
+        core.HistoryChanged += (_, _) =>
+        {
+            _webView.DispatcherQueue.TryEnqueue(() =>
+            {
+                _backButton!.IsEnabled = core.CanGoBack;
+            }); 
+
+        };  
 
         await core.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 window.addEventListener('DOMContentLoaded', function () {
@@ -139,32 +147,41 @@ internal sealed class WebAppWindow : Window
         {
             Text = _app.Name,
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(12, 0, 8, 0),
-            FontSize = 12,
+            FontSize = 14,
             Opacity = 0.82,
             IsHitTestVisible = false
         };
 
         var icon = new Microsoft.UI.Xaml.Controls.Image
         {
-            Width = 16,
-            Height = 16,
+            Width = 32,
+            Height = 32,
             Margin = new Thickness(8, 0, 4, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
             Source = _app.IconUrl is not null
                 ? new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(_app.IconUrl))
                 : null
-        };  
+        };
 
         var reloadButton = new Microsoft.UI.Xaml.Controls.Button
         {
-            Content = "⟳",
-            Width = 24,
-            Height = 24,
+            Content = new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = BrowserConstants.GlyphRefresh,
+                FontSize = 14,
+                FontFamily = BrowserConstants.IconFontFamily,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            },
+            Width = 36,
+            Height = 28,
             Margin = new Thickness(0, 0, 8, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0)
         };
         reloadButton.Click += (_, _) =>
         {
@@ -176,17 +193,27 @@ internal sealed class WebAppWindow : Window
             {
                 BrowserNoticeService.Show($"Could not reload the web view: {ex.Message}");
             }   
-        };  
-        var backButton = new Microsoft.UI.Xaml.Controls.Button
-        {
-            Content = "←",
-            Width = 24,
-            Height = 24,
-            Margin = new Thickness(0, 0, 4, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right
         };
-        backButton.Click += (_, _) =>
+        
+        _backButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = BrowserConstants.GlyphBack,
+                FontSize = 14,
+                FontFamily = BrowserConstants.IconFontFamily,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center
+            },
+            Width = 36,
+            Height = 28,
+            Margin = new Thickness(0, 0, 4, 0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            IsEnabled = false
+        };
+        _backButton.Click += (_, _) =>
         {
             try
             {
@@ -204,7 +231,7 @@ internal sealed class WebAppWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         };
         stackPanel.Children.Add(icon);
-        stackPanel.Children.Add(backButton);
+        stackPanel.Children.Add(_backButton);
         stackPanel.Children.Add(reloadButton);
         stackPanel.Children.Add(title);
 
