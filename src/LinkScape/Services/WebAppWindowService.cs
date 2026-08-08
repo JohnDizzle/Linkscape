@@ -1,6 +1,7 @@
 using LinkScape.Models;
 using Microsoft.Web.WebView2.Core;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace LinkScape.Services;
 
@@ -85,6 +86,7 @@ public static class WebAppWindowService
 
             // Activate before WebView2 initialization so the window has a live XamlRoot/HWND.
             window.Activate();
+      
             await window.InitializeAsync(await BrowserEnvironment.Value);
         }
         catch (Exception ex)

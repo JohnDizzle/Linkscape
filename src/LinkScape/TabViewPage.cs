@@ -1912,10 +1912,12 @@ class TabViewPage : Component
                 BrowserSearchProviders.Providers,
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
-                           
                 ToggleFavorite,
+                // pwa's & apps     
                 selectedInstallableWebApp,
+                isSelectedWebAppInstalled,
                 InstallCurrentWebApp,
+                OpenCurrentWebApp,
                 SaveSettingValue,
                 async (extensionId, enabled) =>
                 {

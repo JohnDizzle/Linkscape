@@ -14,4 +14,6 @@ public sealed record InstalledWebApp
     public string? ThemeColor { get; init; }
     public string DisplayMode { get; init; } = "standalone";
     public DateTimeOffset InstalledAt { get; init; }
+    public bool UseMobileUserAgent { get; init; } = true; 
+
 }

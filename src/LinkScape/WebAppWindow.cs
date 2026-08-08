@@ -1,11 +1,11 @@
 using LinkScape.Models;
 using Microsoft.UI.Windowing;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
+using System.Threading.Tasks;
 using Windows.Graphics;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.Graphics.Gdi;
 
 namespace LinkScape;
 
@@ -13,10 +13,26 @@ namespace LinkScape;
 /// Compact top-level host for a LinkScape-installed web app.
 /// The window deliberately omits normal LinkScape browser chrome.
 /// </summary>
+///
+
 internal sealed class WebAppWindow : Window
 {
-    private const int InitialWidth = 1180;
-    private const int InitialHeight = 760;
+    // TODO: Add a per-installed-app setting for "Use mobile layout".
+    // When enabled, configure the app WebView2 with a mobile User-Agent
+    // before navigation. Keep the normal WebView2 User-Agent as the default.
+       
+    ////[
+       //// UseMobileLayout
+       //// WindowX
+       //// WindowY
+       //// WindowWidth
+       //// WindowHeight]
+        
+    // TODO: Persist each installed app window's last position and size
+    // (X, Y, Width, Height), and restore them the next time the app opens.
+    // Use the default 600x900 bottom-right placement only on first launch.
+    private const int InitialWidth = 600;
+    private const int InitialHeight = 960;
     private const double ChromeHeight = 38;
 
     private readonly InstalledWebApp _app;
@@ -53,16 +69,32 @@ internal sealed class WebAppWindow : Window
         var core = _webView.CoreWebView2
             ?? throw new InvalidOperationException("WebView2 could not be initialized for the installed app window.");
 
+        
+
         core.Settings.IsStatusBarEnabled = false;
 
         core.NewWindowRequested += (_, args) =>
         {
+            args.Handled = true;
+
             if (IsWithinScope(args.Uri, _app.Scope))
             {
-                args.Handled = true;
+                
                 core.Navigate(args.Uri);
             }
+            else
+            {
+                BrowserNoticeService.Show($"The app attempted to open a new window to {args.Uri}, which is outside the app's scope. This action was blocked.");
+            }
+
+           
         };
+
+        await core.AddScriptToExecuteOnDocumentCreatedAsync(@"
+                window.addEventListener('DOMContentLoaded', function () {
+                    document.documentElement.style.zoom = '85%';
+                });
+            ");
 
         core.Navigate(startUri.AbsoluteUri);
     }
@@ -87,7 +119,7 @@ internal sealed class WebAppWindow : Window
 
     private UIElement BuildSurface()
     {
-        var root = new Grid
+        var root = new Microsoft.UI.Xaml.Controls.Grid
         {
             Background = new SolidColorBrush(Microsoft.UI.Colors.Black)
         };
@@ -95,7 +127,7 @@ internal sealed class WebAppWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ChromeHeight) });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var chrome = new Grid
+        var chrome = new Microsoft.UI.Xaml.Controls.Grid
         {
             Height = ChromeHeight,
             Background = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 24, 24, 24))
@@ -113,31 +145,14 @@ internal sealed class WebAppWindow : Window
             IsHitTestVisible = false
         };
 
-        var closeButton = new Button
-        {
-            Content = "\uE8BB",
-            FontFamily = new FontFamily("Segoe Fluent Icons"),
-            FontSize = 12,
-            Width = 46,
-            Height = ChromeHeight,
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(0),
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Stretch,
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0)
-        };
-        closeButton.Click += (_, _) => Close();
-
+        
         chrome.Children.Add(title);
-        Grid.SetColumn(title, 0);
-        chrome.Children.Add(closeButton);
-        Grid.SetColumn(closeButton, 1);
-
+        Microsoft.UI.Xaml.Controls.Grid.SetRow(title, 0);
+       
         root.Children.Add(chrome);
-        Grid.SetRow(chrome, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetRow(chrome, 0);
         root.Children.Add(_webView);
-        Grid.SetRow(_webView, 1);
+        Microsoft.UI.Xaml.Controls.Grid.SetRow(_webView, 1);
 
         // The native title bar is removed below. SetTitleBar keeps this strip as the
         // draggable title region while the close button remains interactive.
@@ -158,14 +173,127 @@ internal sealed class WebAppWindow : Window
                 presenter.IsMinimizable = false;
             }
 
-            AppWindow.Resize(new SizeInt32(InitialWidth, InitialHeight));
+            var width = InitialWidth;
+            var height = InitialHeight;
+
+            AppWindow.Resize(
+                new Windows.Graphics.SizeInt32(
+                    width,
+                    height));
+
+            MoveToBottomRight(
+                width,
+                height);
         }
-        catch
+        catch(Exception ex)
         {
-            // The window remains usable even if presenter customization is unavailable.
+            BrowserNoticeService.Show($"Could not position the app window: {ex.Message}");
+        }
+        // Keep the window usable even if positioning fails.
+    }
+    private void MoveToBottomRight(
+    int width,
+    int height)
+    {
+        try
+        {
+            var displayArea =
+                Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(
+                    AppWindow.Id,
+                    Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+
+            if (displayArea is null)
+            {
+                return;
+            }
+
+            var workArea =
+                displayArea.WorkArea;
+
+            const int margin = 12;
+
+            var x =
+                workArea.X +
+                workArea.Width -
+                width -
+                margin;
+
+            var y =
+                workArea.Y +
+                workArea.Height -
+                height -
+                margin;
+
+            AppWindow.MoveAndResize(
+                new Windows.Graphics.RectInt32(
+                    x,
+                    y,
+                    width,
+                    height));
+        }
+        catch (Exception ex)
+        {
+            BrowserNoticeService.Show($"Could not position the app window: {ex.Message}");
         }
     }
 
+    /*private void MoveToBottomRightWin32(
+    int width,
+    int height)
+{
+    var hwnd =
+        WinRT.Interop.WindowNative.GetWindowHandle(this);
+
+    if (hwnd == 0)
+    {
+        return;
+    }
+
+    var monitor =
+        PInvoke.MonitorFromWindow(
+            new HWND(hwnd),
+            MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+
+    var info =
+        new MONITORINFO
+        {
+            cbSize =
+                (uint)System.Runtime.InteropServices.Marshal
+                    .SizeOf<MONITORINFO>()
+        };
+
+    if (!PInvoke.GetMonitorInfo(
+            monitor,
+            ref info))
+    {
+        return;
+    }
+
+    const int margin = 12;
+
+    var work =
+        info.rcWork;
+
+    var x =
+        work.right -
+        width -
+        margin;
+
+    var y =
+        work.bottom -
+        height -
+        margin;
+
+    PInvoke.SetWindowPos(
+        new HWND(hwnd),
+        HWND.Null,
+        x,
+        y,
+        width,
+        height,
+        SET_WINDOW_POS_FLAGS.SWP_NOZORDER |
+        SET_WINDOW_POS_FLAGS.SWP_NOACTIVATE);
+}*/
     private static bool IsWithinScope(string? rawUrl, string scope)
     {
         if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var target) ||

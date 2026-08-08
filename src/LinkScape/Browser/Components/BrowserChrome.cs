@@ -87,7 +87,9 @@ internal static class BrowserChrome
         Action onToggleFavorite,
         // PWA / Web App
         InstallableWebApp? installableWebApp,
-        Action OnInstallWebApp,
+        bool isWebAppInstalled,
+        Action onInstallWebApp,
+        Action onOpenWebApp, 
         Action<string, string> onSaveSettingValue,
         Action<string, bool> onToggleExtension,
         Action onClearCache,
@@ -134,14 +136,22 @@ internal static class BrowserChrome
                     useGlass: true),
                 // PWA / Web App install button
                 installableWebApp is not null
+                ? isWebAppInstalled
                     ? IconButton(
+                        "\uE8A7", // temporary app/open glyph
+                        onOpenWebApp,
+                        $"Open {installableWebApp.Name} as app",
+                        buttonSize: 32,
+                        iconSize: 15,
+                        useGlass: true)
+                    : IconButton(
                         "\uE896",
-                        OnInstallWebApp,
+                        onInstallWebApp,
                         $"Install {installableWebApp.Name}",
                         buttonSize: 32,
                         iconSize: 15,
                         useGlass: true)
-                    : null,
+                : null,
                 IconButton(
                     BrowserConstants.GlyphNewWindow,
                     onOpenSelectedTabInNewWindow,
