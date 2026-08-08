@@ -162,6 +162,13 @@ class TabViewPage : Component
             selectedTag,
             out var selectedInstallableWebApp);
 
+        var selectedInstalledWebApp =
+    WebAppStateService.FindInstalled(
+        selectedInstallableWebApp);
+
+        var isSelectedWebAppInstalled =
+            selectedInstalledWebApp is not null;
+
         RegisterBrowserNoticeListener(browserNotice.Set);
         RegisterFullScreenPresentationMessenger(isFullScreenPresentationActive.Set);
 
@@ -197,6 +204,15 @@ class TabViewPage : Component
 
             transition();
         }
+        void OpenCurrentWebApp()
+        {
+            if (!WebAppStateService.TryOpenInstalled(
+                    selectedInstallableWebApp))
+            {
+                BrowserNoticeService.Show(
+                    "This web app is not installed.");
+            }
+        }
         void InstallCurrentWebApp()
         {
             if (selectedInstallableWebApp is null)
@@ -230,7 +246,7 @@ class TabViewPage : Component
 
                 next.Remove(selectedTag);
 
-                installableWebApps.Set(next);
+             
             }
             catch (Exception ex)
             {
