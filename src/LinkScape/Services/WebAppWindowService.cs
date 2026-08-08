@@ -1,21 +1,15 @@
 using LinkScape.Models;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using System.IO;
 
 namespace LinkScape.Services;
 
 /// <summary>
-/// Opens LinkScape-managed installed web apps in their own WinUI 3 window.
-/// The app WebView2 uses the same LinkScape WebView2 user-data folder so
-/// cookies, service workers, local storage, IndexedDB, and sign-in state are shared.
+/// Launches LinkScape-managed installed web apps in separate compact windows.
+/// Window lifetime is owned by AppWindowRegistry rather than by this service.
 /// </summary>
 public static class WebAppWindowService
 {
-    private static readonly Dictionary<string, Window> OpenWindows =
-        new(StringComparer.Ordinal);
-
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
         new(CreateBrowserEnvironmentAsync);
 
@@ -47,117 +41,73 @@ public static class WebAppWindowService
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        if (OpenWindows.TryGetValue(app.Id, out var existingWindow))
+        var key = GetWindowKey(app.Id);
+        if (AppWindowRegistry.TryGet(key, out var existingWindow) && existingWindow is not null)
         {
             existingWindow.Activate();
             return;
         }
 
-        _ = OpenCoreAsync(app);
+        _ = OpenCoreAsync(app, key);
     }
 
-    private static async Task OpenCoreAsync(InstalledWebApp app)
+    public static bool TryOpenById(string appId)
     {
-        if (!Uri.TryCreate(app.StartUrl, UriKind.Absolute, out var startUri) ||
-            startUri.Scheme is not ("http" or "https"))
+        if (string.IsNullOrWhiteSpace(appId))
         {
-            BrowserNoticeService.Show($"Could not open {app.Name}: the saved start URL is invalid.");
-            return;
+            return false;
         }
+
+        var app = InstalledWebAppService.Get(appId);
+        if (app is null)
+        {
+            return false;
+        }
+
+        Open(app);
+        return true;
+    }
+
+    private static async Task OpenCoreAsync(InstalledWebApp app, string key)
+    {
+        WebAppWindow? window = null;
 
         try
         {
-            var window = new Window
-            {
-                Title = app.Name
-            };
-
-            var webView = new Microsoft.UI.Xaml.Controls.WebView2
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch
-            };
-
-            var root = new Grid();
-            root.Children.Add(webView);
-            window.Content = root;
-
-            OpenWindows[app.Id] = window;
+            window = new WebAppWindow(app);
+            AppWindowRegistry.Register(key, window);
 
             window.Closed += (_, _) =>
             {
-                OpenWindows.Remove(app.Id);
+                AppWindowRegistry.Unregister(key, window);
+                window.DisposeWebView();
+            };
+
+            // Activate before WebView2 initialization so the window has a live XamlRoot/HWND.
+            window.Activate();
+            await window.InitializeAsync(await BrowserEnvironment.Value);
+        }
+        catch (Exception ex)
+        {
+            if (window is not null)
+            {
+                AppWindowRegistry.Unregister(key, window);
+                window.DisposeWebView();
 
                 try
                 {
-                    webView.Close();
+                    window.Close();
                 }
                 catch
                 {
                 }
-            };
-
-            // Show the native window first so WebView2 has a live visual tree/XamlRoot.
-            window.Activate();
-
-            try
-            {
-                window.AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 820));
-            }
-            catch
-            {
-                // Window sizing is best effort and should not block app launch.
             }
 
-            await webView.EnsureCoreWebView2Async(await BrowserEnvironment.Value);
-
-            var core = webView.CoreWebView2;
-            if (core is null)
-            {
-                throw new InvalidOperationException("WebView2 could not be initialized for the installed app window.");
-            }
-
-            core.Settings.IsStatusBarEnabled = false;
-
-            // Keep target=_blank/window.open links inside the app when they remain in scope.
-            // Links outside the installed app's scope are handed back to the normal browser shell later.
-            core.NewWindowRequested += (_, args) =>
-            {
-                if (IsWithinScope(args.Uri, app.Scope))
-                {
-                    args.Handled = true;
-                    core.Navigate(args.Uri);
-                }
-            };
-
-            core.Navigate(startUri.AbsoluteUri);
-        }
-        catch (Exception ex)
-        {
-            OpenWindows.Remove(app.Id);
             BrowserNoticeService.Show($"Could not open {app.Name}: {ex.Message}");
         }
     }
 
-    private static bool IsWithinScope(string? rawUrl, string scope)
-    {
-        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var target) ||
-            !Uri.TryCreate(scope, UriKind.Absolute, out var scopeUri))
-        {
-            return false;
-        }
-
-        if (!string.Equals(target.Scheme, scopeUri.Scheme, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(target.Host, scopeUri.Host, StringComparison.OrdinalIgnoreCase) ||
-            target.Port != scopeUri.Port)
-        {
-            return false;
-        }
-
-        return target.AbsolutePath.StartsWith(
-            scopeUri.AbsolutePath,
-            StringComparison.OrdinalIgnoreCase);
-    }
+    private static string GetWindowKey(string appId) => $"webapp:{appId}";
 
     private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
     {
