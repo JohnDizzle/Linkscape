@@ -31,7 +31,8 @@ internal static class BrowserChrome
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
     
-    public static double CollapsedRailWidthDefault { get; private set; } = 400; 
+    public static double CollapsedRailWidthDefault { get; private set; } = 400;
+
 
     internal sealed class SettingGridItem : IReactorKeyed
     {
@@ -84,6 +85,9 @@ internal static class BrowserChrome
         Action<string> onSelectSearchProvider,
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
+        // PWA / Web App
+        InstallableWebApp? installableWebApp,
+        Action onInstallWebApp,
         Action<string, string> onSaveSettingValue,
         Action<string, bool> onToggleExtension,
         Action onClearCache,
@@ -128,6 +132,16 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),
+                // PWA / Web App install button
+                installableWebApp is not null
+                    ? IconButton(
+                        "\uE896",
+                        onInstallWebApp,
+                        $"Install {installableWebApp.Name}",
+                        buttonSize: 32,
+                        iconSize: 15,
+                        useGlass: true)
+                    : null,
                 IconButton(
                     BrowserConstants.GlyphNewWindow,
                     onOpenSelectedTabInNewWindow,

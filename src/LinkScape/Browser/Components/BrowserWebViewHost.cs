@@ -78,7 +78,8 @@ internal sealed record BrowserWebViewHostProps(
     Action<bool, bool> SetNavAvailability,
     Action<string> SetAddressFromCore,
     Action<bool> SetLoadingStateFromCore,
-    Action RefreshHistoryFromCore);
+    Action RefreshHistoryFromCore, 
+    Action<string, InstallableWebApp?> SetInstallableWebAppFromCore);
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 {
@@ -425,6 +426,9 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             webView.NavigationStarting += (_, args) =>
             {
                 BrowserNoticeService.Clear();
+                
+                // Clear the installable web app state when navigating to a new page.
+                Props.SetInstallableWebAppFromCore(tab.Id, null);
 
                 if (BrowserUrl.IsBlockedInternalUrl(args.Uri))
                 {
@@ -439,10 +443,25 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     Props.SetLoadingStateFromCore(true);
                     Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
                 }
+                
+                
             };
 
             webView.NavigationCompleted += async (_, args) =>
             {
+
+                try
+                {
+                    var app = await WebAppManifestService.DetectAsync(core);
+
+                    Props.SetInstallableWebAppFromCore(
+                        tab.Id,
+                        app);
+                }
+                catch (Exception)
+                {
+                    //sallow
+                }
                 if (!args.IsSuccess && IsNoNetworkFailure(args.WebErrorStatus))
                 {
                     BrowserNoticeService.Show("No network connection. Check your internet access and try again.");
