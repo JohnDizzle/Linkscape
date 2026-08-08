@@ -157,12 +157,55 @@ internal sealed class WebAppWindow : Window
                 : null
         };  
 
+        var reloadButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "⟳",
+            Width = 24,
+            Height = 24,
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        reloadButton.Click += (_, _) =>
+        {
+            try
+            {
+                _webView.Reload();
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not reload the web view: {ex.Message}");
+            }   
+        };  
+        var backButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "←",
+            Width = 24,
+            Height = 24,
+            Margin = new Thickness(0, 0, 4, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        backButton.Click += (_, _) =>
+        {
+            try
+            {
+                _webView.GoBack();
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not navigate back: {ex.Message}");
+            }
+        };
+
         var stackPanel = new Microsoft.UI.Xaml.Controls.StackPanel
         {
             Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center
         };
         stackPanel.Children.Add(icon);
+        stackPanel.Children.Add(backButton);
+        stackPanel.Children.Add(reloadButton);
         stackPanel.Children.Add(title);
 
         chrome.Children.Add(stackPanel);
