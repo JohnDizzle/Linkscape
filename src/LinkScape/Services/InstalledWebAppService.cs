@@ -41,6 +41,7 @@ public static class InstalledWebAppService
     public static InstalledWebApp Install(InstallableWebApp candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
+        EnsureDatabase();
 
         var startUri = new Uri(candidate.StartUrl);
         var app = new InstalledWebApp
@@ -90,6 +91,8 @@ public static class InstalledWebAppService
 
     public static bool IsInstalled(string manifestUrl)
     {
+        EnsureDatabase();
+
         using var connection = new SqliteConnection(DbConnectionString);
         connection.Open();
 
@@ -108,6 +111,8 @@ public static class InstalledWebAppService
 
     public static InstalledWebApp[] GetAll()
     {
+        EnsureDatabase();
+
         using var connection = new SqliteConnection(DbConnectionString);
         connection.Open();
 
@@ -131,6 +136,8 @@ public static class InstalledWebAppService
 
     public static InstalledWebApp? Get(string id)
     {
+        EnsureDatabase();
+
         using var connection = new SqliteConnection(DbConnectionString);
         connection.Open();
 
@@ -150,6 +157,8 @@ public static class InstalledWebAppService
 
     public static bool Uninstall(string id)
     {
+        EnsureDatabase();
+
         using var connection = new SqliteConnection(DbConnectionString);
         connection.Open();
 
