@@ -32,7 +32,7 @@ internal sealed class WebAppWindow : Window
     // TODO: Persist each installed app window's last position and size
     // (X, Y, Width, Height), and restore them the next time the app opens.
     // Use the default 600x900 bottom-right placement only on first launch.
-    private const int InitialWidth = 600;
+    private const int InitialWidth = 526;
     private const int InitialHeight = 720;
     private const double ChromeHeight = 38;
 
@@ -97,14 +97,16 @@ internal sealed class WebAppWindow : Window
             }); 
 
         };  
-
+        
+        core.Navigate(startUri.AbsoluteUri);
+        
         await core.AddScriptToExecuteOnDocumentCreatedAsync(@"
                 window.addEventListener('DOMContentLoaded', function () {
                     document.documentElement.style.zoom = '85%';
                 });
             ");
 
-        core.Navigate(startUri.AbsoluteUri);
+       
     }
 
     internal void DisposeWebView()
@@ -258,8 +260,6 @@ internal sealed class WebAppWindow : Window
             if (AppWindow.Presenter is OverlappedPresenter presenter)
             {
                 presenter.IsResizable = true;
-                presenter.IsMaximizable = false;
-                presenter.IsMinimizable = false;
             }
 
             var width = InitialWidth;
