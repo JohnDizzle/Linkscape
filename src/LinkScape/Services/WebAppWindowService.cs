@@ -88,6 +88,9 @@ public static class WebAppWindowService
             window.Activate();
       
             await window.InitializeAsync(await BrowserEnvironment.Value);
+
+            await Task.Delay(500); // Give the window a moment to render before showing it.
+
         }
         catch (Exception ex)
         {

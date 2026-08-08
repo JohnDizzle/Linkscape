@@ -150,7 +150,7 @@ internal sealed class WebAppWindow : Window
             Text = _app.Name,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(12, 0, 8, 0),
+            Margin = new Thickness(24, 0, 12, 0),
             FontSize = 14,
             Opacity = 0.82,
             IsHitTestVisible = false
