@@ -145,10 +145,29 @@ internal sealed class WebAppWindow : Window
             IsHitTestVisible = false
         };
 
+        var icon = new Microsoft.UI.Xaml.Controls.Image
+        {
+            Width = 16,
+            Height = 16,
+            Margin = new Thickness(8, 0, 4, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Source = _app.IconUrl is not null
+                ? new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(_app.IconUrl))
+                : null
+        };  
+
+        var stackPanel = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        stackPanel.Children.Add(icon);
+        stackPanel.Children.Add(title);
+
+        chrome.Children.Add(stackPanel);
+        Microsoft.UI.Xaml.Controls.Grid.SetRow(stackPanel, 0);
         
-        chrome.Children.Add(title);
-        Microsoft.UI.Xaml.Controls.Grid.SetRow(title, 0);
-       
         root.Children.Add(chrome);
         Microsoft.UI.Xaml.Controls.Grid.SetRow(chrome, 0);
         root.Children.Add(_webView);
