@@ -115,6 +115,9 @@ class TabViewPage : Component
         var canGoBack = session.Value.CanGoBack;
         var canGoForward = session.Value.CanGoForward;
         var isLoading = session.Value.IsLoading;
+        var installableWebApps = UseState<IReadOnlyDictionary<string, InstallableWebApp>>(
+        new Dictionary<string, InstallableWebApp>(),
+        threadSafe: true);
         var historyFilter = UseState(string.Empty);
         var historyLimit = UseState(50);
         var recentHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
@@ -153,6 +156,19 @@ class TabViewPage : Component
         var isChatBladeOpen = session.Value.IsChatOpen;
         var configuredHomeUrl = GetConfiguredHomeUrl(settingsSnapshot.Value);
 
+
+        // value of selectedInstallableWebApp will be null if the selectedTag does not match any installable web app
+        installableWebApps.Value.TryGetValue(
+            selectedTag,
+            out var selectedInstallableWebApp);
+
+        var selectedInstalledWebApp =
+    WebAppStateService.FindInstalled(
+        selectedInstallableWebApp);
+
+        var isSelectedWebAppInstalled =
+            selectedInstalledWebApp is not null;
+
         RegisterBrowserNoticeListener(browserNotice.Set);
         RegisterFullScreenPresentationMessenger(isFullScreenPresentationActive.Set);
 
@@ -165,6 +181,8 @@ class TabViewPage : Component
                 favoritesImportBrowserProfiles.Set(GetFavoritesImportBrowserProfiles());
             });
         }
+
+
 
         #region Event Handlers
 
@@ -186,7 +204,76 @@ class TabViewPage : Component
 
             transition();
         }
-        
+        void OpenCurrentWebApp()
+        {
+            if (!WebAppStateService.TryOpenInstalled(
+                    selectedInstallableWebApp))
+            {
+                BrowserNoticeService.Show(
+                    "This web app is not installed.");
+            }
+        }
+        void InstallCurrentWebApp()
+        {
+            if (selectedInstallableWebApp is null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (InstalledWebAppService.IsInstalled(
+                        selectedInstallableWebApp.ManifestUrl))
+                {
+                    BrowserNoticeService.Show(
+                        $"{selectedInstallableWebApp.Name} is already installed.",
+                        "info");
+
+                    return;
+                }
+
+                var installed =
+                    InstalledWebAppService.Install(
+                        selectedInstallableWebApp);
+
+                BrowserNoticeService.Show(
+                    $"{installed.Name} was installed.",
+                    "success");
+
+                var next =
+                    new Dictionary<string, InstallableWebApp>(
+                        installableWebApps.Value);
+
+                next.Remove(selectedTag);
+
+             
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show(
+                    $"Could not install this app: {ex.Message}");
+            }
+        }
+        void SetInstallableWebAppFromCore(
+            string tabId,
+            InstallableWebApp? app)
+        {
+            var next =
+                new Dictionary<string, InstallableWebApp>(
+                    installableWebApps.Value);
+
+            if (app is null)
+            {
+                next.Remove(tabId);
+            }
+            else
+            {
+                next[tabId] = app;
+            }
+
+            installableWebApps.Set(next);
+        }
+
         void MarkTabsChanged(BrowserTab[] nextTabs)
         {
             _latestTabs = nextTabs;
@@ -1826,6 +1913,11 @@ class TabViewPage : Component
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
                 ToggleFavorite,
+                // pwa's & apps     
+                selectedInstallableWebApp,
+                isSelectedWebAppInstalled,
+                InstallCurrentWebApp,
+                OpenCurrentWebApp,
                 SaveSettingValue,
                 async (extensionId, enabled) =>
                 {
@@ -1939,10 +2031,13 @@ class TabViewPage : Component
                 url => OpenUriInNewTab(url),
                 SetTitleFromCore,
                 SetNavAvailabilityIfNeeded,
-                nextAddress => _browserTitleBarController.SetAddressText(nextAddress, preserveUserEdit: true),
+                nextAddress => _browserTitleBarController.SetAddressText(
+                    nextAddress,
+                    preserveUserEdit: true),
                 SetLoadingIfNeeded,
-                () => RefreshHistoryState()));
-
+                () => RefreshHistoryState(),
+                SetInstallableWebAppFromCore
+            ));
         var browserSurfaceInset = isFullScreenPresentationActive.Value
             ? 0
             : isTabsCollapsed

@@ -15,6 +15,7 @@ LinkScape Browser may store the following information on your device to provide 
 - Browser settings and preferences
 - Home page configuration
 - Imported favorites and history from supported browsers
+- Installed web app information, such as an app name, start address, web manifest address, scope, display preferences, and app icon information
 
 This information is stored locally on your device and is used solely to support browser features.
 
@@ -29,6 +30,16 @@ The application itself does not collect personally identifiable information unle
 When visiting websites, those websites may collect information according to their own privacy policies. Search providers selected by the user may also collect search and usage information in accordance with their respective privacy practices.
 
 Users should review the privacy policies of websites and search providers they choose to use.
+
+## Installed Web Apps and Third-Party Apps
+
+LinkScape may allow users to install or save supported websites and Progressive Web Apps (PWAs) as web apps. To provide this feature, LinkScape may read a website's web app manifest and store the app metadata needed to present and launch that app, including its name, start URL, scope, display mode, manifest URL, and icon information.
+
+Installed web app metadata is stored locally by LinkScape. Installing a web app does not cause LinkScape to take ownership of, operate, or control the third-party website or service.
+
+When an installed web app is opened, it may communicate with its website and other third-party services in the same way that web content normally does. Those websites and services may collect information according to their own privacy policies and terms. LinkScape does not control those third-party privacy practices.
+
+Removing an installed web app from LinkScape removes the locally stored LinkScape app registration. Website data such as cookies, cached content, site storage, permissions, or account information may remain in the browser profile until the user clears the applicable browsing data.
 
 ## Browser Import Features
 
@@ -46,9 +57,11 @@ Users may:
 - Delete browsing history
 - Remove imported data
 - Manage or delete favorites
+- Remove installed web apps
+- Clear applicable browsing data
 - Change browser settings at any time
 
-These actions can be performed through the application's user interface.
+These actions can be performed through the application's user interface as the corresponding features are available.
 
 ## Security
 
