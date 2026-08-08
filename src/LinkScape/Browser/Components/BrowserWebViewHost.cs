@@ -78,7 +78,7 @@ internal sealed record BrowserWebViewHostProps(
     Action<bool, bool> SetNavAvailability,
     Action<string> SetAddressFromCore,
     Action<bool> SetLoadingStateFromCore,
-    Action RefreshHistoryFromCore, 
+    Action RefreshHistoryFromCore,
     Action<string, InstallableWebApp?> SetInstallableWebAppFromCore);
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>

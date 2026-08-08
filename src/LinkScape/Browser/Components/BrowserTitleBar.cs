@@ -39,6 +39,9 @@ internal sealed record BrowserTitleBarProps(
     Action<string> OnSelectSearchProvider,
     Action OnSetCurrentPageAsHome,
     Action OnToggleFavorite,
+    // Pwa and apps. 
+    InstallableWebApp? InstallableWebApp,
+    Action OnInstallWebApp,
     Action<string, string> OnSaveSettingValue,
     Action<string, bool> OnToggleExtension,
     Action OnClearCache,
@@ -98,6 +101,8 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnSelectSearchProvider,
             Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
+            Props.InstallableWebApp,
+            Props.OnInstallWebApp,
             Props.OnSaveSettingValue,
             Props.OnToggleExtension,
             Props.OnClearCache,

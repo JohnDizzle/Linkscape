@@ -87,7 +87,7 @@ internal static class BrowserChrome
         Action onToggleFavorite,
         // PWA / Web App
         InstallableWebApp? installableWebApp,
-        Action onInstallWebApp,
+        Action OnInstallWebApp,
         Action<string, string> onSaveSettingValue,
         Action<string, bool> onToggleExtension,
         Action onClearCache,
@@ -136,7 +136,7 @@ internal static class BrowserChrome
                 installableWebApp is not null
                     ? IconButton(
                         "\uE896",
-                        onInstallWebApp,
+                        OnInstallWebApp,
                         $"Install {installableWebApp.Name}",
                         buttonSize: 32,
                         iconSize: 15,

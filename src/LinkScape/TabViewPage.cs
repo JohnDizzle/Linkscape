@@ -1896,7 +1896,10 @@ class TabViewPage : Component
                 BrowserSearchProviders.Providers,
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
+                           
                 ToggleFavorite,
+                selectedInstallableWebApp,
+                InstallCurrentWebApp,
                 SaveSettingValue,
                 async (extensionId, enabled) =>
                 {
@@ -2010,10 +2013,13 @@ class TabViewPage : Component
                 url => OpenUriInNewTab(url),
                 SetTitleFromCore,
                 SetNavAvailabilityIfNeeded,
-                nextAddress => _browserTitleBarController.SetAddressText(nextAddress, preserveUserEdit: true),
+                nextAddress => _browserTitleBarController.SetAddressText(
+                    nextAddress,
+                    preserveUserEdit: true),
                 SetLoadingIfNeeded,
-                () => RefreshHistoryState()));
-
+                () => RefreshHistoryState(),
+                SetInstallableWebAppFromCore
+            ));
         var browserSurfaceInset = isFullScreenPresentationActive.Value
             ? 0
             : isTabsCollapsed

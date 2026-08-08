@@ -2,6 +2,7 @@ using LinkScape.Models;
 using Microsoft.Web.WebView2.Core;
 using System.Net.Http;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace LinkScape.Services;
 
