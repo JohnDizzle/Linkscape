@@ -80,8 +80,7 @@ class TabViewPage : Component
         }
         else
         {
-            var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
-            var selectedTab = startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId) ?? startupTabs[0];
+            var selectedTab = ResolveStartupSelectedTab(startupTabs);
             startupSelectedTabId = selectedTab.Id;
         }
 
@@ -213,6 +212,96 @@ class TabViewPage : Component
                     "This web app is not installed.");
             }
         }
+
+        string? GetTabInstalledWebAppName(BrowserTab tab)
+        {
+            return FindInstalledWebAppForTab(tab)?.Name;
+        }
+
+        string? GetTabInstallableWebAppName(BrowserTab tab)
+        {
+            return installableWebApps.Value.TryGetValue(tab.Id, out var app)
+                ? app.Name
+                : null;
+        }
+
+        void OpenTabAsWebApp(string tabId)
+        {
+            var tab = tabs.FirstOrDefault(candidate => string.Equals(candidate.Id, tabId, StringComparison.Ordinal));
+            if (tab is null)
+            {
+                return;
+            }
+
+            var installed = FindInstalledWebAppForTab(tab);
+            if (installed is null)
+            {
+                BrowserNoticeService.Show("This tab does not match an installed app.");
+                return;
+            }
+
+            WebAppWindowService.Open(installed);
+        }
+
+        void InstallTabWebApp(string tabId)
+        {
+            if (!installableWebApps.Value.TryGetValue(tabId, out var app))
+            {
+                BrowserNoticeService.Show("This tab is not installable as an app.");
+                return;
+            }
+
+            try
+            {
+                if (InstalledWebAppService.IsInstalled(app.ManifestUrl))
+                {
+                    BrowserNoticeService.Show($"{app.Name} is already installed.", "info");
+                    return;
+                }
+
+                var installed = InstalledWebAppService.Install(app);
+                BrowserNoticeService.Show($"{installed.Name} was installed.", "success");
+
+                var next = new Dictionary<string, InstallableWebApp>(installableWebApps.Value);
+                next.Remove(tabId);
+                installableWebApps.Set(next);
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not install this app: {ex.Message}");
+            }
+        }
+
+        InstalledWebApp? FindInstalledWebAppForTab(BrowserTab tab)
+        {
+            if (installableWebApps.Value.TryGetValue(tab.Id, out var installableApp))
+            {
+                var installed = WebAppStateService.FindInstalled(installableApp);
+                if (installed is not null)
+                {
+                    return installed;
+                }
+            }
+
+            return InstalledWebAppService
+                .GetAll()
+                .FirstOrDefault(app => IsUrlWithinAppScope(tab.Url, app));
+        }
+
+        static bool IsUrlWithinAppScope(string? rawUrl, InstalledWebApp app)
+        {
+            if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var tabUri) ||
+                !Uri.TryCreate(app.Scope, UriKind.Absolute, out var scopeUri))
+            {
+                return false;
+            }
+
+            return string.Equals(tabUri.Scheme, scopeUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(tabUri.Host, scopeUri.Host, StringComparison.OrdinalIgnoreCase) &&
+                tabUri.Port == scopeUri.Port &&
+                tabUri.AbsolutePath.StartsWith(scopeUri.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+        }
+
         void InstallCurrentWebApp()
         {
             if (selectedInstallableWebApp is null)
@@ -1959,6 +2048,10 @@ class TabViewPage : Component
                 CloseTab,
                 ReloadTab,
                 OpenTabInNewWindow,
+                GetTabInstalledWebAppName,
+                GetTabInstallableWebAppName,
+                OpenTabAsWebApp,
+                InstallTabWebApp,
                 activeCommandCenterSection,
                 isCommandCenterExpanded,
                 mostVisitedHistory.Value,
@@ -2326,6 +2419,41 @@ class TabViewPage : Component
         }
 
         return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+    }
+
+    private static BrowserTab ResolveStartupSelectedTab(BrowserTab[] startupTabs)
+    {
+        if (startupTabs.Length == 0)
+        {
+            return BrowserTab.CreateHome(GetConfiguredHomeUrl());
+        }
+
+        try
+        {
+            var persistedSelectedTabId = TabPersistenceService.LoadTabs<string>("selectedTabId");
+            var selectedById = startupTabs.FirstOrDefault(tab => tab.Id == persistedSelectedTabId);
+            if (selectedById is not null)
+            {
+                return selectedById;
+            }
+
+            var persistedTabs = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs");
+            var persistedSelectedTab = persistedTabs?.FirstOrDefault(tab => tab.Id == persistedSelectedTabId);
+            if (persistedSelectedTab is not null)
+            {
+                var selectedByUrl = startupTabs.FirstOrDefault(tab =>
+                    BrowserUrl.AreEqual(tab.Url, persistedSelectedTab.Url));
+                if (selectedByUrl is not null)
+                {
+                    return selectedByUrl;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return startupTabs[0];
     }
 
     private static BrowserTab[] LoadStartupCollectionTabs()

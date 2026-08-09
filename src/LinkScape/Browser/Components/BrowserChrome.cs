@@ -968,7 +968,11 @@ internal static class BrowserChrome
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab,
-        Action<string> onOpenTabInNewWindow)
+        Action<string> onOpenTabInNewWindow,
+        Func<BrowserTab, string?>? getTabInstalledWebAppName = null,
+        Func<BrowserTab, string?>? getTabInstallableWebAppName = null,
+        Action<string>? onOpenTabAsWebApp = null,
+        Action<string>? onInstallTabWebApp = null)
     {
         return CreateTabContextFlyout(
             tab,
@@ -977,7 +981,11 @@ internal static class BrowserChrome
             onToggleFavoriteTab,
             onCloseTab,
             onReloadTab,
-            onOpenTabInNewWindow);
+            onOpenTabInNewWindow,
+            getTabInstalledWebAppName,
+            getTabInstallableWebAppName,
+            onOpenTabAsWebApp,
+            onInstallTabWebApp);
     }
 
     private static MenuFlyout CreateTabContextFlyout(
@@ -987,31 +995,37 @@ internal static class BrowserChrome
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab,
-        Action<string> onOpenTabInNewWindow)
+        Action<string> onOpenTabInNewWindow,
+        Func<BrowserTab, string?>? getTabInstalledWebAppName = null,
+        Func<BrowserTab, string?>? getTabInstallableWebAppName = null,
+        Action<string>? onOpenTabAsWebApp = null,
+        Action<string>? onInstallTabWebApp = null)
     {
         var flyout = new MenuFlyout();
+        var installedWebAppName = getTabInstalledWebAppName?.Invoke(tab);
+        var installableWebAppName = getTabInstallableWebAppName?.Invoke(tab);
 
         var favoriteItem = new MenuFlyoutItem
         {
-            Text = tab.IsFavorite ? "Remove Favorite" : "Add Favorite"
+            Text = tab.IsFavorite ? "⭐ Remove favorite" : "⭐ Add favorite"
         };
         favoriteItem.Click += (_, _) => onToggleFavoriteTab(tab.Id);
 
         var reloadItem = new MenuFlyoutItem
         {
-            Text = "Reload"
+            Text = "🔄 Reload"
         };
         reloadItem.Click += (_, _) => onReloadTab(tab.Id);
 
         var openInNewWindowItem = new MenuFlyoutItem
         {
-            Text = "Open in new window"
+            Text = "🪟 Open in new window"
         };
         openInNewWindowItem.Click += (_, _) => onOpenTabInNewWindow(tab.Id);
 
         var addToCollectionItem = new MenuFlyoutSubItem
         {
-            Text = "Add to collection"
+            Text = "🗂️ Add to collection"
         };
         var collections = tabCollections
             .Where(collection => !string.IsNullOrWhiteSpace(collection.Name))
@@ -1042,13 +1056,35 @@ internal static class BrowserChrome
 
         var closeItem = new MenuFlyoutItem
         {
-            Text = "Close"
+            Text = "❌ Close"
         };
         closeItem.Click += (_, _) => onCloseTab(tab.Id);
 
         flyout.Items.Add(favoriteItem);
         flyout.Items.Add(reloadItem);
         flyout.Items.Add(openInNewWindowItem);
+
+        if (!string.IsNullOrWhiteSpace(installedWebAppName) && onOpenTabAsWebApp is not null)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+            var openAppItem = new MenuFlyoutItem
+            {
+                Text = $"🚀 Open {installedWebAppName} as app"
+            };
+            openAppItem.Click += (_, _) => onOpenTabAsWebApp(tab.Id);
+            flyout.Items.Add(openAppItem);
+        }
+        else if (!string.IsNullOrWhiteSpace(installableWebAppName) && onInstallTabWebApp is not null)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+            var installAppItem = new MenuFlyoutItem
+            {
+                Text = $"📲 Install {installableWebAppName} as app"
+            };
+            installAppItem.Click += (_, _) => onInstallTabWebApp(tab.Id);
+            flyout.Items.Add(installAppItem);
+        }
+
         flyout.Items.Add(addToCollectionItem);
         flyout.Items.Add(closeItem);
 
@@ -1157,6 +1193,10 @@ internal static class BrowserChrome
     Action<string> onCloseTabFromContextMenu,
     Action<string> onReloadTab,
     Action<string> onOpenTabInNewWindow,
+    Func<BrowserTab, string?> getTabInstalledWebAppName,
+    Func<BrowserTab, string?> getTabInstallableWebAppName,
+    Action<string> onOpenTabAsWebApp,
+    Action<string> onInstallTabWebApp,
     string activeCommandCenterSection,
     bool isCommandCenterExpanded,
     IReadOnlyList<HistoryItem> mostVisitedItems,
@@ -1238,8 +1278,8 @@ internal static class BrowserChrome
                 var isSelected = string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
 
                 return (isTabsCollapsed
-                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow).Padding(0).CornerRadius(12)
-                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, GetCollectionNames(collectionMembership, tab.Url), tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
+                    ? BuildCollapsedTabItem(tab, isSelected, isTabLoading, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow, getTabInstalledWebAppName, getTabInstallableWebAppName, onOpenTabAsWebApp, onInstallTabWebApp).Padding(0).CornerRadius(12)
+                    : BuildExpandedTabItem(tab, isSelected, isTabLoading, GetCollectionNames(collectionMembership, tab.Url), tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTabFromContextMenu, onReloadTab, onOpenTabInNewWindow, getTabInstalledWebAppName, getTabInstallableWebAppName, onOpenTabAsWebApp, onInstallTabWebApp).Padding(4).CornerRadius(12)).WithKey($"{tab.Id}-{isTabsCollapsed}");
             }) with
         {
             SelectedIndex = selectedIndex,
@@ -2863,7 +2903,7 @@ internal static class BrowserChrome
                     BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
                     .HAlign(HorizontalAlignment.Stretch)
             )
-            .Padding(4, 0)
+            .Padding(8, 4)
             .HAlign(HorizontalAlignment.Stretch)
             .MinWidth(0);
 
@@ -3013,7 +3053,7 @@ internal static class BrowserChrome
                         BuildHistoryPagingFooter(recentHistoryItems.Count, historyLimit, onLoadMoreHistory))
                         .HAlign(HorizontalAlignment.Stretch)
                 )
-                .Padding(4, 0)
+                .Padding(8, 4)
                 .HAlign(HorizontalAlignment.Stretch)
                 .MinWidth(0));
     }
@@ -3143,7 +3183,7 @@ internal static class BrowserChrome
                 VStack(6, favoriteRows.ToArray())
                     .HAlign(HorizontalAlignment.Stretch)
             )
-            .Padding(4, 0)
+            .Padding(8, 4)
             .HAlign(HorizontalAlignment.Stretch)
             .MinWidth(0);
 
@@ -3966,7 +4006,11 @@ internal static class BrowserChrome
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab,
-        Action<string> onOpenTabInNewWindow)
+        Action<string> onOpenTabInNewWindow,
+        Func<BrowserTab, string?> getTabInstalledWebAppName,
+        Func<BrowserTab, string?> getTabInstallableWebAppName,
+        Action<string> onOpenTabAsWebApp,
+        Action<string> onInstallTabWebApp)
     {
         return Border(
             Border(
@@ -3989,7 +4033,7 @@ internal static class BrowserChrome
         .VAlign(VerticalAlignment.Center)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow, getTabInstalledWebAppName, getTabInstallableWebAppName, onOpenTabAsWebApp, onInstallTabWebApp);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -4007,7 +4051,11 @@ internal static class BrowserChrome
         Action<string> onToggleFavoriteTab,
         Action<string> onCloseTab,
         Action<string> onReloadTab,
-        Action<string> onOpenTabInNewWindow)
+        Action<string> onOpenTabInNewWindow,
+        Func<BrowserTab, string?> getTabInstalledWebAppName,
+        Func<BrowserTab, string?> getTabInstallableWebAppName,
+        Action<string> onOpenTabAsWebApp,
+        Action<string> onInstallTabWebApp)
     {
         return Border(
             Grid(
@@ -4081,7 +4129,7 @@ internal static class BrowserChrome
         .HAlign(HorizontalAlignment.Stretch)
         .Set(border =>
         {
-            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow);
+            border.ContextFlyout = CreateTabContextFlyout(tab, tabCollections, onAddUrlToCollection, onToggleFavoriteTab, onCloseTab, onReloadTab, onOpenTabInNewWindow, getTabInstalledWebAppName, getTabInstallableWebAppName, onOpenTabAsWebApp, onInstallTabWebApp);
             ToolTipService.SetToolTip(border, CreateTabToolTip(tab));
             ApplyTabItemBorderState(border, isSelected, IsTabCreationLoading(tab, isLoading));
         });
@@ -4417,9 +4465,11 @@ internal static class BrowserChrome
             })
             .HAlign(HorizontalAlignment.Stretch)
         )
-        .Padding(8, 6)
-        .CornerRadius(8)
-        .Margin(2, 0)
+        .Padding(12, 10)
+        .CornerRadius(14)
+        .Background(BrowserConstants.LayerFillDefaultBrush)
+        .WithBorder(Theme.SurfaceStroke)
+        .Margin(2, 0, 2, 8)
         .HAlign(HorizontalAlignment.Stretch)
         .AutomationName("FavoriteItem");
     }
@@ -4468,20 +4518,31 @@ internal static class BrowserChrome
         string? deleteText = null)
     {
         var flyout = new MenuFlyout();
+        var installedWebApp = FindInstalledWebAppForUrl(url);
 
         var openItem = new MenuFlyoutItem
         {
-            Text = "Open"
+            Text = "🌐 Open"
         };
         openItem.Click += (_, _) => onOpenCurrentTab(url);
         flyout.Items.Add(openItem);
 
         var openInNewTabItem = new MenuFlyoutItem
         {
-            Text = "Open in new tab"
+            Text = "➕ Open in new tab"
         };
         openInNewTabItem.Click += (_, _) => onOpenNewTab(url);
         flyout.Items.Add(openInNewTabItem);
+
+        if (installedWebApp is not null)
+        {
+            var openAppItem = new MenuFlyoutItem
+            {
+                Text = $"🚀 Open {installedWebApp.Name} as app"
+            };
+            openAppItem.Click += (_, _) => WebAppWindowService.Open(installedWebApp);
+            flyout.Items.Add(openAppItem);
+        }
 
         if (onAddUrlToCollection is not null)
         {
@@ -4489,7 +4550,7 @@ internal static class BrowserChrome
 
             var addToCollectionItem = new MenuFlyoutSubItem
             {
-                Text = "Add to collection"
+                Text = "🗂️ Add to collection"
             };
 
             var collections = tabCollections
@@ -4528,13 +4589,34 @@ internal static class BrowserChrome
 
             var deleteItem = new MenuFlyoutItem
             {
-                Text = string.IsNullOrWhiteSpace(deleteText) ? "Delete" : deleteText
+                Text = string.IsNullOrWhiteSpace(deleteText) ? "🗑️ Delete" : $"🗑️ {deleteText}"
             };
             deleteItem.Click += (_, _) => onDeleteItem();
             flyout.Items.Add(deleteItem);
         }
 
         return flyout;
+    }
+
+    private static InstalledWebApp? FindInstalledWebAppForUrl(string? rawUrl)
+    {
+        return InstalledWebAppService
+            .GetAll()
+            .FirstOrDefault(app => IsUrlWithinAppScope(rawUrl, app));
+    }
+
+    private static bool IsUrlWithinAppScope(string? rawUrl, InstalledWebApp app)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var target) ||
+            !Uri.TryCreate(app.Scope, UriKind.Absolute, out var scopeUri))
+        {
+            return false;
+        }
+
+        return string.Equals(target.Scheme, scopeUri.Scheme, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(target.Host, scopeUri.Host, StringComparison.OrdinalIgnoreCase) &&
+            target.Port == scopeUri.Port &&
+            target.AbsolutePath.StartsWith(scopeUri.AbsolutePath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Element BuildHistoryIcon(string url)

@@ -246,7 +246,7 @@ internal sealed class WebAppWindow : Window
         var controls = new Microsoft.UI.Xaml.Controls.StackPanel
         {
             Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-            Spacing = 2,
+            Spacing = 4,
             Padding = new Thickness(8, 0, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center
