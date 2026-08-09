@@ -117,4 +117,16 @@ public sealed class FavoritesServiceTests
         Assert.AreEqual("fav-1", byUrl[0].Id);
         Assert.AreEqual(2, all.Count);
     }
+
+    [TestMethod]
+    public void FavoriteQueries_ApplyDatabaseLimit()
+    {
+        FavoritesService.EnsureDatabase();
+        FavoritesService.UpsertFavorite("fav-1", "https://one.example.com", "Example One");
+        FavoritesService.UpsertFavorite("fav-2", "https://two.example.com", "Example Two");
+        FavoritesService.UpsertFavorite("fav-3", "https://three.example.com", "Example Three");
+
+        Assert.AreEqual(2, FavoritesService.GetFavorites(2).Count);
+        Assert.AreEqual(1, FavoritesService.SearchFavorites("example", 1).Count);
+    }
 }

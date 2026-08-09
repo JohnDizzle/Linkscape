@@ -172,6 +172,18 @@ public static class FavoritesService
             """);
     }
 
+    public static IReadOnlyList<FavoriteItem> GetFavorites(int limit)
+    {
+        return QueryFavorites(
+            """
+            SELECT Id, Url, Title, CreatedAt, UpdatedAt
+            FROM Favorites
+            ORDER BY UpdatedAt DESC, Title COLLATE NOCASE, Url COLLATE NOCASE
+            LIMIT $limit;
+            """,
+            command => command.Parameters.AddWithValue("$limit", Math.Max(1, limit)));
+    }
+
     public static IReadOnlyList<FavoriteItem> SearchFavorites(string? query)
     {
         var search = $"%{(query ?? string.Empty).Trim()}%";
@@ -186,6 +198,27 @@ public static class FavoritesService
             ORDER BY UpdatedAt DESC, Title COLLATE NOCASE, Url COLLATE NOCASE;
             """,
             command => command.Parameters.AddWithValue("$query", search));
+    }
+
+    public static IReadOnlyList<FavoriteItem> SearchFavorites(string? query, int limit)
+    {
+        var search = $"%{(query ?? string.Empty).Trim()}%";
+
+        return QueryFavorites(
+            """
+            SELECT Id, Url, Title, CreatedAt, UpdatedAt
+            FROM Favorites
+            WHERE $query = '%%'
+                OR Title LIKE $query
+                OR Url LIKE $query
+            ORDER BY UpdatedAt DESC, Title COLLATE NOCASE, Url COLLATE NOCASE
+            LIMIT $limit;
+            """,
+            command =>
+            {
+                command.Parameters.AddWithValue("$query", search);
+                command.Parameters.AddWithValue("$limit", Math.Max(1, limit));
+            });
     }
 
     private static IReadOnlyList<FavoriteItem> QueryFavorites(

@@ -22,6 +22,8 @@ class TabViewPage : Component
     private const double BrowserSurfaceInsetCollapsed = 2;
     private const double BrowserSurfaceInsetExpanded = 4;
     private const int CommandCenterBusyMinimumDurationMilliseconds = 220;
+    private const int InitialFavoriteQueryLimit = 150;
+    private const int FilterDebounceMilliseconds = 175;
 
     private enum CommandCenterSection
     {
@@ -58,6 +60,8 @@ class TabViewPage : Component
     private ActivationTarget? _deferredStartupActivation;
     private bool _deferredStartupActivationQueued;
     private bool _suppressTabPersistence;
+    private CancellationTokenSource? _historyFilterCts;
+    private CancellationTokenSource? _favoritesFilterCts;
     private bool _browserNoticeListenerRegistered;
     private bool _fullScreenPresentationMessengerRegistered;
     private Action<bool>? _setFullScreenPresentationState;
@@ -158,6 +162,7 @@ class TabViewPage : Component
         var recentHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var mostVisitedHistory = UseState(Array.Empty<HistoryItem>(), threadSafe: true);
         var favoritesFilter = UseState(string.Empty);
+        var favoritesLimit = UseState(InitialFavoriteQueryLimit);
         var favoriteItems = UseState(Array.Empty<FavoriteItem>(), threadSafe: true);
         var tabCollections = UseState(Array.Empty<TabCollection>(), threadSafe: true);
         var collectionItems = UseState(Array.Empty<TabCollectionItem>(), threadSafe: true);
@@ -1067,7 +1072,26 @@ class TabViewPage : Component
         {
             historyFilter.Set(nextFilter);
             historyLimit.Set(50);
-            recentHistory.Set(LoadRecentHistoryItems(nextFilter, 50));
+            _historyFilterCts?.Cancel();
+            _historyFilterCts?.Dispose();
+            var cts = _historyFilterCts = new CancellationTokenSource();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(FilterDebounceMilliseconds, cts.Token);
+                    var results = LoadRecentHistoryItems(nextFilter, 50);
+
+                    if (!cts.IsCancellationRequested)
+                    {
+                        recentHistory.Set(results);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
         }
 
         void LoadMoreHistory()
@@ -1080,7 +1104,7 @@ class TabViewPage : Component
         void SetFavoritesStateFromDatabase(string? filterOverride = null)
         {
             var effectiveFilter = filterOverride ?? favoritesFilter.Value;
-            favoriteItems.Set(LoadFavoriteItems(effectiveFilter));
+            favoriteItems.Set(LoadFavoriteItems(effectiveFilter, favoritesLimit.Value));
         }
 
         void RefreshFavoritesState(string? filterOverride = null, string busyText = "Loading favorites…")
@@ -1103,7 +1127,46 @@ class TabViewPage : Component
         void ApplyFavoritesFilter(string nextFilter)
         {
             favoritesFilter.Set(nextFilter);
-            favoriteItems.Set(LoadFavoriteItems(nextFilter));
+            favoritesLimit.Set(InitialFavoriteQueryLimit);
+            _favoritesFilterCts?.Cancel();
+            _favoritesFilterCts?.Dispose();
+            var cts = _favoritesFilterCts = new CancellationTokenSource();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(FilterDebounceMilliseconds, cts.Token);
+                    var results = LoadFavoriteItems(nextFilter, InitialFavoriteQueryLimit);
+
+                    if (!cts.IsCancellationRequested)
+                    {
+                        favoriteItems.Set(results);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+        }
+
+        void RefreshVisibleHistoryAfterNavigation()
+        {
+            if (!string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.History), StringComparison.Ordinal) &&
+                !string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.Recent), StringComparison.Ordinal) &&
+                !string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.MostVisited), StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _ = Task.Run(() => SetHistoryStateFromDatabase());
+        }
+
+        void LoadMoreFavorites()
+        {
+            var nextLimit = Math.Min(favoritesLimit.Value + 150, 2500);
+            favoritesLimit.Set(nextLimit);
+            favoriteItems.Set(LoadFavoriteItems(favoritesFilter.Value, nextLimit));
         }
 
         void SetCollectionStateFromDatabase(string? collectionNameOverride = null)
@@ -2241,6 +2304,7 @@ class TabViewPage : Component
                 historyImportStatus.Value,
                 historyImportBrowserProfiles.Value,
                 favoriteItems.Value,
+                favoritesLimit.Value,
                 tabCollections.Value,
                 collectionItems.Value,
                 collectionMembership.Value,
@@ -2257,6 +2321,7 @@ class TabViewPage : Component
                 ApplyHistoryFilter,
                 LoadMoreHistory,
                 ApplyFavoritesFilter,
+                LoadMoreFavorites,
                 ApplyCollectionName,
                 CreateCollection,
                 AddCurrentTabToCollection,
@@ -2309,7 +2374,7 @@ class TabViewPage : Component
                     nextAddress,
                     preserveUserEdit: true),
                 SetLoadingIfNeeded,
-                () => RefreshHistoryState(),
+                RefreshVisibleHistoryAfterNavigation,
                 SetInstallableWebAppFromCore
             ));
         var browserSurfaceInset = isFullScreenPresentationActive.Value
@@ -2906,13 +2971,13 @@ class TabViewPage : Component
         }
     }
 
-    private static FavoriteItem[] LoadFavoriteItems(string? filter)
+    private static FavoriteItem[] LoadFavoriteItems(string? filter, int limit)
     {
         try
         {
             return string.IsNullOrWhiteSpace(filter)
-                ? FavoritesService.GetFavorites().ToArray()
-                : FavoritesService.SearchFavorites(filter).ToArray();
+                ? FavoritesService.GetFavorites(limit).ToArray()
+                : FavoritesService.SearchFavorites(filter, limit).ToArray();
         }
         catch
         {

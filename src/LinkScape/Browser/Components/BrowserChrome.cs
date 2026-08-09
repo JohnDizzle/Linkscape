@@ -1260,6 +1260,7 @@ internal static class BrowserChrome
     string historyImportStatus,
     IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
     IReadOnlyList<FavoriteItem> favoriteItems,
+    int favoritesLimit,
     IReadOnlyList<TabCollection> tabCollections,
     IReadOnlyList<TabCollectionItem> collectionItems,
     IReadOnlyDictionary<string, string[]> collectionMembership,
@@ -1276,6 +1277,7 @@ internal static class BrowserChrome
     Action<string> onHistoryFilterChanged,
     Action onLoadMoreHistory,
     Action<string> onFavoritesFilterChanged,
+    Action onLoadMoreFavorites,
     Action<string> onCollectionNameChanged,
     Action onCreateCollection,
     Action onAddCurrentTabToCollection,
@@ -1412,6 +1414,7 @@ internal static class BrowserChrome
                     historyImportStatus,
                     historyImportBrowserProfiles,
                     favoriteItems,
+                    favoritesLimit,
                     tabCollections,
                     collectionItems,
                     collectionMembership,
@@ -1428,6 +1431,7 @@ internal static class BrowserChrome
                     onHistoryFilterChanged,
                     onLoadMoreHistory,
                     onFavoritesFilterChanged,
+                    onLoadMoreFavorites,
                     onCollectionNameChanged,
                     onCreateCollection,
                     onAddCurrentTabToCollection,
@@ -1544,6 +1548,7 @@ internal static class BrowserChrome
         string historyImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
+        int favoritesLimit,
         IReadOnlyList<TabCollection> tabCollections,
         IReadOnlyList<TabCollectionItem> collectionItems,
         IReadOnlyDictionary<string, string[]> collectionMembership,
@@ -1560,6 +1565,7 @@ internal static class BrowserChrome
         Action<string> onHistoryFilterChanged,
         Action onLoadMoreHistory,
         Action<string> onFavoritesFilterChanged,
+        Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
         Action onAddCurrentTabToCollection,
@@ -1597,6 +1603,7 @@ internal static class BrowserChrome
             historyImportStatus,
             historyImportBrowserProfiles,
             favoriteItems,
+            favoritesLimit,
             tabCollections,
             collectionItems,
             collectionMembership,
@@ -1612,6 +1619,7 @@ internal static class BrowserChrome
             onHistoryFilterChanged,
             onLoadMoreHistory,
             onFavoritesFilterChanged,
+            onLoadMoreFavorites,
             onCollectionNameChanged,
             onCreateCollection,
             onAddCurrentTabToCollection,
@@ -1665,6 +1673,7 @@ internal static class BrowserChrome
         string historyImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> historyImportBrowserProfiles,
         IReadOnlyList<FavoriteItem> favoriteItems,
+        int favoritesLimit,
         IReadOnlyList<TabCollection> tabCollections,
         IReadOnlyList<TabCollectionItem> collectionItems,
         IReadOnlyDictionary<string, string[]> collectionMembership,
@@ -1680,6 +1689,7 @@ internal static class BrowserChrome
         Action<string> onHistoryFilterChanged,
         Action onLoadMoreHistory,
         Action<string> onFavoritesFilterChanged,
+        Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
         Action onAddCurrentTabToCollection,
@@ -1718,7 +1728,7 @@ internal static class BrowserChrome
             "History" =>  BuildHistoryBladeContent(settingsSnapshot, recentHistoryItems, historyFilter, historyLimit, historyImportStatus, historyImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onHistoryFilterChanged, onLoadMoreHistory, onImportHistory, onImportBrowserHistory, onImportBrowserHistoryProfile, onDeleteAllHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
-            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
+            "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesLimit, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onLoadMoreFavorites, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
@@ -3049,7 +3059,8 @@ internal static class BrowserChrome
                 .Opacity(0.76)
         )
         .Padding(6, 12, 6, 6)
-        .HAlign(HorizontalAlignment.Stretch);
+        .HAlign(HorizontalAlignment.Stretch)
+        .WithKey($"history-group:{title}");
     }
 
     private static Element BuildHistoryPagingFooter(int loadedCount, int historyLimit, Action onLoadMoreHistory)
@@ -3177,12 +3188,14 @@ internal static class BrowserChrome
         IReadOnlyDictionary<string, string> settingsSnapshot,
         IReadOnlyList<FavoriteItem> favoriteItems,
         string favoritesFilter,
+        int favoritesLimit,
         string favoritesImportStatus,
         IReadOnlyDictionary<string, BrowserImportProfile[]> favoritesImportBrowserProfiles,
         bool isImportRunning,
         IReadOnlyList<TabCollection> tabCollections,
         IReadOnlyDictionary<string, string[]> collectionMembership,
         Action<string> onFavoritesFilterChanged,
+        Action onLoadMoreFavorites,
         Action onImportFavorites,
         Action<string> onImportBrowserFavorites,
         Action<string, string> onImportBrowserFavoritesProfile,
@@ -3239,7 +3252,10 @@ internal static class BrowserChrome
             )
             .Padding(8, 4)
             : Border(
-                VStack(6, favoriteRows.ToArray())
+                VStack(10,
+                    VStack(6, favoriteRows.ToArray())
+                        .HAlign(HorizontalAlignment.Stretch),
+                    BuildFavoritesPagingFooter(favoriteItems.Count, favoritesLimit, onLoadMoreFavorites))
                     .HAlign(HorizontalAlignment.Stretch)
             )
             .Padding(8, 4)
@@ -3271,6 +3287,29 @@ internal static class BrowserChrome
         {
             RowGap = 12
         };
+    }
+
+    private static Element BuildFavoritesPagingFooter(
+        int loadedCount,
+        int favoritesLimit,
+        Action onLoadMoreFavorites)
+    {
+        var canLoadMore = loadedCount >= favoritesLimit && favoritesLimit < 2500;
+
+        return Border(
+            HStack(10,
+                TextBlock($"Loaded {loadedCount:n0} favorites")
+                    .Opacity(0.72)
+                    .VAlign(VerticalAlignment.Center)
+                    .Flex(grow: 1, basis: 0),
+                Button("Load more", onLoadMoreFavorites)
+                    .IsEnabled(canLoadMore)
+                    .AutomationName("Load more favorites")
+                    .ToolTip(canLoadMore ? "Load more favorites" : "No more favorites loaded")))
+            .Padding(8, 6)
+            .CornerRadius(10)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
     }
 
     private static Element BuildCollectionsBladeContent(
@@ -4523,7 +4562,8 @@ internal static class BrowserChrome
         .WithBorder(Theme.SurfaceStroke)
         .Margin(2, 0, 2, 8)
         .HAlign(HorizontalAlignment.Stretch)
-        .AutomationName("HistoryListItem");
+        .AutomationName("HistoryListItem")
+        .WithKey($"history:{item.Url}");
     }
 
     private static Element BuildFavoriteTabItem(
@@ -4593,7 +4633,8 @@ internal static class BrowserChrome
         .WithBorder(Theme.SurfaceStroke)
         .Margin(2, 0, 2, 8)
         .HAlign(HorizontalAlignment.Stretch)
-        .AutomationName("FavoriteItem");
+        .AutomationName("FavoriteItem")
+        .WithKey($"favorite:{item.Id}");
     }
 
     private static void OpenItem(
