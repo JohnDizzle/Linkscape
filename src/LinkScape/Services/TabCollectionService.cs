@@ -185,6 +185,65 @@ public static class TabCollectionService
         return cmd.ExecuteNonQuery() > 0;
     }
 
+    public static bool MoveItem(string collectionNameOrId, string itemId, int targetIndex)
+    {
+        var collection = GetCollection(collectionNameOrId) ?? GetCollectionByName(collectionNameOrId);
+        if (collection is null || string.IsNullOrWhiteSpace(itemId))
+        {
+            return false;
+        }
+
+        var items = GetItems(collection.Id).ToList();
+        var currentIndex = items.FindIndex(item => string.Equals(item.Id, itemId, StringComparison.Ordinal));
+        if (currentIndex < 0)
+        {
+            return false;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, items.Count - 1);
+        if (currentIndex == targetIndex)
+        {
+            return false;
+        }
+
+        var movingItem = items[currentIndex];
+        items.RemoveAt(currentIndex);
+        items.Insert(targetIndex, movingItem);
+
+        using var conn = new SqliteConnection(DbConnectionString);
+        conn.Open();
+        using var transaction = conn.BeginTransaction();
+
+        var now = DateTime.Now.ToString("O");
+        for (var index = 0; index < items.Count; index++)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = """
+                UPDATE TabCollectionItems
+                SET SortOrder = $sortOrder,
+                    UpdatedAt = $updatedAt
+                WHERE Id = $id
+                  AND CollectionId = $collectionId;
+                """;
+            cmd.Parameters.AddWithValue("$sortOrder", index);
+            cmd.Parameters.AddWithValue("$updatedAt", now);
+            cmd.Parameters.AddWithValue("$id", items[index].Id);
+            cmd.Parameters.AddWithValue("$collectionId", collection.Id);
+            cmd.ExecuteNonQuery();
+        }
+
+        using var collectionCmd = conn.CreateCommand();
+        collectionCmd.Transaction = transaction;
+        collectionCmd.CommandText = "UPDATE TabCollections SET UpdatedAt = $updatedAt WHERE Id = $collectionId";
+        collectionCmd.Parameters.AddWithValue("$updatedAt", now);
+        collectionCmd.Parameters.AddWithValue("$collectionId", collection.Id);
+        collectionCmd.ExecuteNonQuery();
+
+        transaction.Commit();
+        return true;
+    }
+
     public static void SetStartupCollection(string collectionNameOrId)
     {
         var collection = GetCollection(collectionNameOrId) ?? GetCollectionByName(collectionNameOrId);

@@ -1502,6 +1502,27 @@ class TabViewPage : Component
             }
         }
 
+        void MoveCollectionItem(string itemId, int targetIndex)
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return;
+            }
+
+            try
+            {
+                if (TabCollectionService.MoveItem(collectionName.Value, itemId, targetIndex))
+                {
+                    collectionStatus.Set("Moved collection item.");
+                    RefreshCollectionState(collectionName.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
         void NavigateActiveTab(string rawUrl)
         {
             var activeId = selectedTag;
@@ -1654,6 +1675,35 @@ class TabViewPage : Component
             }
 
             ActivationRoutingService.OpenUrlInNewWindow(targetTab.Url);
+        }
+
+        void MoveTab(string tabId, int targetIndex)
+        {
+            var currentTabs = (_latestTabs.Length > 0 ? _latestTabs : tabs).ToList();
+            var currentIndex = currentTabs.FindIndex(tab => string.Equals(tab.Id, tabId, StringComparison.Ordinal));
+            if (currentIndex < 0)
+            {
+                return;
+            }
+
+            targetIndex = Math.Clamp(targetIndex, 0, currentTabs.Count - 1);
+            if (currentIndex == targetIndex)
+            {
+                return;
+            }
+
+            var movingTab = currentTabs[currentIndex];
+            currentTabs.RemoveAt(currentIndex);
+            currentTabs.Insert(targetIndex, movingTab);
+
+            var nextTabs = currentTabs
+                .Select((tab, index) => tab with
+                {
+                    Order = index
+                })
+                .ToArray();
+
+            MarkTabsChanged(nextTabs);
         }
 
         void OpenSelectedTabInNewWindow()
@@ -2048,6 +2098,7 @@ class TabViewPage : Component
                 CloseTab,
                 ReloadTab,
                 OpenTabInNewWindow,
+                MoveTab,
                 GetTabInstalledWebAppName,
                 GetTabInstallableWebAppName,
                 OpenTabAsWebApp,
@@ -2099,6 +2150,7 @@ class TabViewPage : Component
                 OpenCollectionItem,
                 OpenCollectionItemInNewTab,
                 RemoveCollectionItem,
+                MoveCollectionItem,
                 ToggleCommandCenterByName,
                 ToggleCommandCenterExpanded,
                 isRailTabsExpanded,
