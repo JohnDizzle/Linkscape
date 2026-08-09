@@ -56,7 +56,8 @@ public static class AppJumpListService
             AddNavigationItem(
                 jumpList,
                 $"Search ({provider.DisplayName})",
-                "link2scape://navigate/search",
+                ActivationRoutingService.CreateNewWindowActivationArguments(
+                    "link2scape://navigate/search"),
                 providerLogo);
 
             foreach (var app in InstalledWebAppService.GetAll()
@@ -111,7 +112,8 @@ public static class AppJumpListService
     private static void AddCollectionItem(ShellJumpList jumpList, TabCollection collection)
     {
         var item = ShellJumpListItem.CreateWithArguments(
-            $"link2scape://collection/{Uri.EscapeDataString(collection.Id)}",
+            ActivationRoutingService.CreateNewWindowActivationArguments(
+                $"link2scape://collection/{Uri.EscapeDataString(collection.Id)}"),
             collection.Name);
         item.GroupName = "Collections";
         item.Description = $"Set {collection.Name} as the startup collection and open it";

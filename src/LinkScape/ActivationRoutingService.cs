@@ -13,6 +13,7 @@ internal static class ActivationRoutingService
     private const string LinkScapeSchemePrefix = "link2scape://";
     private const string LinkScapeSchemePrefixAlt = "link2scape:";
     private const string NewWindowUrlArgument = "--linkscape-new-window-url";
+    private const string NewWindowTargetArgument = "--linkscape-new-window-target";
     private static readonly object SyncRoot = new();
     private static ActivationTarget? _pendingTarget;
     private static bool _pendingTargetIsFreshWindow;
@@ -31,7 +32,15 @@ internal static class ActivationRoutingService
         var activatedArgs = appInstance.GetActivatedEventArgs();
         var mainInstance = AppInstance.FindOrRegisterForKey(MainInstanceKey);
         var hasCommandLineTarget = TryGetCommandLineTarget(Environment.GetCommandLineArgs(), out var commandLineTarget);
+        var hasNewWindowActivationTarget = TryGetNewWindowActivationTarget(activatedArgs, out var newWindowActivationTarget);
         var hasActivationTarget = TryGetActivationTarget(activatedArgs, out _);
+
+        if (!mainInstance.IsCurrent && hasNewWindowActivationTarget)
+        {
+            _initialized = true;
+            StorePendingTarget(newWindowActivationTarget, isFreshWindow: true);
+            return true;
+        }
 
         if (!mainInstance.IsCurrent && hasActivationTarget && !hasCommandLineTarget)
         {
@@ -56,6 +65,10 @@ internal static class ActivationRoutingService
         {
             StorePendingTarget(commandLineTarget, isFreshWindow: true);
         }
+        else if (hasNewWindowActivationTarget)
+        {
+            StorePendingTarget(newWindowActivationTarget, isFreshWindow: true);
+        }
         else
         {
             TryStorePendingTarget(activatedArgs);
@@ -73,6 +86,43 @@ internal static class ActivationRoutingService
             return false;
         }
 
+        return OpenInNewWindow(NewWindowUrlArgument, url);
+    }
+
+    internal static bool OpenCollectionInNewWindow(string collectionId)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId))
+        {
+            return false;
+        }
+
+        var target = $"link2scape://collection/{Uri.EscapeDataString(collectionId)}";
+        return OpenInNewWindow(NewWindowTargetArgument, target);
+    }
+
+    internal static string CreateNewWindowActivationArguments(string protocolUri) =>
+        $"{NewWindowTargetArgument} {protocolUri}";
+
+    internal static bool RequestCollectionActivation(string collectionId)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId))
+        {
+            return false;
+        }
+
+        var uri = new Uri($"link2scape://collection/{Uri.EscapeDataString(collectionId)}");
+        if (!TryMapProtocolUri(uri, out var target) || ActivationRequested is not { } activationRequested)
+        {
+            return false;
+        }
+
+        StorePendingTarget(target, isFreshWindow: false);
+        activationRequested.Invoke();
+        return true;
+    }
+
+    private static bool OpenInNewWindow(string argumentName, string target)
+    {
         var executablePath = Environment.ProcessPath;
 
         if (string.IsNullOrWhiteSpace(executablePath))
@@ -88,8 +138,8 @@ internal static class ActivationRoutingService
                 UseShellExecute = true
             };
 
-            startInfo.ArgumentList.Add(NewWindowUrlArgument);
-            startInfo.ArgumentList.Add(url);
+            startInfo.ArgumentList.Add(argumentName);
+            startInfo.ArgumentList.Add(target);
             Process.Start(startInfo);
             return true;
         }
@@ -171,12 +221,18 @@ internal static class ActivationRoutingService
         };
     }
 
-    private static bool TryGetCommandLineTarget(string[] args, out ActivationTarget target)
+    internal static bool TryGetCommandLineTarget(string[] args, out ActivationTarget target)
     {
         target = default!;
 
         for (var index = 0; index < args.Length - 1; index++)
         {
+            if (string.Equals(args[index], NewWindowTargetArgument, StringComparison.OrdinalIgnoreCase))
+            {
+                return Uri.TryCreate(args[index + 1].Trim(), UriKind.Absolute, out var targetUri) &&
+                    TryMapProtocolUri(targetUri, out target);
+            }
+
             if (!string.Equals(args[index], NewWindowUrlArgument, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -210,10 +266,56 @@ internal static class ActivationRoutingService
 
     private static bool TryGetLaunchTarget(ILaunchActivatedEventArgs? launchArgs, out ActivationTarget target)
     {
+        return TryMapLaunchArguments(launchArgs?.Arguments, out target);
+    }
+
+    internal static bool TryMapLaunchArguments(string? rawArguments, out ActivationTarget target)
+    {
+        var arguments = rawArguments?.Trim();
+
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            target = new ActivationTarget(ActivationTargetKind.MainBrowser);
+            return true;
+        }
+
+        if (TryMapNewWindowLaunchArguments(arguments, out target))
+        {
+            return true;
+        }
+
         target = default!;
-        var arguments = launchArgs?.Arguments?.Trim();
         return Uri.TryCreate(arguments, UriKind.Absolute, out var uri) &&
             TryMapProtocolUri(uri, out target);
+    }
+
+    internal static bool TryMapNewWindowLaunchArguments(string? rawArguments, out ActivationTarget target)
+    {
+        target = default!;
+        var arguments = rawArguments?.Trim();
+
+        if (string.IsNullOrWhiteSpace(arguments) ||
+            !arguments.StartsWith(NewWindowTargetArgument, StringComparison.OrdinalIgnoreCase) ||
+            (arguments.Length > NewWindowTargetArgument.Length &&
+             !char.IsWhiteSpace(arguments[NewWindowTargetArgument.Length])))
+        {
+            return false;
+        }
+
+        var payload = arguments[NewWindowTargetArgument.Length..].Trim().Trim('"');
+        return Uri.TryCreate(payload, UriKind.Absolute, out var uri) &&
+            TryMapProtocolUri(uri, out target);
+    }
+
+    private static bool TryGetNewWindowActivationTarget(
+        AppActivationArguments? args,
+        out ActivationTarget target)
+    {
+        target = default!;
+        return args?.Kind == ExtendedActivationKind.Launch &&
+            TryMapNewWindowLaunchArguments(
+                (args.Data as ILaunchActivatedEventArgs)?.Arguments,
+                out target);
     }
 
     internal static bool TryMapProtocolUri(Uri uri, out ActivationTarget target)
@@ -357,7 +459,8 @@ internal enum ActivationTargetKind
     Collection,
     Collections,
     SavedTabs,
-    Search
+    Search,
+    MainBrowser
 }
 
 internal sealed record ActivationTarget(ActivationTargetKind Kind, string Value = "")

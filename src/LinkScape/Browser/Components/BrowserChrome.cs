@@ -1719,7 +1719,7 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
-            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem),
+            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
         };
@@ -3286,9 +3286,12 @@ internal static class BrowserChrome
         Action<string> onOpenCollectionItem,
         Action<string> onOpenCollectionItemInNewTab,
         Action<string> onRemoveCollectionItem,
-        Action<string, int> onMoveCollectionItem)
+        Action<string, int> onMoveCollectionItem,
+        bool isCommandCenterExpanded)
     {
         settingsSnapshot.TryGetValue(TabCollectionService.StartupCollectionSettingKey, out var startupCollectionId);
+        var selectedCollection = collections.FirstOrDefault(collection =>
+            string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase));
         var collectionButtons = collections
             .Select(collection =>
             {
@@ -3303,25 +3306,66 @@ internal static class BrowserChrome
             .Select((item, index) => BuildCollectionItem(item, index, collectionItems.Count, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem))
             .ToArray();
 
-        var header = VStack(10,
-            TextBlock("Collections")
-                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
-                .AutomationName("Collection filter or name")
-                .HAlign(HorizontalAlignment.Stretch)
-                .MinWidth(0) with
+        void SwitchToSelectedCollection()
+        {
+            if (selectedCollection is not null &&
+                !LinkScape.ActivationRoutingService.RequestCollectionActivation(selectedCollection.Id))
             {
-                PlaceholderText = "Filter or create collection"
-            },
-            HStack(8,
-                Border(null)
-                    .Flex(grow: 1, basis: 0),
-                Button("Create", onCreateCollection)
-                    .AutomationName("Create collection"),
+                BrowserNoticeService.Show("Could not switch to the selected collection.");
+            }
+        }
+
+        void OpenSelectedCollectionInNewWindow()
+        {
+            if (selectedCollection is not null &&
+                !LinkScape.ActivationRoutingService.OpenCollectionInNewWindow(selectedCollection.Id))
+            {
+                BrowserNoticeService.Show("Could not open the collection in a new window.");
+            }
+        }
+
+        var collectionActions = isCommandCenterExpanded
+            ? HStack(8,
                 Button("Add current tab", onAddCurrentTabToCollection)
                     .AutomationName("Add current tab to collection"),
                 Button("Use at startup", onSetStartupCollection)
-                    .AutomationName("Set startup collection")));
+                    .AutomationName("Set startup collection"),
+                Button("Switch to", SwitchToSelectedCollection)
+                    .AutomationName("Switch to selected collection")
+                    .Set(button => button.IsEnabled = selectedCollection is not null),
+                Button("New window", OpenSelectedCollectionInNewWindow)
+                    .AutomationName("Open selected collection in a new window")
+                    .Set(button => button.IsEnabled = selectedCollection is not null))
+            : HStack(8,
+                IconButton(BrowserConstants.GlyphAdd, onAddCurrentTabToCollection, "Add current tab to collection"),
+                IconButton(BrowserConstants.GlyphFavoriteOutline, onSetStartupCollection, "Set startup collection"),
+                IconButton(BrowserConstants.GlyphGo, SwitchToSelectedCollection, "Switch to selected collection")
+                    .IsEnabled(selectedCollection is not null),
+                IconButton(BrowserConstants.GlyphNewWindow, OpenSelectedCollectionInNewWindow, "Open selected collection in a new window")
+                    .IsEnabled(selectedCollection is not null));
+
+        var header = VStack(10,
+            TextBlock("Collections")
+                .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+            (Grid(
+                [GridSize.Star(3), GridSize.Star()],
+                [GridSize.Auto],
+                AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
+                    .AutomationName("Collection filter or name")
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .MinWidth(0)
+                    .Grid(row: 0, column: 0) with
+                {
+                    PlaceholderText = "Filter or create collection"
+                },
+                Button("Create", onCreateCollection)
+                    .AutomationName("Create collection")
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .Grid(row: 0, column: 1)) with
+            {
+                ColumnSpacing = 8
+            }).HAlign(HorizontalAlignment.Stretch),
+            collectionActions);
 
         var body = VStack(12,
             collectionButtons.Length == 0
