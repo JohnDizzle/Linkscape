@@ -54,7 +54,10 @@ class TabViewPage : Component
     private BrowserTab[] _latestTabs = [];
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
-    private Action<string>? _openActivatedTarget;
+    private Action<ActivationTarget>? _openActivatedTarget;
+    private ActivationTarget? _deferredStartupActivation;
+    private bool _deferredStartupActivationQueued;
+    private bool _suppressTabPersistence;
     private bool _browserNoticeListenerRegistered;
     private bool _fullScreenPresentationMessengerRegistered;
     private Action<bool>? _setFullScreenPresentationState;
@@ -73,10 +76,43 @@ class TabViewPage : Component
 
         if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget, out var isFreshWindow))
         {
-            startupTabs = isFreshWindow
-                ? CreateFreshWindowTabs(activationTarget, selectedSearchProviderDefault, out var activatedTab)
-                : AddActivatedStartupTab(startupTabs, activationTarget, selectedSearchProviderDefault, out activatedTab);
-            startupSelectedTabId = activatedTab.Id;
+            if (activationTarget.Kind == ActivationTargetKind.Url)
+            {
+                if (isFreshWindow)
+                {
+                    SuppressTabPersistence();
+                }
+                startupTabs = isFreshWindow
+                    ? CreateFreshWindowTabs(activationTarget.Value, selectedSearchProviderDefault, out var activatedTab)
+                    : AddActivatedStartupTab(startupTabs, activationTarget.Value, selectedSearchProviderDefault, out activatedTab);
+                startupSelectedTabId = activatedTab.Id;
+            }
+            else if (activationTarget.Kind == ActivationTargetKind.Search)
+            {
+                SuppressTabPersistence();
+                var defaultTab = BrowserTab.CreateHome(
+                    BrowserSearchProviders.GetHomeUrl(selectedSearchProviderDefault));
+                startupTabs = [defaultTab];
+                startupSelectedTabId = defaultTab.Id;
+            }
+            else if (activationTarget.Kind == ActivationTargetKind.SavedTabs)
+            {
+                startupTabs = LoadSavedTabs();
+                var selectedTab = ResolveStartupSelectedTab(startupTabs);
+                startupSelectedTabId = selectedTab.Id;
+            }
+            else if (activationTarget.Kind == ActivationTargetKind.Collection)
+            {
+                startupTabs = SetAndLoadStartupCollection(activationTarget.Value);
+                var selectedTab = ResolveStartupSelectedTab(startupTabs);
+                startupSelectedTabId = selectedTab.Id;
+            }
+            else
+            {
+                var selectedTab = ResolveStartupSelectedTab(startupTabs);
+                startupSelectedTabId = selectedTab.Id;
+                _deferredStartupActivation = activationTarget;
+            }
         }
         else
         {
@@ -260,6 +296,7 @@ class TabViewPage : Component
                 }
 
                 var installed = InstalledWebAppService.Install(app);
+                _ = AppJumpListService.RefreshAsync();
                 BrowserNoticeService.Show($"{installed.Name} was installed.", "success");
 
                 var next = new Dictionary<string, InstallableWebApp>(installableWebApps.Value);
@@ -324,6 +361,7 @@ class TabViewPage : Component
                 var installed =
                     InstalledWebAppService.Install(
                         selectedInstallableWebApp);
+                _ = AppJumpListService.RefreshAsync();
 
                 BrowserNoticeService.Show(
                     $"{installed.Name} was installed.",
@@ -571,6 +609,7 @@ class TabViewPage : Component
         {
             var normalizedProviderKey = BrowserSearchProviders.NormalizeProviderKey(providerKey);
             SettingsService.SetValue(DefaultSearchProviderSettingKey, normalizedProviderKey);
+            _ = AppJumpListService.RefreshAsync();
             UpdateBrowserSession(state => BrowserSessionStore.SetSelectedSearchProvider(state, normalizedProviderKey));
             settingsSnapshot.Set(SettingsService.Dump());
         }
@@ -839,8 +878,90 @@ class TabViewPage : Component
             }
         }
 
-        _openActivatedTarget = target => OpenUriInNewTab(target, dismissCommandCenter: false);
+        void OpenSavedTabsActivation()
+        {
+            _suppressTabPersistence = false;
+            var nextTabs = LoadSavedTabs();
+            var nextSelected = ResolveStartupSelectedTab(nextTabs);
+            MarkTabsChanged(nextTabs);
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, nextSelected.Id));
+            _browserTitleBarController.SetAddressText(nextSelected.Url);
+        }
+
+        void OpenSearchActivation()
+        {
+            SuppressTabPersistence();
+            var defaultProviderKey = BrowserSearchProviders.NormalizeProviderKey(
+                SettingsService.GetValueOrDefault(
+                    DefaultSearchProviderSettingKey,
+                    BrowserSearchProviders.DefaultProviderKey));
+            var defaultTab = BrowserTab.CreateHome(BrowserSearchProviders.GetHomeUrl(defaultProviderKey));
+            var nextTabs = new[] { defaultTab };
+            MarkTabsChanged(nextTabs);
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, defaultTab.Id));
+            _browserTitleBarController.SetAddressText(defaultTab.Url);
+        }
+
+        void OpenCollectionActivation(string collectionId)
+        {
+            try
+            {
+                _suppressTabPersistence = false;
+                var nextTabs = SetAndLoadStartupCollection(collectionId);
+                var nextSelected = nextTabs[0];
+                MarkTabsChanged(nextTabs);
+                UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, nextSelected.Id));
+                _browserTitleBarController.SetAddressText(nextSelected.Url);
+
+                var collection = TabCollectionService.GetCollection(collectionId);
+                if (collection is not null)
+                {
+                    collectionName.Set(collection.Name);
+                    collectionStatus.Set($"Opened '{collection.Name}' and set it for startup.");
+                    RefreshCollectionState(collection.Name);
+                }
+
+                settingsSnapshot.Set(SettingsService.Dump());
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not open that collection: {ex.Message}");
+            }
+        }
+
+        void OpenActivationTarget(ActivationTarget target)
+        {
+            switch (target.Kind)
+            {
+                case ActivationTargetKind.Url:
+                    OpenUriInNewTab(target.Value, dismissCommandCenter: false);
+                    break;
+                case ActivationTargetKind.InstalledApp:
+                    WebAppWindowService.TryOpenById(target.Value);
+                    break;
+                case ActivationTargetKind.Collection:
+                    OpenCollectionActivation(target.Value);
+                    break;
+                case ActivationTargetKind.Collections:
+                    OpenCollectionsExpanded();
+                    break;
+                case ActivationTargetKind.SavedTabs:
+                    OpenSavedTabsActivation();
+                    break;
+                case ActivationTargetKind.Search:
+                    OpenSearchActivation();
+                    break;
+            }
+        }
+
+        _openActivatedTarget = OpenActivationTarget;
         RegisterActivationListener();
+
+        if (!_deferredStartupActivationQueued && _deferredStartupActivation is { } deferredActivation)
+        {
+            _deferredStartupActivationQueued = true;
+            EnqueueUiTransition(() => OpenActivationTarget(deferredActivation));
+        }
 
         void UpdateTab(string id, Func<BrowserTab, BrowserTab> updater)
         {
@@ -1033,6 +1154,7 @@ class TabViewPage : Component
             try
             {
                 var collection = TabCollectionService.UpsertCollection(collectionName.Value);
+                _ = AppJumpListService.RefreshAsync();
                 collectionStatus.Set($"Collection '{collection.Name}' is ready.");
                 RefreshCollectionState(collection.Name);
             }
@@ -1056,6 +1178,7 @@ class TabViewPage : Component
                 }
 
                 var item = TabCollectionService.AddOrUpdateItem(collectionName.Value, selectedTab.Url, selectedTab.Title);
+                _ = AppJumpListService.RefreshAsync();
                 collectionStatus.Set($"Added '{item.Title}' to {collectionName.Value}.");
                 RefreshCollectionState(collectionName.Value);
             }
@@ -1076,6 +1199,7 @@ class TabViewPage : Component
             {
                 var safeTitle = string.IsNullOrWhiteSpace(title) ? url : title;
                 var item = TabCollectionService.AddOrUpdateItem(targetCollectionName, url, safeTitle);
+                _ = AppJumpListService.RefreshAsync();
                 var collection = TabCollectionService.GetCollection(item.CollectionId);
                 var resolvedCollectionName = collection?.Name ?? targetCollectionName;
 
@@ -1492,9 +1616,12 @@ class TabViewPage : Component
 
             try
             {
-                TabCollectionService.RemoveItem(collectionName.Value, url);
-                collectionStatus.Set("Removed item from collection.");
-                RefreshCollectionState(collectionName.Value);
+                if (TabCollectionService.RemoveItem(collectionName.Value, url))
+                {
+                    _ = AppJumpListService.RefreshAsync();
+                    collectionStatus.Set("Removed item from collection.");
+                    RefreshCollectionState(collectionName.Value);
+                }
             }
             catch (Exception ex)
             {
@@ -2434,8 +2561,7 @@ class TabViewPage : Component
 
     private static BrowserTab[] LoadStartupTabs()
     {
-        var collectionTabs = LoadStartupCollectionTabs();
-        if (collectionTabs.Length > 0)
+        if (TryLoadStartupCollectionTabs(out var collectionTabs))
         {
             return collectionTabs;
         }
@@ -2471,6 +2597,22 @@ class TabViewPage : Component
         }
 
         return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+    }
+
+    private static BrowserTab[] LoadSavedTabs()
+    {
+        try
+        {
+            var persisted = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs");
+            var safeTabs = persisted is null ? [] : SanitizeTabs(persisted);
+            return safeTabs.Length > 0
+                ? ReconcileTabsWithPersistedFavorites(safeTabs)
+                : [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+        }
+        catch
+        {
+            return [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+        }
     }
 
     private static BrowserTab ResolveStartupSelectedTab(BrowserTab[] startupTabs)
@@ -2516,31 +2658,46 @@ class TabViewPage : Component
         return startupTabs[0];
     }
 
-    private static BrowserTab[] LoadStartupCollectionTabs()
+    private static bool TryLoadStartupCollectionTabs(out BrowserTab[] tabs)
     {
         try
         {
             var startupCollection = TabCollectionService.GetStartupCollection();
             if (startupCollection is null)
             {
-                return [];
+                tabs = [];
+                return false;
             }
 
-            var items = TabCollectionService.GetItems(startupCollection.Id);
-            return items
-                .Take(MaxTabs)
-                .Select((item, index) =>
-                    BrowserTab.CreateNew(index + 1, item.Url, visitCount: 0) with
-                    {
-                        Title = item.Title,
-                        Order = index
-                    })
-                .ToArray();
+            tabs = LoadCollectionTabs(startupCollection.Id);
+            return true;
         }
         catch
         {
-            return [];
+            tabs = [];
+            return false;
         }
+    }
+
+    private static BrowserTab[] SetAndLoadStartupCollection(string collectionId)
+    {
+        TabCollectionService.SetStartupCollection(collectionId);
+        return LoadCollectionTabs(collectionId);
+    }
+
+    private static BrowserTab[] LoadCollectionTabs(string collectionId)
+    {
+        var tabs = TabCollectionService.GetItems(collectionId)
+            .Take(MaxTabs)
+            .Select((item, index) =>
+                BrowserTab.CreateNew(index + 1, item.Url, visitCount: 0) with
+                {
+                    Title = item.Title,
+                    Order = index
+                })
+            .ToArray();
+
+        return tabs.Length > 0 ? tabs : [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
     }
 
     private static BrowserTab[] AddActivatedStartupTab(
@@ -2851,6 +3008,11 @@ class TabViewPage : Component
 
     private void FlushTabsSave()
     {
+        if (_suppressTabPersistence)
+        {
+            return;
+        }
+
         if (!IsSaveTabsEnabled())
         {
             ClearPersistedStartupTabs();
@@ -2880,8 +3042,23 @@ class TabViewPage : Component
         }
     }
 
+    private void SuppressTabPersistence()
+    {
+        _suppressTabPersistence = true;
+        _saveTabsCts?.Cancel();
+        _saveTabsCts?.Dispose();
+        _saveTabsCts = null;
+    }
+
     private void ScheduleTabsSave(BrowserTab[] tabs, string selectedTabId)
     {
+        if (_suppressTabPersistence)
+        {
+            _latestTabs = tabs;
+            _latestSelectedTabId = selectedTabId;
+            return;
+        }
+
         if (!IsSaveTabsEnabled())
         {
             _saveTabsCts?.Cancel();

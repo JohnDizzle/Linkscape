@@ -14,7 +14,7 @@ internal static class ActivationRoutingService
     private const string LinkScapeSchemePrefixAlt = "link2scape:";
     private const string NewWindowUrlArgument = "--linkscape-new-window-url";
     private static readonly object SyncRoot = new();
-    private static string? _pendingTarget;
+    private static ActivationTarget? _pendingTarget;
     private static bool _pendingTargetIsFreshWindow;
     private static bool _initialized;
 
@@ -99,18 +99,18 @@ internal static class ActivationRoutingService
         }
     }
 
-    internal static bool TryConsumePendingTarget(out string target)
+    internal static bool TryConsumePendingTarget(out ActivationTarget target)
     {
         return TryConsumePendingTarget(out target, out _);
     }
 
-    internal static bool TryConsumePendingTarget(out string target, out bool isFreshWindow)
+    internal static bool TryConsumePendingTarget(out ActivationTarget target, out bool isFreshWindow)
     {
         lock (SyncRoot)
         {
-            if (string.IsNullOrWhiteSpace(_pendingTarget))
+            if (_pendingTarget is null)
             {
-                target = string.Empty;
+                target = default!;
                 isFreshWindow = false;
                 return false;
             }
@@ -144,7 +144,7 @@ internal static class ActivationRoutingService
         return true;
     }
 
-    private static void StorePendingTarget(string target, bool isFreshWindow)
+    private static void StorePendingTarget(ActivationTarget target, bool isFreshWindow)
     {
         lock (SyncRoot)
         {
@@ -153,9 +153,9 @@ internal static class ActivationRoutingService
         }
     }
 
-    private static bool TryGetActivationTarget(AppActivationArguments? args, out string target)
+    private static bool TryGetActivationTarget(AppActivationArguments? args, out ActivationTarget target)
     {
-        target = string.Empty;
+        target = default!;
 
         if (args is null)
         {
@@ -166,13 +166,14 @@ internal static class ActivationRoutingService
         {
             ExtendedActivationKind.Protocol => TryGetProtocolTarget(args.Data as IProtocolActivatedEventArgs, out target),
             ExtendedActivationKind.File => TryGetFileTarget(args.Data as IFileActivatedEventArgs, out target),
+            ExtendedActivationKind.Launch => TryGetLaunchTarget(args.Data as ILaunchActivatedEventArgs, out target),
             _ => false
         };
     }
 
-    private static bool TryGetCommandLineTarget(string[] args, out string target)
+    private static bool TryGetCommandLineTarget(string[] args, out ActivationTarget target)
     {
-        target = string.Empty;
+        target = default!;
 
         for (var index = 0; index < args.Length - 1; index++)
         {
@@ -188,20 +189,74 @@ internal static class ActivationRoutingService
                 return false;
             }
 
-            target = candidate;
+            target = ActivationTarget.ForUrl(candidate);
             return true;
         }
 
         return false;
     }
 
-    private static bool TryGetProtocolTarget(IProtocolActivatedEventArgs? protocolArgs, out string target)
+    private static bool TryGetProtocolTarget(IProtocolActivatedEventArgs? protocolArgs, out ActivationTarget target)
     {
-        target = string.Empty;
+        target = default!;
 
         if (protocolArgs?.Uri is not Uri uri)
         {
             return false;
+        }
+
+        return TryMapProtocolUri(uri, out target);
+    }
+
+    private static bool TryGetLaunchTarget(ILaunchActivatedEventArgs? launchArgs, out ActivationTarget target)
+    {
+        target = default!;
+        var arguments = launchArgs?.Arguments?.Trim();
+        return Uri.TryCreate(arguments, UriKind.Absolute, out var uri) &&
+            TryMapProtocolUri(uri, out target);
+    }
+
+    internal static bool TryMapProtocolUri(Uri uri, out ActivationTarget target)
+    {
+        target = default!;
+
+        if (!string.Equals(uri.Scheme, "link2scape", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var route = uri.Host.Trim();
+        var path = WebUtility.UrlDecode(uri.AbsolutePath.Trim('/'));
+
+        if (string.Equals(route, "app", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(path))
+        {
+            target = new ActivationTarget(ActivationTargetKind.InstalledApp, path);
+            return true;
+        }
+
+        if (string.Equals(route, "collection", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(path))
+        {
+            target = new ActivationTarget(ActivationTargetKind.Collection, path);
+            return true;
+        }
+
+        if (string.Equals(route, "navigate", StringComparison.OrdinalIgnoreCase))
+        {
+            var kind = path.ToLowerInvariant() switch
+            {
+                "collections" => ActivationTargetKind.Collections,
+                "saved-tabs" => ActivationTargetKind.SavedTabs,
+                "search" or "basic" or "default" => ActivationTargetKind.Search,
+                _ => ActivationTargetKind.None
+            };
+
+            if (kind != ActivationTargetKind.None)
+            {
+                target = new ActivationTarget(kind);
+                return true;
+            }
         }
 
         var raw = uri.OriginalString;
@@ -237,7 +292,7 @@ internal static class ActivationRoutingService
             return false;
         }
 
-        target = candidate;
+        target = ActivationTarget.ForUrl(candidate);
         return true;
     }
 
@@ -276,9 +331,9 @@ internal static class ActivationRoutingService
         return null;
     }
 
-    private static bool TryGetFileTarget(IFileActivatedEventArgs? fileArgs, out string target)
+    private static bool TryGetFileTarget(IFileActivatedEventArgs? fileArgs, out ActivationTarget target)
     {
-        target = string.Empty;
+        target = default!;
 
         var pdfFile = fileArgs?.Files
             .OfType<StorageFile>()
@@ -289,7 +344,23 @@ internal static class ActivationRoutingService
             return false;
         }
 
-        target = new Uri(pdfFile.Path).AbsoluteUri;
+        target = ActivationTarget.ForUrl(new Uri(pdfFile.Path).AbsoluteUri);
         return true;
     }
+}
+
+internal enum ActivationTargetKind
+{
+    None,
+    Url,
+    InstalledApp,
+    Collection,
+    Collections,
+    SavedTabs,
+    Search
+}
+
+internal sealed record ActivationTarget(ActivationTargetKind Kind, string Value = "")
+{
+    internal static ActivationTarget ForUrl(string url) => new(ActivationTargetKind.Url, url);
 }

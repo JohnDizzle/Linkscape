@@ -26,6 +26,7 @@ HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
 FavoritesService.EnsureDatabase();
 TabCollectionService.EnsureDatabase();
+InstalledWebAppService.EnsureDatabase();
 const string WebView2AdditionalBrowserArgumentsKey = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
 const string WebView2SingleSignOnPrimaryAccountArgument = "--allow-single-sign-on-os-primary-account";
 
@@ -50,6 +51,7 @@ ReactorApp.Run<App>("LinkScape",
 
             restored = true;
             MainWindowActivation.RestoreWindowPlacement();
+            _ = AppJumpListService.RefreshAsync(reportUnavailable: true);
             
         };
 
