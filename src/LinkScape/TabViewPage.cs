@@ -2437,6 +2437,14 @@ class TabViewPage : Component
                 return selectedById;
             }
 
+            var persistedSelectedTabUrl = TabPersistenceService.LoadTabs<string>("selectedTabUrl");
+            var selectedByPersistedUrl = startupTabs.FirstOrDefault(tab =>
+                BrowserUrl.AreEqual(tab.Url, persistedSelectedTabUrl));
+            if (selectedByPersistedUrl is not null)
+            {
+                return selectedByPersistedUrl;
+            }
+
             var persistedTabs = TabPersistenceService.LoadTabs<BrowserTab[]>("tabs");
             var persistedSelectedTab = persistedTabs?.FirstOrDefault(tab => tab.Id == persistedSelectedTabId);
             if (persistedSelectedTab is not null)
@@ -2813,6 +2821,7 @@ class TabViewPage : Component
 
             TabPersistenceService.SaveTabs("tabs", tabs);
             TabPersistenceService.SaveTabs("selectedTabId", selectedTabId);
+            SaveSelectedTabUrl(tabs, selectedTabId);
         }
         catch
         {
@@ -2838,6 +2847,7 @@ class TabViewPage : Component
 
         var snapshotTabs = tabs.ToArray();
         var snapshotSelectedTabId = selectedTabId;
+        var snapshotSelectedTabUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTabId)?.Url;
         var cts = new CancellationTokenSource();
 
         _saveTabsCts = cts;
@@ -2850,11 +2860,24 @@ class TabViewPage : Component
 
                 TabPersistenceService.SaveTabs("tabs", snapshotTabs);
                 TabPersistenceService.SaveTabs("selectedTabId", snapshotSelectedTabId);
+                if (!string.IsNullOrWhiteSpace(snapshotSelectedTabUrl))
+                {
+                    TabPersistenceService.SaveTabs("selectedTabUrl", snapshotSelectedTabUrl);
+                }
             }
             catch (OperationCanceledException)
             {
             }
         }, cts.Token);
+    }
+
+    private static void SaveSelectedTabUrl(BrowserTab[] tabs, string selectedTabId)
+    {
+        var selectedTabUrl = tabs.FirstOrDefault(tab => tab.Id == selectedTabId)?.Url;
+        if (!string.IsNullOrWhiteSpace(selectedTabUrl))
+        {
+            TabPersistenceService.SaveTabs("selectedTabUrl", selectedTabUrl);
+        }
     }
 
     private static bool IsSaveTabsEnabled(IReadOnlyDictionary<string, string>? settingsSnapshot = null)
@@ -2873,6 +2896,7 @@ class TabViewPage : Component
         {
             TabPersistenceService.RemoveTabs("tabs");
             TabPersistenceService.RemoveTabs("selectedTabId");
+            TabPersistenceService.RemoveTabs("selectedTabUrl");
         }
         catch
         {

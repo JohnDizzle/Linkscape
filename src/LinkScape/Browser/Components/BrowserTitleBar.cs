@@ -616,9 +616,26 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     private void CloseSearchPopup()
     {
         _searchCancellation?.Cancel();
-        if (_searchPopup is not null)
+        var popup = _searchPopup;
+        _searchPopup = null;
+
+        if (popup is null)
         {
-            _searchPopup.IsOpen = false;
+            return;
+        }
+
+        try
+        {
+            popup.IsOpen = false;
+            popup.Child = null;
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Popup teardown can race the XAML root/window lifetime while switching tabs or closing.
+        }
+        catch (InvalidOperationException)
+        {
+            // Treat disconnected popup cleanup as best-effort.
         }
     }
 }
