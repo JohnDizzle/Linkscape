@@ -1,6 +1,7 @@
 using LinkScape.Browser;
 using LinkScape.Models;
 using LinkScape.Services;
+using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Threading.Tasks;
 using Windows.Services.Store;
@@ -144,6 +145,10 @@ internal static class BrowserChrome
                         buttonSize: 32,
                         iconSize: 15,
                         useGlass: true)
+                        .Set(button =>
+                        {
+                            StartAppAvailablePulse(button, installableWebApp.ManifestUrl);
+                        })
                     : IconButton(
                         "\uE896",
                         onInstallWebApp,
@@ -242,6 +247,118 @@ internal static class BrowserChrome
             {
             }
         }
+    }
+    private static void StartAppAvailablePulse(
+    Microsoft.UI.Xaml.Controls.Button button,
+    string appKey)
+    {
+        // Already animated for THIS app.
+        if (string.Equals(
+                button.Tag as string,
+                appKey,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Remember which app this button was animated for.
+        button.Tag = appKey;
+        // Save the existing glass style values.
+        var originalBorderBrush = button.BorderBrush;
+        var originalBorderThickness = button.BorderThickness;
+        var originalBackground = button.Background;
+
+        var brush =
+            new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Microsoft.UI.Colors.Red);
+
+        button.BorderBrush = brush;
+        button.BorderThickness = new Thickness(2);
+
+        var animation =
+            new Microsoft.UI.Xaml.Media.Animation.ColorAnimationUsingKeyFrames
+            {
+                Duration = new Duration(
+                    TimeSpan.FromMilliseconds(1500))
+            };
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(0)),
+                Value = Microsoft.UI.Colors.Red
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(250)),
+                Value = Microsoft.UI.Colors.Orange
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(500)),
+                Value = Microsoft.UI.Colors.Yellow
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(750)),
+                Value = Microsoft.UI.Colors.LimeGreen
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(1000)),
+                Value = Microsoft.UI.Colors.DeepSkyBlue
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(1250)),
+                Value = Microsoft.UI.Colors.MediumPurple
+            });
+
+        animation.KeyFrames.Add(
+            new Microsoft.UI.Xaml.Media.Animation.LinearColorKeyFrame
+            {
+                KeyTime = KeyTime.FromTimeSpan(
+                    TimeSpan.FromMilliseconds(1500)),
+                Value = Microsoft.UI.Colors.Magenta
+            });
+
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(
+            animation,
+            brush);
+
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(
+            animation,
+            "Color");
+
+        var storyboard =
+            new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+
+        storyboard.Children.Add(animation);
+
+        storyboard.Completed += (_, _) =>
+        {
+            button.BorderBrush = originalBorderBrush;
+            button.BorderThickness = originalBorderThickness;
+            button.Background = originalBackground;
+        };
+
+        storyboard.Begin();
     }
     private static Microsoft.UI.Xaml.Controls.Flyout CreateSponsorFlyout(Action<string> onOpenAddressInNewTab)
     {
@@ -2613,8 +2730,7 @@ internal static class BrowserChrome
                         .HAlign(HorizontalAlignment.Stretch),
                         HStack(8,
                             BuildTabMetricPill("Session", FormatTabSessionAge(tab.DateTime)),
-                            BuildTabMetricPill("Opened", tab.DateTime.ToString("g")),
-                            BuildTabMetricPill("Visits", $"{Math.Max(tab.VisitedCount, 0)}")
+                            BuildTabMetricPill("Opened", tab.DateTime.ToString("g"))
                         )
                     )
                     .HAlign(HorizontalAlignment.Stretch)
@@ -3917,13 +4033,6 @@ internal static class BrowserChrome
                 .Flex(grow: 1, basis: 0),
                 Border(
                     (FlexColumn(
-                        Border(
-                            BuildVisitBadge(tab.VisitedCount)
-                                .HAlign(HorizontalAlignment.Right)
-                                .VAlign(VerticalAlignment.Top)
-                        )
-                        .HAlign(HorizontalAlignment.Right)
-                        .Flex(shrink: 0),
                         Border(null)
                             .Flex(grow: 1, basis: 0),
                         IconButton(
@@ -3994,10 +4103,12 @@ internal static class BrowserChrome
             }
 
             var drawSelectedBorder = isSelected && !BrowserMaterialTheme.IsHighContrast;
-            border.BorderThickness = drawSelectedBorder ? new Thickness(SelectedTabBorderThickness) : new Thickness(0);
+            border.BorderThickness = drawSelectedBorder
+                ? new Thickness(SelectedTabBorderThickness)
+                : new Thickness(1);
             border.BorderBrush = drawSelectedBorder
                 ? BrowserMaterialTheme.SelectedStrokeBrush
-                : null;
+                : BrowserConstants.SurfaceStrokeColorDefaultBrush;
             border.Opacity = 1;
             return;
         }

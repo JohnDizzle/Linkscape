@@ -13,6 +13,7 @@ public static class WebAppWindowService
 {
     private static readonly Lazy<Task<CoreWebView2Environment>> BrowserEnvironment =
         new(CreateBrowserEnvironmentAsync);
+    private static WebAppWindow? _expandedWindow;
 
     public static bool TryOpenByManifestUrl(string manifestUrl)
     {
@@ -45,6 +46,11 @@ public static class WebAppWindowService
         var key = GetWindowKey(app.Id);
         if (AppWindowRegistry.TryGet(key, out var existingWindow) && existingWindow is not null)
         {
+            if (existingWindow is WebAppWindow existingWebAppWindow)
+            {
+                ExpandWebAppWindow(existingWebAppWindow);
+            }
+
             existingWindow.Activate();
             return;
         }
@@ -75,13 +81,22 @@ public static class WebAppWindowService
 
         try
         {
-            window = new WebAppWindow(app);
-            AppWindowRegistry.Register(key, window);
+            var stackIndex = AppWindowRegistry.Count(AppWindowKind.WebApp);
+            window = new WebAppWindow(app, stackIndex);
+            AppWindowRegistry.Register(key, window, AppWindowKind.WebApp);
+            window.RestoreRequested += ExpandWebAppWindow;
+            _expandedWindow = window;
 
             window.Closed += (_, _) =>
             {
                 AppWindowRegistry.Unregister(key, window);
                 window.DisposeWebView();
+                if (ReferenceEquals(_expandedWindow, window))
+                {
+                    _expandedWindow = null;
+                }
+
+                ReflowWebAppWindows();
             };
 
             // Activate before WebView2 initialization so the window has a live XamlRoot/HWND.
@@ -98,6 +113,12 @@ public static class WebAppWindowService
             {
                 AppWindowRegistry.Unregister(key, window);
                 window.DisposeWebView();
+                if (ReferenceEquals(_expandedWindow, window))
+                {
+                    _expandedWindow = null;
+                }
+
+                ReflowWebAppWindows();
 
                 try
                 {
@@ -113,6 +134,36 @@ public static class WebAppWindowService
     }
 
     private static string GetWindowKey(string appId) => $"webapp:{appId}";
+
+    private static void ExpandWebAppWindow(WebAppWindow window)
+    {
+        _expandedWindow = window;
+        ReflowWebAppWindows();
+        window.Activate();
+    }
+
+    private static void ReflowWebAppWindows()
+    {
+        var windows = AppWindowRegistry.GetWindows<WebAppWindow>(AppWindowKind.WebApp);
+        if (windows.Count == 0)
+        {
+            return;
+        }
+
+        _expandedWindow ??= windows[^1];
+
+        var compactIndex = 0;
+        foreach (var window in windows)
+        {
+            if (ReferenceEquals(window, _expandedWindow))
+            {
+                window.ApplyIslandState(0, isCompact: false);
+                continue;
+            }
+
+            window.ApplyIslandState(compactIndex++, isCompact: true);
+        }
+    }
 
     private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
     {
