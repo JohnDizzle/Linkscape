@@ -150,6 +150,12 @@ public static class LocalMcpServerService
                 required.Add("query");
             }
 
+            if (toolName is BrowserNavigationToolNames.TabsOpenPackage)
+            {
+                properties["packageJson"] = CreateStringSchema("Active tabs JSON package. Use tabsJson or tabs as aliases.");
+                required.Add("packageJson");
+            }
+
             if (toolName is BrowserNavigationToolNames.TabsActivate or BrowserNavigationToolNames.Navigate or BrowserNavigationToolNames.GoBack or BrowserNavigationToolNames.GoForward or BrowserNavigationToolNames.Reload or BrowserNavigationToolNames.GoHome)
             {
                 properties["tabId"] = CreateStringSchema("Optional browser tab ID. Uses the selected tab when omitted.");

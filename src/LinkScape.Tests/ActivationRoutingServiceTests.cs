@@ -55,6 +55,37 @@ public sealed class ActivationRoutingServiceTests
     }
 
     [TestMethod]
+    public void TryMapProtocolUri_MapsOpenTabsJsonPackage()
+    {
+        const string json = """{"tabs":[{"url":"https://example.com/docs","title":"Docs","selected":true}]}""";
+        var mapped = ActivationRoutingService.TryMapProtocolUri(
+            new Uri($"link2scape://open?tabs={Uri.EscapeDataString(json)}"),
+            out var target);
+
+        Assert.IsTrue(mapped);
+        Assert.AreEqual(ActivationTargetKind.ActiveTabsPackage, target.Kind);
+        StringAssert.Contains(target.Value, "https://example.com/docs");
+    }
+
+    [TestMethod]
+    public void TryMapProtocolUri_MapsTabsActiveBase64UrlPayload()
+    {
+        const string json = """{"mode":"replace","saveState":false,"tabs":[{"url":"https://example.com/api"}]}""";
+        var payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+
+        var mapped = ActivationRoutingService.TryMapProtocolUri(
+            new Uri($"link2scape://tabs/active?payload={payload}"),
+            out var target);
+
+        Assert.IsTrue(mapped);
+        Assert.AreEqual(ActivationTargetKind.ActiveTabsPackage, target.Kind);
+        StringAssert.Contains(target.Value, "\"saveState\":false");
+    }
+
+    [TestMethod]
     public void TryMapLaunchArguments_MapsPlainLaunchToMainBrowser()
     {
         var mapped = ActivationRoutingService.TryMapLaunchArguments(string.Empty, out var target);

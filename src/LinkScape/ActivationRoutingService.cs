@@ -4,6 +4,7 @@ using System.Net;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
 using Windows.Storage;
+using LinkScape.Models;
 
 namespace LinkScape;
 
@@ -344,6 +345,14 @@ internal static class ActivationRoutingService
             return true;
         }
 
+        if (string.Equals(route, "tabs", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(path, "active", StringComparison.OrdinalIgnoreCase) &&
+            TryExtractTabsPackageJson(uri.Query, out var tabsPackageJson))
+        {
+            target = new ActivationTarget(ActivationTargetKind.ActiveTabsPackage, tabsPackageJson);
+            return true;
+        }
+
         if (string.Equals(route, "navigate", StringComparison.OrdinalIgnoreCase))
         {
             var kind = path.ToLowerInvariant() switch
@@ -375,6 +384,12 @@ internal static class ActivationRoutingService
         else
         {
             return false;
+        }
+
+        if (TryExtractTabsPackageJson(uri.Query, out tabsPackageJson))
+        {
+            target = new ActivationTarget(ActivationTargetKind.ActiveTabsPackage, tabsPackageJson);
+            return true;
         }
 
         var queryTarget = TryExtractQueryUrl(payload);
@@ -433,6 +448,37 @@ internal static class ActivationRoutingService
         return null;
     }
 
+    private static bool TryExtractTabsPackageJson(string query, out string json)
+    {
+        json = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        var trimmedQuery = query.TrimStart('?');
+        foreach (var segment in trimmedQuery.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = segment.Split('=', 2);
+            if (parts.Length != 2 ||
+                (!string.Equals(parts[0], "tabs", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(parts[0], "payload", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            if (ActiveTabsPackage.TryDecodePayload(parts[1], out json) &&
+                ActiveTabsPackage.TryParse(json, out _, out _))
+            {
+                return true;
+            }
+        }
+
+        json = string.Empty;
+        return false;
+    }
+
     private static bool TryGetFileTarget(IFileActivatedEventArgs? fileArgs, out ActivationTarget target)
     {
         target = default!;
@@ -457,6 +503,7 @@ internal enum ActivationTargetKind
     Url,
     InstalledApp,
     Collection,
+    ActiveTabsPackage,
     Collections,
     SavedTabs,
     Search,

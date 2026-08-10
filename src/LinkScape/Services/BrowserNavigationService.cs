@@ -21,9 +21,10 @@ public static class BrowserNavigationToolNames
     public const string HomeGet = "browser.home.get";
     public const string HomeSet = "browser.home.set";
     public const string TabsOpen = "browser.tabs.open";
+    public const string TabsOpenPackage = "browser.tabs.openPackage";
 
     public static bool IsNavigationTool(string toolName) =>
-        toolName is TabsList or TabsFind or TabsActivate or Navigate or GoBack or GoForward or Reload or GoHome or HomeGet or HomeSet or TabsOpen;
+        toolName is TabsList or TabsFind or TabsActivate or Navigate or GoBack or GoForward or Reload or GoHome or HomeGet or HomeSet or TabsOpen or TabsOpenPackage;
 }
 
 public static class BrowserNavigationService

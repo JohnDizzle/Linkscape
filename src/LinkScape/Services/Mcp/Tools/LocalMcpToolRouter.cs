@@ -16,6 +16,7 @@ public static class LocalMcpToolRouter
         CreateNavigationStatus(BrowserNavigationToolNames.HomeGet, "Gets the configured browser home URL."),
         CreateNavigationStatus(BrowserNavigationToolNames.HomeSet, "Sets the browser home URL."),
         CreateNavigationStatus(BrowserNavigationToolNames.TabsOpen, "Opens a URL in a new browser tab."),
+        CreateNavigationStatus(BrowserNavigationToolNames.TabsOpenPackage, "Opens, replaces, or appends active tabs from a JSON package."),
         .. BrowserDataToolService.GetTools()
     ];
 
@@ -45,6 +46,7 @@ public static class LocalMcpToolRouter
             BrowserNavigationToolNames.HomeGet => InvokeBrowserNavigation(toolName, arguments),
             BrowserNavigationToolNames.HomeSet => InvokeBrowserNavigation(toolName, arguments),
             BrowserNavigationToolNames.TabsOpen => InvokeBrowserNavigation(toolName, arguments),
+            BrowserNavigationToolNames.TabsOpenPackage => InvokeBrowserNavigation(toolName, arguments),
             BrowserDataToolService.HistoryTodayToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryRecentToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.HistoryMostVisitedToolName => InvokeBrowserTool(toolName, arguments),

@@ -117,6 +117,17 @@ class TabViewPage : Component
                 var selectedTab = ResolveStartupSelectedTab(startupTabs);
                 startupSelectedTabId = selectedTab.Id;
             }
+            else if (activationTarget.Kind == ActivationTargetKind.ActiveTabsPackage &&
+                ActiveTabsPackage.TryParse(activationTarget.Value, out var package, out _))
+            {
+                if (!package.ShouldSaveState)
+                {
+                    SuppressTabPersistence();
+                }
+
+                startupTabs = CreateTabsFromPackage(package, selectedSearchProviderDefault, out startupSelectedTabId);
+                SavePackageCollection(package);
+            }
             else
             {
                 var selectedTab = ResolveStartupSelectedTab(startupTabs);
@@ -945,6 +956,40 @@ class TabViewPage : Component
             }
         }
 
+        void OpenActiveTabsPackageActivation(string packageJson)
+        {
+            if (!ActiveTabsPackage.TryParse(packageJson, out var package, out var error))
+            {
+                collectionStatus.Set(error);
+                return;
+            }
+
+            var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+            var packageTabs = CreateTabsFromPackage(package, selectedSearchProviderKey, out var packageSelectedTabId);
+            var nextTabs = package.ShouldAppend
+                ? AppendImportedTabs(currentTabs, packageTabs)
+                : packageTabs;
+            var nextSelectedTabId = package.ShouldAppend && package.SelectedIndex is null && string.IsNullOrWhiteSpace(package.SelectedTabId)
+                ? _latestSelectedTabId ?? selectedTag
+                : packageSelectedTabId;
+
+            if (!nextTabs.Any(tab => string.Equals(tab.Id, nextSelectedTabId, StringComparison.Ordinal)))
+            {
+                nextSelectedTabId = nextTabs[0].Id;
+            }
+
+            if (!package.ShouldSaveState)
+            {
+                SuppressTabPersistence();
+            }
+
+            SavePackageCollection(package);
+            MarkTabsChanged(nextTabs);
+            UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, nextSelectedTabId));
+            _browserTitleBarController.SetAddressText(nextTabs.First(tab => tab.Id == nextSelectedTabId).Url);
+            ScheduleTabsSave(nextTabs, nextSelectedTabId);
+        }
+
         void OpenActivationTarget(ActivationTarget target)
         {
             switch (target.Kind)
@@ -957,6 +1002,9 @@ class TabViewPage : Component
                     break;
                 case ActivationTargetKind.Collection:
                     OpenCollectionActivation(target.Value);
+                    break;
+                case ActivationTargetKind.ActiveTabsPackage:
+                    OpenActiveTabsPackageActivation(target.Value);
                     break;
                 case ActivationTargetKind.Collections:
                     OpenCollectionsExpanded();
@@ -2167,6 +2215,44 @@ class TabViewPage : Component
                     ScheduleTabsSave(nextTabs, select ? newTab.Id : _latestSelectedTabId ?? selectedTag);
                     return new BrowserNavigationResult(true, $"Opened tab '{newTab.Title}' at {newTab.Url}.");
 
+                case BrowserNavigationToolNames.TabsOpenPackage:
+                    if (!arguments.TryGetValue("packageJson", out var packageJson) &&
+                        !arguments.TryGetValue("tabsJson", out packageJson) &&
+                        !arguments.TryGetValue("tabs", out packageJson))
+                    {
+                        return new BrowserNavigationResult(false, "An active tabs JSON package is required.");
+                    }
+
+                    if (!ActiveTabsPackage.TryParse(packageJson, out var package, out var packageError))
+                    {
+                        return new BrowserNavigationResult(false, packageError);
+                    }
+
+                    var packageTabs = CreateTabsFromPackage(package, selectedSearchProviderKey, out var packageSelectedTabId);
+                    var packageNextTabs = package.ShouldAppend
+                        ? AppendImportedTabs(currentTabs, packageTabs)
+                        : packageTabs;
+                    var packageNextSelectedTabId = package.ShouldAppend && package.SelectedIndex is null && string.IsNullOrWhiteSpace(package.SelectedTabId)
+                        ? _latestSelectedTabId ?? selectedTag
+                        : packageSelectedTabId;
+
+                    if (!packageNextTabs.Any(tab => string.Equals(tab.Id, packageNextSelectedTabId, StringComparison.Ordinal)))
+                    {
+                        packageNextSelectedTabId = packageNextTabs[0].Id;
+                    }
+
+                    if (!package.ShouldSaveState)
+                    {
+                        SuppressTabPersistence();
+                    }
+
+                    SavePackageCollection(package);
+                    MarkTabsChanged(packageNextTabs);
+                    UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, packageNextSelectedTabId));
+                    _browserTitleBarController.SetAddressText(packageNextTabs.First(tab => tab.Id == packageNextSelectedTabId).Url);
+                    ScheduleTabsSave(packageNextTabs, packageNextSelectedTabId);
+                    return new BrowserNavigationResult(true, $"Opened {packageTabs.Length} active tab package item(s).");
+
                 default:
                     return new BrowserNavigationResult(false, $"Unsupported browser navigation tool '{command.ToolName}'.");
             }
@@ -2827,6 +2913,132 @@ class TabViewPage : Component
         var normalizedTarget = BrowserUrl.Normalize(activationTarget, fallback, selectedSearchProviderKey);
         activatedTab = BrowserTab.CreateNew(1, normalizedTarget, visitCount: 1);
         return [activatedTab];
+    }
+
+    private static BrowserTab[] CreateTabsFromPackage(
+        ActiveTabsPackage package,
+        string selectedSearchProviderKey,
+        out string selectedTabId)
+    {
+        var fallback = GetConfiguredHomeUrl();
+        var usedIds = new HashSet<string>(StringComparer.Ordinal);
+        var items = package.ValidTabs
+            .Select((tab, index) => new { Tab = tab, InputIndex = index })
+            .OrderBy(item => item.Tab.Order ?? item.InputIndex)
+            .Take(MaxTabs)
+            .ToArray();
+
+        var tabs = items
+            .Select((item, index) =>
+            {
+                var source = item.Tab;
+                var normalizedUrl = BrowserUrl.Normalize(source.Url, fallback, selectedSearchProviderKey);
+                var id = !string.IsNullOrWhiteSpace(source.Id) && usedIds.Add(source.Id.Trim())
+                    ? source.Id.Trim()
+                    : Guid.NewGuid().ToString("N");
+                var title = string.IsNullOrWhiteSpace(source.Title)
+                    ? normalizedUrl
+                    : Trim(source.Title, MaxTitleLength);
+                var favoriteId = source.IsFavorite == true
+                    ? string.IsNullOrWhiteSpace(source.FavoriteId) ? Guid.NewGuid().ToString("N") : source.FavoriteId.Trim()
+                    : string.Empty;
+
+                return new BrowserTab(
+                    id,
+                    title,
+                    Trim(normalizedUrl, MaxUrlLength),
+                    DateTime.Now,
+                    favoriteId,
+                    Math.Max(0, source.VisitedCount ?? 0),
+                    source.IsFavorite == true,
+                    source.IsHomeTab == true,
+                    index,
+                    Math.Max(0, source.ScrollX ?? 0),
+                    Math.Max(0, source.ScrollY ?? 0),
+                    source.IsSleeping == true);
+            })
+            .ToArray();
+
+        if (tabs.Length == 0)
+        {
+            var homeTab = BrowserTab.CreateHome(fallback);
+            selectedTabId = homeTab.Id;
+            return [homeTab];
+        }
+
+        selectedTabId =
+            ResolvePackageSelectedTabId(package, items.Select(item => item.Tab).ToArray(), tabs)
+            ?? tabs[0].Id;
+        return tabs;
+
+        static string Trim(string value, int maxLength) =>
+            value.Length <= maxLength ? value : value[..maxLength];
+    }
+
+    private static string? ResolvePackageSelectedTabId(
+        ActiveTabsPackage package,
+        ActiveTabItem[] sourceTabs,
+        BrowserTab[] tabs)
+    {
+        if (!string.IsNullOrWhiteSpace(package.SelectedTabId))
+        {
+            var selectedById = tabs.FirstOrDefault(tab => string.Equals(tab.Id, package.SelectedTabId, StringComparison.Ordinal));
+            if (selectedById is not null)
+            {
+                return selectedById.Id;
+            }
+        }
+
+        var selectedSourceIndex = Array.FindIndex(sourceTabs, tab => tab.Selected == true);
+        if (selectedSourceIndex >= 0 && selectedSourceIndex < tabs.Length)
+        {
+            return tabs[selectedSourceIndex].Id;
+        }
+
+        if (package.SelectedIndex is int selectedIndex &&
+            selectedIndex >= 0 &&
+            selectedIndex < tabs.Length)
+        {
+            return tabs[selectedIndex].Id;
+        }
+
+        return null;
+    }
+
+    private static BrowserTab[] AppendImportedTabs(BrowserTab[] currentTabs, BrowserTab[] importedTabs)
+    {
+        var existingIds = currentTabs.Select(tab => tab.Id).ToHashSet(StringComparer.Ordinal);
+        var appendedTabs = importedTabs
+            .Select((tab, index) => existingIds.Add(tab.Id)
+                ? tab
+                : tab with { Id = Guid.NewGuid().ToString("N") })
+            .ToArray();
+
+        BrowserTab[] combinedTabs = [.. currentTabs, .. appendedTabs];
+
+        return combinedTabs
+            .Take(MaxTabs)
+            .Select((tab, index) => tab with { Order = index })
+            .ToArray();
+    }
+
+    private static void SavePackageCollection(ActiveTabsPackage package)
+    {
+        if (string.IsNullOrWhiteSpace(package.CollectionName))
+        {
+            return;
+        }
+
+        foreach (var tab in package.ValidTabs)
+        {
+            try
+            {
+                TabCollectionService.AddOrUpdateItem(package.CollectionName, tab.Url, tab.Title);
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static IReadOnlyDictionary<string, string[]> BuildCollectionMembership(IReadOnlyList<TabCollection> collections)
