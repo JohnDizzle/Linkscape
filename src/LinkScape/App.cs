@@ -57,9 +57,8 @@ ReactorApp.Run<App>("LinkScape",
 
         host.Window.Closed += (_, _) =>
         {
-
-            AppWindowRegistry.CloseAll();
             MainWindowActivation.SaveWindowPlacement();
+            AppWindowRegistry.CloseAll();
         };
     });
 

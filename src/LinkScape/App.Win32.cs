@@ -31,6 +31,7 @@ internal static class MainWindowActivation
     private static bool _isFullScreenPresentationActive;
     private static bool _restoreMaximizedAfterFullScreen;
     private static bool _messengerRegistered;
+    private static bool _closingHandlerRegistered;
     public static nint Hwnd
     {
         get
@@ -65,6 +66,12 @@ internal static class MainWindowActivation
             _window = window;
             _appWindow = appWindow;
             _hwnd = hwnd;
+
+            if (!_closingHandlerRegistered)
+            {
+                appWindow.Closing += static (_, _) => SaveWindowPlacement();
+                _closingHandlerRegistered = true;
+            }
 
             if (!_messengerRegistered)
             {
