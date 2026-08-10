@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self'">
+  <title>What's new in LinkScape</title>
+  <link rel="preload" href="../StoreLogo.scale-400.png" as="image">
+  <link rel="preload" href="media/Collections.png" as="image">
+  <link rel="preload" href="media/JumpList.png" as="image">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="hero">
+            <img class="app-logo" src="../StoreLogo.scale-400.png" alt="LinkScape globe">
+            <div>
+                <p class="eyebrow">LINKSCAPE BROWSER</p>
+                <h1>What’s new</h1>
+                <p class="version-line">Version <span id="package-version">latest</span></p>
+            </div>
+        </header>
+
+        <section class="release-card">
+            <div class="release-copy">
+                <p class="eyebrow">NEW IN THIS RELEASE</p>
+                <h2>A faster, more connected workspace</h2>
+                <p>
+                    Use this page to introduce the most important changes in each LinkScape release.
+                    Replace this copy and the cards below before publishing a new package.
+                </p>
+            </div>
+        </section>
+
+        <section class="feature-grid" aria-label="Release highlights">
+            <article class="feature-card">
+                <p class="feature-number">01</p>
+                <h2>Jump-list shortcuts</h2>
+                <p>Open Search, a saved Collection, or one of your recently installed web apps directly from Windows.</p>
+            </article>
+
+            <article class="feature-card">
+                <p class="feature-number">02</p>
+                <h2>Install web apps</h2>
+                <p>Turn supported websites into LinkScape apps with their own icon, focused app window, and quick launch entry.</p>
+            </article>
+
+            <article class="feature-card">
+                <p class="feature-number">03</p>
+                <h2>Collection workflows</h2>
+                <p>Switch the current browser to a Collection or open that Collection in a separate window.</p>
+            </article>
+
+            <article class="feature-card">
+                <p class="feature-number">04</p>
+                <h2>Faster Favorites</h2>
+                <p>Favorites and History now use bounded database results, filtering, and incremental loading.</p>
+            </article>
+        </section>
+
+
+        <!-- Add release media under Assets/Updates/media and use normal relative URLs:-->
+
+        <figure class="media-card">
+            <img src="media/Collections.png" alt="Collections improvements">
+            <figcaption>Toggle between Collections or open them in a new window.</figcaption>
+        </figure>
+        <figure class="media-card">
+            <img src="media/JumpList.png" alt="Jump-list improvements">
+            <figcaption>Launch Search, Collections, and installed apps from Windows.</figcaption>
+        </figure>
+
+        <figure class="media-card">
+            <div class="video-stage">
+                <div class="video-loading" aria-hidden="true">
+                    <img src="../StoreLogo.scale-400.png" alt="">
+                    <span>Loading app preview…</span>
+                </div>
+                <video controls preload="auto" playsinline>
+                    <source src="media/LinkedApps.mp4" type="video/mp4">
+                </video>
+            </div>
+            <figcaption>Download LinkScape Apps</figcaption>
+        </figure>
+
+        <figure class="media-card">
+            <div class="video-stage">
+                <div class="video-loading" aria-hidden="true">
+                    <img src="../StoreLogo.scale-400.png" alt="">
+                    <span>Loading updater preview…</span>
+                </div>
+                <video controls preload="auto" playsinline>
+                    <source src="media/LinkedUpdater.mp4" type="video/mp4">
+                </video>
+            </div>
+            <figcaption>New Updater Features</figcaption>
+        </figure>
+
+
+        <footer class="action-bar">
+            <div>
+                <strong>Your session is still here.</strong>
+                <span>Return to the tabs that were open before this page appeared.</span>
+            </div>
+            <a class="primary-action" href="back">Back to session</a>
+        </footer>
+    </main>
+
+  <script src="page.js"></script>
+</body>
+</html>

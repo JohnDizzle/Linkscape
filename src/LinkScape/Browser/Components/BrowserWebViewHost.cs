@@ -79,7 +79,8 @@ internal sealed record BrowserWebViewHostProps(
     Action<string> SetAddressFromCore,
     Action<bool> SetLoadingStateFromCore,
     Action RefreshHistoryFromCore,
-    Action<string, InstallableWebApp?> SetInstallableWebAppFromCore);
+    Action<string, InstallableWebApp?> SetInstallableWebAppFromCore,
+    Action<string> CloseInternalTab);
 
 internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 {
@@ -385,7 +386,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     };
                 });
 
-                if (urlChanged)
+                if (urlChanged && !IsLinkerInternalUrl(currentUrl))
                 {
                     try
                     {
@@ -426,6 +427,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             webView.NavigationStarting += (_, args) =>
             {
                 BrowserNoticeService.Clear();
+
+                if (IsUpdateBackUrl(args.Uri))
+                {
+                    args.Cancel = true;
+                    webView.DispatcherQueue.TryEnqueue(() => Props.CloseInternalTab(tab.Id));
+                    return;
+                }
                 
                 // Clear the installable web app state when navigating to a new page.
                 Props.SetInstallableWebAppFromCore(tab.Id, null);
@@ -881,6 +889,16 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             assetsFolder,
             CoreWebView2HostResourceAccessKind.Allow);
     }
+
+    private static bool IsLinkerInternalUrl(string? rawUrl) =>
+        Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(uri.Host, LinkerVirtualHostName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsUpdateBackUrl(string? rawUrl) =>
+        IsLinkerInternalUrl(rawUrl) &&
+        Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.AbsolutePath, "/Updates/back", StringComparison.OrdinalIgnoreCase);
 
     private static void AttachWebViewToHost(
         Microsoft.UI.Xaml.Controls.Border host,

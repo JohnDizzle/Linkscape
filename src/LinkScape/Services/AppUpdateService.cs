@@ -12,6 +12,8 @@ namespace LinkScape.Services;
 internal static class AppUpdateService
 {
     internal const string AutomaticDailyChecksSettingKey = "updates.automaticDailyChecks";
+    internal const string LastSeenPackageVersionSettingKey = "updates.lastSeenPackageVersion";
+    internal const string WhatsNewPageUrl = "https://linker.local/Updates/index.html";
     private const string LastDailyCheckSettingKey = "updates.lastDailyCheckUtc";
     private static readonly TimeSpan DailyCheckInterval = TimeSpan.FromDays(1);
     private static readonly SemaphoreSlim CheckLock = new(1, 1);
@@ -31,6 +33,52 @@ internal static class AppUpdateService
     }
 
     internal static Task CheckForUpdatesNowAsync() => CheckForUpdatesAsync(isManualCheck: true);
+
+    internal static bool TryGetUnseenPackageVersion(out string version)
+    {
+        if (!TryGetCurrentPackageVersion(out version))
+        {
+            return false;
+        }
+
+        var lastSeenVersion = SettingsService.GetValue(LastSeenPackageVersionSettingKey)?.Trim();
+        if (string.IsNullOrWhiteSpace(lastSeenVersion))
+        {
+            // Versions released before this feature did not persist a package
+            // version. Treat a missing value as unseen so existing users receive
+            // the first bundled What's New page after upgrading.
+            return true;
+        }
+
+        return !string.Equals(lastSeenVersion, version, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string GetCurrentPackageVersionDisplay() =>
+        TryGetCurrentPackageVersion(out var version) ? version : "Development";
+
+    internal static void MarkPackageVersionSeen(string version)
+    {
+        if (!string.IsNullOrWhiteSpace(version))
+        {
+            SettingsService.SetValue(LastSeenPackageVersionSettingKey, version.Trim());
+        }
+    }
+
+    private static bool TryGetCurrentPackageVersion(out string version)
+    {
+        version = string.Empty;
+
+        try
+        {
+            version = FormatVersion(Windows.ApplicationModel.Package.Current.Id.Version);
+            return true;
+        }
+        catch
+        {
+            // Package.Current is unavailable for unpackaged development runs.
+            return false;
+        }
+    }
 
     private static async Task CheckForUpdatesAsync(bool isManualCheck)
     {

@@ -59,6 +59,8 @@ class TabViewPage : Component
     private Action<ActivationTarget>? _openActivatedTarget;
     private ActivationTarget? _deferredStartupActivation;
     private bool _deferredStartupActivationQueued;
+    private string? _deferredWhatsNewVersion;
+    private bool _deferredWhatsNewQueued;
     private bool _suppressTabPersistence;
     private CancellationTokenSource? _historyFilterCts;
     private CancellationTokenSource? _favoritesFilterCts;
@@ -78,8 +80,12 @@ class TabViewPage : Component
 
         string startupSelectedTabId;
 
+        var isOrdinaryBrowserLaunch = true;
+
         if (ActivationRoutingService.TryConsumePendingTarget(out var activationTarget, out var isFreshWindow))
         {
+            isOrdinaryBrowserLaunch = activationTarget.Kind == ActivationTargetKind.MainBrowser;
+
             if (activationTarget.Kind == ActivationTargetKind.Url)
             {
                 if (isFreshWindow)
@@ -132,6 +138,11 @@ class TabViewPage : Component
             _startupTabs,
             _startupSelectedTabId,
             selectedSearchProviderDefault);
+
+        if (isOrdinaryBrowserLaunch && AppUpdateService.TryGetUnseenPackageVersion(out var unseenVersion))
+        {
+            _deferredWhatsNewVersion = unseenVersion;
+        }
 
         RegisterShutdownSave();
     }
@@ -968,6 +979,26 @@ class TabViewPage : Component
         {
             _deferredStartupActivationQueued = true;
             EnqueueUiTransition(() => OpenActivationTarget(deferredActivation));
+        }
+
+        if (!_deferredWhatsNewQueued && !string.IsNullOrWhiteSpace(_deferredWhatsNewVersion))
+        {
+            _deferredWhatsNewQueued = true;
+            var version = _deferredWhatsNewVersion;
+            EnqueueUiTransition(() =>
+            {
+                var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+                if (currentTabs.Length >= MaxTabs)
+                {
+                    _deferredWhatsNewQueued = false;
+                    return;
+                }
+
+                var url = $"{AppUpdateService.WhatsNewPageUrl}?version={Uri.EscapeDataString(version)}";
+                OpenUriInNewTab(url, dismissCommandCenter: false);
+                AppUpdateService.MarkPackageVersionSeen(version);
+                _deferredWhatsNewVersion = null;
+            });
         }
 
         void UpdateTab(string id, Func<BrowserTab, BrowserTab> updater)
@@ -2375,7 +2406,8 @@ class TabViewPage : Component
                     preserveUserEdit: true),
                 SetLoadingIfNeeded,
                 RefreshVisibleHistoryAfterNavigation,
-                SetInstallableWebAppFromCore
+                SetInstallableWebAppFromCore,
+                CloseTab
             ));
         var browserSurfaceInset = isFullScreenPresentationActive.Value
             ? 0

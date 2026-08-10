@@ -2142,23 +2142,51 @@ internal static class BrowserChrome
         const string sponsorUrl = "https://paypal.me/johndizzleUS";
         const string sponsorEmail = "fizzledbydizzle@live.com";
 
-        var openSourceRow = new StackPanel
+        var openSourceLabel = new TextBlock
         {
-            Orientation = Microsoft.UI.Xaml.Controls.Orientation.Horizontal,
-            Spacing = 8,
+            Text = "Open Source: GitHub",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(openSourceLabel, 0);
+
+        var versionBadge = new Border
+        {
+            Padding = new Thickness(8, 3, 8, 3),
+            CornerRadius = new CornerRadius(8),
+            Background = BrowserConstants.SubtleFillColorSecondaryBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = $"v{AppUpdateService.GetCurrentPackageVersionDisplay()}",
+                FontSize = 11,
+                Opacity = 0.76
+            }
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(versionBadge, 1);
+
+        var repositoryButton = CreateSettingsIconButton(
+            BrowserConstants.GlyphLink,
+            "Open GitHub repository",
+            () => onOpenAddressInNewTab(repositoryUrl));
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(repositoryButton, 2);
+
+        var openSourceRow = new Microsoft.UI.Xaml.Controls.Grid
+        {
             Margin = new Thickness(0, 4, 0, 0),
+            ColumnSpacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ColumnDefinitions =
+            {
+                new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto },
+                new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto }
+            },
             Children =
             {
-                new TextBlock
-                {
-                    Text = "Open Source: GitHub",
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                CreateSettingsIconButton(
-                    BrowserConstants.GlyphLink,
-                    "Open GitHub repository",
-                    () => onOpenAddressInNewTab(repositoryUrl))
+                openSourceLabel,
+                versionBadge,
+                repositoryButton
             }
         };
 
