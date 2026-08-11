@@ -56,6 +56,15 @@ internal static class AppUpdateService
     internal static string GetCurrentPackageVersionDisplay() =>
         TryGetCurrentPackageVersion(out var version) ? version : "Development";
 
+    internal static string GetWhatsNewPageUrl(string? version = null)
+    {
+        var displayVersion = string.IsNullOrWhiteSpace(version)
+            ? GetCurrentPackageVersionDisplay()
+            : version.Trim();
+
+        return $"{WhatsNewPageUrl}?version={Uri.EscapeDataString(displayVersion)}";
+    }
+
     internal static void MarkPackageVersionSeen(string version)
     {
         if (!string.IsNullOrWhiteSpace(version))

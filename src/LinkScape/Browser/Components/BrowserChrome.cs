@@ -2165,11 +2165,21 @@ internal static class BrowserChrome
         };
         Microsoft.UI.Xaml.Controls.Grid.SetColumn(versionBadge, 1);
 
+        var whatsNewButton = new Microsoft.UI.Xaml.Controls.HyperlinkButton
+        {
+            Content = "What’s new",
+            Padding = new Thickness(6, 3, 6, 3),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        whatsNewButton.Click += (_, _) =>
+            onOpenAddressInNewTab(AppUpdateService.GetWhatsNewPageUrl());
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(whatsNewButton, 2);
+
         var repositoryButton = CreateSettingsIconButton(
             BrowserConstants.GlyphLink,
             "Open GitHub repository",
             () => onOpenAddressInNewTab(repositoryUrl));
-        Microsoft.UI.Xaml.Controls.Grid.SetColumn(repositoryButton, 2);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(repositoryButton, 3);
 
         var openSourceRow = new Microsoft.UI.Xaml.Controls.Grid
         {
@@ -2180,12 +2190,14 @@ internal static class BrowserChrome
             {
                 new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
                 new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto },
+                new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto },
                 new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto }
             },
             Children =
             {
                 openSourceLabel,
                 versionBadge,
+                whatsNewButton,
                 repositoryButton
             }
         };

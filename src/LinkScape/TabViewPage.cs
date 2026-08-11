@@ -1042,8 +1042,7 @@ class TabViewPage : Component
                     return;
                 }
 
-                var url = $"{AppUpdateService.WhatsNewPageUrl}?version={Uri.EscapeDataString(version)}";
-                OpenUriInNewTab(url, dismissCommandCenter: false);
+                OpenUriInNewTab(AppUpdateService.GetWhatsNewPageUrl(version), dismissCommandCenter: false);
                 AppUpdateService.MarkPackageVersionSeen(version);
                 _deferredWhatsNewVersion = null;
             });
