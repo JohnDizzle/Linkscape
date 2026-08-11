@@ -86,6 +86,7 @@ internal static class BrowserChrome
         Action<string> onSelectSearchProvider,
         Action onSetCurrentPageAsHome,
         Action onToggleFavorite,
+        Action onShareCurrentPage,
         // PWA / Web App
         InstallableWebApp? installableWebApp,
         bool isWebAppInstalled,
@@ -132,6 +133,13 @@ internal static class BrowserChrome
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
                     "Toggle favorite",
+                    buttonSize: 32,
+                    iconSize: 15,
+                    useGlass: true),
+                IconButton(
+                    BrowserConstants.GlyphShare,
+                    onShareCurrentPage,
+                    "Share current page snapshot and URL",
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),

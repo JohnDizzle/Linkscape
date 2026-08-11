@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using LinkScape.Browser;
+using LinkScape.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor.Markdown;
 using System.Text.RegularExpressions;
@@ -465,10 +466,12 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
             .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
             .HAlign(message.IsUser ? HorizontalAlignment.Right : HorizontalAlignment.Stretch)
             .MaxWidth(message.IsUser ? UserBubbleMaxWidth : AssistantBubbleMaxWidth)
-            .Set(border => border.ContextFlyout = CreateMessageContextFlyout(message.Text));
+            .Set(border => border.ContextFlyout = CreateMessageContextFlyout(
+                message.Text,
+                canShare: !message.IsUser && !message.IsThinking));
     }
 
-    private static MenuFlyout CreateMessageContextFlyout(string messageText)
+    private static MenuFlyout CreateMessageContextFlyout(string messageText, bool canShare)
     {
         var flyout = new MenuFlyout();
         var copyItem = new MenuFlyoutItem
@@ -477,6 +480,17 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         };
         copyItem.Click += (_, _) => CopyMessageToClipboard(messageText);
         flyout.Items.Add(copyItem);
+
+        if (canShare)
+        {
+            var shareItem = new MenuFlyoutItem
+            {
+                Text = "Share message"
+            };
+            shareItem.Click += (_, _) => WindowsShareService.ShareLinkerMessage(messageText);
+            flyout.Items.Add(shareItem);
+        }
+
         return flyout;
     }
 

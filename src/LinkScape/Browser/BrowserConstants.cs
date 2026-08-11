@@ -40,6 +40,7 @@ internal static class BrowserConstants
     public const string GlyphFullScreen = "\uE740";
     public const string GlyphBackToWindow = "\uE73F";
     public const string GlyphLink = "\uE71B";
+    public const string GlyphShare = "\uE72D";
     public const string GlyphExtensions = "\uEA86";
     public const string GlyphPlay = "\uE768";
     public const string GlyphStop = "\uE71A";

@@ -4,12 +4,8 @@
     Use it only on your local machine or in CI when you are ready to sign MSIX packages.
   -->
   <PropertyGroup>
-    <Project>
-      <PropertyGroup>
-        <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
-        <PackageCertificateThumbprint>YOUR_CERTIFICATE_THUMBPRINT</PackageCertificateThumbprint>
-        <GenerateTemporaryStoreCertificate>False</GenerateTemporaryStoreCertificate>
-      </PropertyGroup>
-    </Project>
+    <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
+    <PackageCertificateThumbprint>YOUR_CERTIFICATE_THUMBPRINT</PackageCertificateThumbprint>
+    <GenerateTemporaryStoreCertificate>False</GenerateTemporaryStoreCertificate>
   </PropertyGroup>
 </Project>

@@ -39,6 +39,7 @@ internal sealed record BrowserTitleBarProps(
     Action<string> OnSelectSearchProvider,
     Action OnSetCurrentPageAsHome,
     Action OnToggleFavorite,
+    Action OnShareCurrentPage,
     // Pwa and apps. 
     InstallableWebApp? InstallableWebApp,
     bool IsWebAppInstalled,
@@ -103,6 +104,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Props.OnSelectSearchProvider,
             Props.OnSetCurrentPageAsHome,
             Props.OnToggleFavorite,
+            Props.OnShareCurrentPage,
             Props.InstallableWebApp,
             Props.IsWebAppInstalled,
             Props.OnInstallWebApp,

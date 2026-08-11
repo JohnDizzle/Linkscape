@@ -2,6 +2,8 @@
 
     <!-- <snippet:template-shape> -->
     <PropertyGroup>
+      <!-- Imported machine-local configuration must not also be a default project item. -->
+      <DefaultItemExcludes>$(DefaultItemExcludes);LinkScape.Signing.props</DefaultItemExcludes>
       <OutputType>WinExe</OutputType>
       <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
       <Platforms>x86;x64;arm64</Platforms>

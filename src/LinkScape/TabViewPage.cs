@@ -2360,6 +2360,14 @@ class TabViewPage : Component
                 SetDefaultSearchProvider,
                 SetCurrentPageAsHome,
                 ToggleFavorite,
+                async () =>
+                {
+                    var imageDataUrl = await _browserWebViewHostController.CaptureActivePageImageAsync();
+                    await WindowsShareService.SharePageAsync(
+                        selectedTab.Title,
+                        selectedTab.Url,
+                        imageDataUrl);
+                },
                 // pwa's & apps     
                 selectedInstallableWebApp,
                 isSelectedWebAppInstalled,
