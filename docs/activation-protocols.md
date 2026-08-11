@@ -77,3 +77,40 @@ Use `browser.tabs.openPackage` with `packageJson`:
   "packageJson": "{\"mode\":\"replace\",\"tabs\":[{\"url\":\"https://example.com\"}]}"
 }
 ```
+###  Activate in a script or terminal 
+
+# Opens a LinkScape active-tabs package for the workday browser setup.
+
+$json = @'
+{
+  "mode": "replace",
+  "saveState": true,
+  "collectionName": "Work Morning",
+  "tabs": [
+    {
+      "title": "Outlook",
+      "url": "https://outlook.office.com",
+      "selected": true
+    },
+    {
+      "title": "Teams",
+      "url": "https://teams.microsoft.com"
+    },
+    {
+      "title": "Azure Portal",
+      "url": "https://portal.azure.com"
+    },
+    {
+      "title": "GitHub",
+      "url": "https://github.com"
+    }
+  ]
+}
+'@
+
+$bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+$payload = [System.Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+$uri = "link2scape://tabs/active?payload=$payload"
+
+Start-Process $uri
+

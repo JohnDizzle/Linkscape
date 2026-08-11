@@ -87,62 +87,30 @@ public static class LocalMcpProtocol
 
     public static async Task WriteMessageAsync(Stream output, JsonObject message, CancellationToken cancellationToken = default)
     {
-        var payload = message.ToJsonString();
+        var payload = message.ToJsonString() + "\n";
         var body = Encoding.UTF8.GetBytes(payload);
-        var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
 
-        await output.WriteAsync(header, cancellationToken);
         await output.WriteAsync(body, cancellationToken);
         await output.FlushAsync(cancellationToken);
     }
 
     public static async Task<JsonObject?> ReadMessageAsync(Stream input, CancellationToken cancellationToken = default)
     {
-        var contentLength = 0;
-
         while (true)
         {
-            var line = await ReadAsciiLineAsync(input, cancellationToken);
+            var line = await ReadUtf8LineAsync(input, cancellationToken);
             if (line is null)
             {
                 return null;
             }
 
-            if (line.Length == 0)
-            {
-                break;
-            }
-
-            var separatorIndex = line.IndexOf(':');
-            if (separatorIndex <= 0)
+            if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
             }
 
-            var headerName = line[..separatorIndex].Trim();
-            var headerValue = line[(separatorIndex + 1)..].Trim();
-
-            if (headerName.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
-            {
-                contentLength = int.TryParse(headerValue, out var parsedLength)
-                    ? parsedLength
-                    : 0;
-            }
+            return JsonNode.Parse(line) as JsonObject;
         }
-
-        if (contentLength <= 0)
-        {
-            return null;
-        }
-
-        var body = await ReadExactlyAsync(input, contentLength, cancellationToken);
-        if (body.Length != contentLength)
-        {
-            return null;
-        }
-
-        var payload = Encoding.UTF8.GetString(body);
-        return JsonNode.Parse(payload) as JsonObject;
     }
 
     public static JsonNode? CloneNode(JsonNode? node)
@@ -150,7 +118,7 @@ public static class LocalMcpProtocol
         return node is null ? null : JsonNode.Parse(node.ToJsonString());
     }
 
-    private static async Task<string?> ReadAsciiLineAsync(Stream input, CancellationToken cancellationToken)
+    private static async Task<string?> ReadUtf8LineAsync(Stream input, CancellationToken cancellationToken)
     {
         var bytes = new List<byte>();
 
@@ -162,37 +130,16 @@ public static class LocalMcpProtocol
             {
                 return bytes.Count == 0
                     ? null
-                    : Encoding.ASCII.GetString(bytes.ToArray()).TrimEnd('\r');
+                    : Encoding.UTF8.GetString(bytes.ToArray()).TrimEnd('\r');
             }
 
             if (buffer[0] == (byte)'\n')
             {
-                return Encoding.ASCII.GetString(bytes.ToArray()).TrimEnd('\r');
+                return Encoding.UTF8.GetString(bytes.ToArray()).TrimEnd('\r');
             }
 
             bytes.Add(buffer[0]);
         }
-    }
-
-    private static async Task<byte[]> ReadExactlyAsync(Stream input, int contentLength, CancellationToken cancellationToken)
-    {
-        var buffer = new byte[contentLength];
-        var totalRead = 0;
-
-        while (totalRead < contentLength)
-        {
-            var bytesRead = await input.ReadAsync(buffer.AsMemory(totalRead, contentLength - totalRead), cancellationToken);
-            if (bytesRead == 0)
-            {
-                break;
-            }
-
-            totalRead += bytesRead;
-        }
-
-        return totalRead == contentLength
-            ? buffer
-            : buffer[..totalRead];
     }
 
     private static string GetVersion()
