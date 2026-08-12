@@ -76,8 +76,10 @@ p {
 }
 
 .release-card,
-.feature-card,
-.media-card,
+.guide-section,
+.example-card,
+.mode-card,
+.share-card,
 .action-bar {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(28, 40, 52, 0.86);
@@ -106,27 +108,111 @@ p {
   line-height: 1.05;
 }
 
-.feature-grid {
+code {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: #b9dcff;
+}
+
+.guide-section {
+  margin: 20px 0;
+  padding: clamp(22px, 4vw, 36px);
+  border-radius: 26px;
+}
+
+.section-heading {
+  max-width: 760px;
+  margin-bottom: 20px;
+}
+
+.section-heading h2 {
+  font-size: clamp(26px, 4vw, 38px);
+}
+
+.example-grid,
+.sharing-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  margin: 20px 0;
 }
 
-.feature-card {
-  min-height: 210px;
-  padding: 26px;
-  border-radius: 22px;
+.example-card,
+.share-card {
+  min-width: 0;
+  padding: 22px;
+  border-radius: 20px;
 }
 
-.media-card {
-  margin: 20px 0;
-  padding: 12px;
-  border-radius: 24px;
+.example-card h3,
+.share-card h3 {
+  margin: 0 0 9px;
+  font-size: 20px;
 }
 
-.media-card img,
-.media-card video {
+pre {
+  max-width: 100%;
+  margin: 16px 0 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid rgba(135, 189, 255, 0.18);
+  border-radius: 14px;
+  background: #0a1118;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+pre code {
+  color: #dcecff;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mode-card {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  border-radius: 16px;
+}
+
+.mode-card span {
+  color: #b5c0cb;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.launch-example {
+  margin-top: 18px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.launch-example h3 {
+  margin: 0 0 7px;
+  font-size: 19px;
+}
+
+.launch-example p {
+  margin-bottom: 10px;
+}
+
+.launch-example pre {
+  margin-top: 0;
+}
+
+.share-copy {
+  min-height: 168px;
+}
+
+.share-card .video-stage {
+  min-height: 240px;
+}
+
+.video-stage video {
   display: block;
   width: 100%;
   max-height: 620px;
@@ -180,11 +266,6 @@ p {
   display: none;
 }
 
-.media-card figcaption {
-  padding: 12px 8px 4px;
-  color: #aeb9c4;
-}
-
 .action-bar {
   position: sticky;
   bottom: 18px;
@@ -233,8 +314,14 @@ p {
     padding-top: 28px;
   }
 
-  .feature-grid {
+  .example-grid,
+  .sharing-grid,
+  .mode-grid {
     grid-template-columns: 1fr;
+  }
+
+  .share-copy {
+    min-height: 0;
   }
 
   .action-bar {

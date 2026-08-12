@@ -1015,6 +1015,11 @@ class TabViewPage : Component
                 case ActivationTargetKind.Search:
                     OpenSearchActivation();
                     break;
+                case ActivationTargetKind.ShareTarget when target.ShareOperation is not null:
+                    _ = WindowsShareTargetService.ShowImagePreviewAsync(
+                        target.ShareOperation,
+                        url => OpenUriInNewTab(url, dismissCommandCenter: false));
+                    break;
                 case ActivationTargetKind.MainBrowser:
                     break;
             }

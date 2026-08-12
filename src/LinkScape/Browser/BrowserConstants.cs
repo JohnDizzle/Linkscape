@@ -41,6 +41,8 @@ internal static class BrowserConstants
     public const string GlyphBackToWindow = "\uE73F";
     public const string GlyphLink = "\uE71B";
     public const string GlyphShare = "\uE72D";
+    public const string GlyphCopy = "\uE8C8";
+    public const string GlyphSave = "\uE74E";
     public const string GlyphExtensions = "\uEA86";
     public const string GlyphPlay = "\uE768";
     public const string GlyphStop = "\uE71A";

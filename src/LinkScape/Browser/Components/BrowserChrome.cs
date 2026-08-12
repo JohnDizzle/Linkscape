@@ -105,30 +105,19 @@ internal static class BrowserChrome
             (FlexRow(
                 IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphCollections, onOpenCollections, "Open collections", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
                 Border(null).Width(6).Flex(shrink: 0),
                 IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
                 IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
                 IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
-                BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
-                    .MinWidth(360)
-                    .Flex(grow: 1, shrink: 1, basis: 0),
-
-                Border(null).Width(6).Flex(shrink: 0),
-                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
-                Button("Set home", onSetCurrentPageAsHome)
-                    .AutomationName("Set current page as home")
-                    .ToolTip("Set current page as home")
-                    .Height(32)
-                    .Padding(10, 0)
-                    .CornerRadius(10)
-                    .Set(button =>
-                    {
-                        button.Style = GetGlassIconButtonStyle();
-                        ApplyGlassButtonDepth(button);
-                    }),
+                IconButton(
+                    BrowserConstants.GlyphShare,
+                    onShareCurrentPage,
+                    "Share current page snapshot and URL",
+                    buttonSize: 32,
+                    iconSize: 15,
+                    useGlass: true),
                 IconButton(
                     selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
                     onToggleFavorite,
@@ -136,10 +125,16 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),
+                BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
+                    .MinWidth(360)
+                    .Flex(grow: 1, shrink: 1, basis: 0),
+
+                Border(null).Width(6).Flex(shrink: 0),
+                IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
                 IconButton(
-                    BrowserConstants.GlyphShare,
-                    onShareCurrentPage,
-                    "Share current page snapshot and URL",
+                    BrowserConstants.GlyphSave,
+                    onSetCurrentPageAsHome,
+                    "Set current page as home",
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),
@@ -198,8 +193,15 @@ internal static class BrowserChrome
                              {
                                  // swallow failures (optional: log)
                              }
-                         };
+                        };
                      }),
+                IconButton(
+                    BrowserConstants.GlyphChat,
+                    onToggleChat,
+                    isChatOpen ? "Hide chat blade" : "Show chat blade",
+                    buttonSize: 32,
+                    iconSize: 15,
+                    useGlass: true),
                 IconButton(
                     BrowserConstants.GlyphSettings,
                     () => { },
@@ -221,7 +223,7 @@ internal static class BrowserChrome
                     })
             ) with
             {
-                ColumnGap = 6
+                ColumnGap = 7
             })
             .HAlign(HorizontalAlignment.Stretch)
         )

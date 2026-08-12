@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Threading.Tasks;
 using Windows.ApplicationModel.Activation;
+using Windows.ApplicationModel.DataTransfer.ShareTarget;
 using Windows.Storage;
 using LinkScape.Models;
 
@@ -217,6 +218,7 @@ internal static class ActivationRoutingService
         {
             ExtendedActivationKind.Protocol => TryGetProtocolTarget(args.Data as IProtocolActivatedEventArgs, out target),
             ExtendedActivationKind.File => TryGetFileTarget(args.Data as IFileActivatedEventArgs, out target),
+            ExtendedActivationKind.ShareTarget => TryGetShareTarget(args.Data as IShareTargetActivatedEventArgs, out target),
             ExtendedActivationKind.Launch => TryGetLaunchTarget(args.Data as ILaunchActivatedEventArgs, out target),
             _ => false
         };
@@ -495,6 +497,18 @@ internal static class ActivationRoutingService
         target = ActivationTarget.ForUrl(new Uri(pdfFile.Path).AbsoluteUri);
         return true;
     }
+
+    private static bool TryGetShareTarget(IShareTargetActivatedEventArgs? shareArgs, out ActivationTarget target)
+    {
+        if (shareArgs?.ShareOperation is not { } shareOperation)
+        {
+            target = default!;
+            return false;
+        }
+
+        target = ActivationTarget.ForShare(shareOperation);
+        return true;
+    }
 }
 
 internal enum ActivationTargetKind
@@ -507,10 +521,17 @@ internal enum ActivationTargetKind
     Collections,
     SavedTabs,
     Search,
+    ShareTarget,
     MainBrowser
 }
 
-internal sealed record ActivationTarget(ActivationTargetKind Kind, string Value = "")
+internal sealed record ActivationTarget(
+    ActivationTargetKind Kind,
+    string Value = "",
+    ShareOperation? ShareOperation = null)
 {
     internal static ActivationTarget ForUrl(string url) => new(ActivationTargetKind.Url, url);
+
+    internal static ActivationTarget ForShare(ShareOperation shareOperation) =>
+        new(ActivationTargetKind.ShareTarget, ShareOperation: shareOperation);
 }

@@ -476,7 +476,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         var flyout = new MenuFlyout();
         var copyItem = new MenuFlyoutItem
         {
-            Text = "Copy message"
+            Text = "Copy message",
+            Icon = CreateMenuIcon(BrowserConstants.GlyphCopy)
         };
         copyItem.Click += (_, _) => CopyMessageToClipboard(messageText);
         flyout.Items.Add(copyItem);
@@ -485,7 +486,8 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
         {
             var shareItem = new MenuFlyoutItem
             {
-                Text = "Share message"
+                Text = "Share message",
+                Icon = CreateMenuIcon(BrowserConstants.GlyphShare)
             };
             shareItem.Click += (_, _) => WindowsShareService.ShareLinkerMessage(messageText);
             flyout.Items.Add(shareItem);
@@ -493,6 +495,14 @@ internal sealed class CommandCenterChatPanel : Component<CommandCenterChatPanelP
 
         return flyout;
     }
+
+    private static FontIcon CreateMenuIcon(string glyph) =>
+        new()
+        {
+            Glyph = glyph,
+            FontFamily = BrowserConstants.IconFontFamily,
+            FontSize = 14
+        };
 
     private static void CopyMessageToClipboard(string messageText)
     {
