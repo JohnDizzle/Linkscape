@@ -181,19 +181,6 @@ internal static class BrowserChrome
                      {
                          var flyout = CreateSponsorFlyout(onOpenAddressInNewTab);
                          button.Flyout = flyout;
-
-                         // Ensure clicking the button opens the flyout
-                         button.Click += (_, _) =>
-                         {
-                             try
-                             {
-                                 flyout.ShowAt(button);
-                             }
-                             catch
-                             {
-                                 // swallow failures (optional: log)
-                             }
-                        };
                      }),
                 IconButton(
                     BrowserConstants.GlyphChat,
@@ -5000,6 +4987,10 @@ internal static class BrowserChrome
             .Padding(0)
             .Set(button =>
             {
+                // Reactor can recycle a native Button when toolbar items move. Clear any
+                // flyout left by a previous role before specialized buttons attach theirs.
+                button.Flyout = null;
+
                 if (useGlass)
                 {
                     button.Style = GetGlassIconButtonStyle();
