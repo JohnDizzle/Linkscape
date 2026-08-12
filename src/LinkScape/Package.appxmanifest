@@ -70,8 +70,15 @@
 
         <uap:Extension Category="windows.shareTarget">
           <uap:ShareTarget Description="Preview an image shared with LinkScape">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.png</uap:FileType>
+              <uap:FileType>.jpg</uap:FileType>
+              <uap:FileType>.jpeg</uap:FileType>
+              <uap:FileType>.bmp</uap:FileType>
+              <uap:FileType>.gif</uap:FileType>
+              <uap:FileType>.webp</uap:FileType>
+            </uap:SupportedFileTypes>
             <uap:DataFormat>Bitmap</uap:DataFormat>
-            <uap:SupportedFileTypes/>
           </uap:ShareTarget>
         </uap:Extension>
       </Extensions>
