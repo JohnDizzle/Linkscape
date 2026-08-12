@@ -225,30 +225,14 @@ internal static class AppUpdateService
             Maximum = 100,
             IsIndeterminate = true
         };
-        var restartButton = CreateActionButton("Restart now", isPrimary: true);
-        var laterButton = CreateActionButton("Later");
-        var actionRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Visibility = Visibility.Collapsed,
-            Children = { restartButton, laterButton }
-        };
         var flyout = CreateBrandedFlyout(
             "Updating LinkScape",
             null,
             statusText,
             progressBar,
-            detailText,
-            actionRow);
+            detailText);
         var updateInProgress = true;
         flyout.Closing += (_, args) => args.Cancel = updateInProgress;
-        laterButton.Click += (_, _) => flyout.Hide();
-        restartButton.Click += (_, _) =>
-        {
-            var failureReason = AppInstance.Restart(string.Empty);
-            detailText.Text = $"Windows could not restart LinkScape ({failureReason}). Close and reopen it to finish.";
-        };
 
         ShowBySettingsButton(flyout, xamlRoot);
 
@@ -283,17 +267,17 @@ internal static class AppUpdateService
             var result = await operation;
             progressBar.IsIndeterminate = false;
             updateInProgress = false;
-            actionRow.Visibility = Visibility.Visible;
 
             if (result.OverallState == StorePackageUpdateState.Completed)
             {
                 progressBar.Value = 100;
-                statusText.Text = "LinkScape is ready to restart";
-                detailText.Text = "Restart now to use the updated version, or choose Later and restart when convenient.";
+                statusText.Text = "Update installed — restart required";
+                detailText.Text = "Restart LinkScape to load the updated application files.";
+                flyout.Hide();
+                await ShowRestartPromptAsync(xamlRoot);
                 return;
             }
 
-            restartButton.Visibility = Visibility.Collapsed;
             statusText.Text = result.OverallState == StorePackageUpdateState.Canceled
                 ? "Update postponed"
                 : "The update could not be completed";
@@ -303,11 +287,49 @@ internal static class AppUpdateService
         {
             updateInProgress = false;
             progressBar.IsIndeterminate = false;
-            restartButton.Visibility = Visibility.Collapsed;
-            actionRow.Visibility = Visibility.Visible;
             statusText.Text = "The update could not be completed";
             detailText.Text = ex.Message;
         }
+    }
+
+    private static async Task ShowRestartPromptAsync(XamlRoot xamlRoot)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = "LinkScape update installed",
+            Content = new StackPanel
+            {
+                Width = 390,
+                Spacing = 12,
+                Children =
+                {
+                    CreateBrandHeader("Restart required"),
+                    new TextBlock
+                    {
+                        Text = "Restart LinkScape now to use the updated version, or choose Later and restart when convenient.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.78
+                    }
+                }
+            },
+            PrimaryButtonText = "Restart now",
+            CloseButtonText = "Later",
+            DefaultButton = ContentDialogButton.Primary
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        // On success Restart terminates this process synchronously and launches
+        // the newly installed package. A returned value is always a failure.
+        var failureReason = AppInstance.Restart(string.Empty);
+        ShowStatusFlyout(
+            xamlRoot,
+            "LinkScape could not restart",
+            $"Windows reported {failureReason}. Close and reopen LinkScape to finish the update.");
     }
 
     private static Flyout CreateBrandedFlyout(string title, string? description, params UIElement[] content)
