@@ -1277,6 +1277,7 @@ internal static class BrowserChrome
     Action onLoadMoreFavorites,
     Action<string> onCollectionNameChanged,
     Action onCreateCollection,
+    Action onDeleteCollection,
     Action onAddCurrentTabToCollection,
     Action<string, string, string> onAddUrlToCollection,
     Action onSetStartupCollection,
@@ -1431,6 +1432,7 @@ internal static class BrowserChrome
                     onLoadMoreFavorites,
                     onCollectionNameChanged,
                     onCreateCollection,
+                    onDeleteCollection,
                     onAddCurrentTabToCollection,
                     onAddUrlToCollection,
                     onSetStartupCollection,
@@ -1565,6 +1567,7 @@ internal static class BrowserChrome
         Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action<string, string, string> onAddUrlToCollection,
         Action onSetStartupCollection,
@@ -1619,6 +1622,7 @@ internal static class BrowserChrome
             onLoadMoreFavorites,
             onCollectionNameChanged,
             onCreateCollection,
+            onDeleteCollection,
             onAddCurrentTabToCollection,
             onAddUrlToCollection,
             onSetStartupCollection,
@@ -1689,6 +1693,7 @@ internal static class BrowserChrome
         Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action<string, string, string> onAddUrlToCollection,
         Action onSetStartupCollection,
@@ -1726,7 +1731,7 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesLimit, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onLoadMoreFavorites, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
-            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
+            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onDeleteCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
         };
@@ -3357,6 +3362,7 @@ internal static class BrowserChrome
         string collectionStatus,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action onSetStartupCollection,
         Action<string> onOpenCollectionItem,
@@ -3411,13 +3417,17 @@ internal static class BrowserChrome
                     .Set(button => button.IsEnabled = selectedCollection is not null),
                 Button("New window", OpenSelectedCollectionInNewWindow)
                     .AutomationName("Open selected collection in a new window")
-                    .Set(button => button.IsEnabled = selectedCollection is not null))
+                    .Set(button => button.IsEnabled = selectedCollection is not null),
+                IconButton(BrowserConstants.GlyphTrash, onDeleteCollection, "Delete selected collection")
+                    .IsEnabled(selectedCollection is not null))
             : HStack(8,
                 IconButton(BrowserConstants.GlyphAdd, onAddCurrentTabToCollection, "Add current tab to collection"),
                 IconButton(BrowserConstants.GlyphFavoriteOutline, onSetStartupCollection, "Set startup collection"),
                 IconButton(BrowserConstants.GlyphGo, SwitchToSelectedCollection, "Switch to selected collection")
                     .IsEnabled(selectedCollection is not null),
                 IconButton(BrowserConstants.GlyphNewWindow, OpenSelectedCollectionInNewWindow, "Open selected collection in a new window")
+                    .IsEnabled(selectedCollection is not null),
+                IconButton(BrowserConstants.GlyphTrash, onDeleteCollection, "Delete selected collection")
                     .IsEnabled(selectedCollection is not null));
 
         var header = VStack(10,

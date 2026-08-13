@@ -551,8 +551,16 @@ class TabViewPage : Component
             });
         }
 
+        void ClearCommandCenterStatuses()
+        {
+            historyImportStatus.Set(string.Empty);
+            favoritesImportStatus.Set(string.Empty);
+            collectionStatus.Set(string.Empty);
+        }
+
         void DismissCommandCenter()
         {
+            ClearCommandCenterStatuses();
             UpdateBrowserSession(BrowserSessionStore.DismissCommandCenter);
         }
 
@@ -611,6 +619,7 @@ class TabViewPage : Component
                 section = CommandCenterSection.None;
             }
 
+            ClearCommandCenterStatuses();
             ToggleCommandCenter(section);
 
             if (section == CommandCenterSection.Collections)
@@ -1305,6 +1314,47 @@ class TabViewPage : Component
                 _ = AppJumpListService.RefreshAsync();
                 collectionStatus.Set($"Collection '{collection.Name}' is ready.");
                 RefreshCollectionState(collection.Name);
+            }
+            catch (Exception ex)
+            {
+                collectionStatus.Set(ex.Message);
+            }
+        }
+
+        async void DeleteSelectedCollection()
+        {
+            var selectedCollection = TabCollectionService.GetCollectionByName(collectionName.Value);
+            if (selectedCollection is null)
+            {
+                collectionStatus.Set("Select an existing collection to delete.");
+                return;
+            }
+
+            var itemCount = TabCollectionService.GetItems(selectedCollection.Id).Count;
+            var itemLabel = itemCount == 1 ? "saved site" : "saved sites";
+            var confirmed = await ConfirmDestructiveActionAsync(
+                $"Delete '{selectedCollection.Name}'?",
+                $"This permanently removes the collection and its {itemCount} {itemLabel}. Open tabs, history, and favorites are not affected.",
+                "Delete collection");
+
+            if (!confirmed)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!TabCollectionService.DeleteCollection(selectedCollection.Id))
+                {
+                    collectionStatus.Set("The selected collection could not be found.");
+                    return;
+                }
+
+                _ = AppJumpListService.RefreshAsync();
+                settingsSnapshot.Set(SettingsService.Dump());
+                var nextCollectionName = TabCollectionService.GetCollections().FirstOrDefault()?.Name ?? "Personal";
+                collectionStatus.Set($"Deleted collection '{selectedCollection.Name}'.");
+                RefreshCollectionState(nextCollectionName);
             }
             catch (Exception ex)
             {
@@ -2453,6 +2503,7 @@ class TabViewPage : Component
                 LoadMoreFavorites,
                 ApplyCollectionName,
                 CreateCollection,
+                DeleteSelectedCollection,
                 AddCurrentTabToCollection,
                 AddUrlToCollection,
                 SetStartupCollection,

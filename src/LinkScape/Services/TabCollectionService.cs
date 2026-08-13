@@ -27,6 +27,7 @@ public static class TabCollectionService
     public const string StartupCollectionSettingKey = "browser.tabs.startupCollectionId";
     public const string StartupModeSettingKey = "browser.tabs.startupMode";
     public const string StartupModeCollection = "collection";
+    public const string StartupModeTabs = "tabs";
 
     private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("tabCollections.db");
 
@@ -183,6 +184,54 @@ public static class TabCollectionService
         cmd.Parameters.AddWithValue("$collectionId", collection.Id);
         cmd.Parameters.AddWithValue("$url", normalizedUrl);
         return cmd.ExecuteNonQuery() > 0;
+    }
+
+    public static bool DeleteCollection(string collectionNameOrId)
+    {
+        if (string.IsNullOrWhiteSpace(collectionNameOrId))
+        {
+            return false;
+        }
+
+        var collection = GetCollection(collectionNameOrId) ?? GetCollectionByName(collectionNameOrId);
+        if (collection is null)
+        {
+            return false;
+        }
+
+        using var conn = new SqliteConnection(DbConnectionString);
+        conn.Open();
+        using var transaction = conn.BeginTransaction();
+
+        using (var deleteItems = conn.CreateCommand())
+        {
+            deleteItems.Transaction = transaction;
+            deleteItems.CommandText = "DELETE FROM TabCollectionItems WHERE CollectionId = $collectionId";
+            deleteItems.Parameters.AddWithValue("$collectionId", collection.Id);
+            deleteItems.ExecuteNonQuery();
+        }
+
+        int deletedCollections;
+        using (var deleteCollection = conn.CreateCommand())
+        {
+            deleteCollection.Transaction = transaction;
+            deleteCollection.CommandText = "DELETE FROM TabCollections WHERE Id = $collectionId";
+            deleteCollection.Parameters.AddWithValue("$collectionId", collection.Id);
+            deletedCollections = deleteCollection.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+
+        if (deletedCollections > 0 &&
+            string.Equals(SettingsService.GetValue(StartupCollectionSettingKey), collection.Id, StringComparison.Ordinal))
+        {
+            SettingsService.SetValue(StartupModeSettingKey, StartupModeTabs);
+            SettingsService.SetValue(StartupCollectionSettingKey, string.Empty);
+        }
+
+        return deletedCollections > 0 &&
+            GetCollection(collection.Id) is null &&
+            GetItems(collection.Id).Count == 0;
     }
 
     public static bool MoveItem(string collectionNameOrId, string itemId, int targetIndex)

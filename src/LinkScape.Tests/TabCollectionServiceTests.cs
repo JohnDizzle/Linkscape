@@ -57,4 +57,19 @@ public sealed class TabCollectionServiceTests
         Assert.AreEqual(collection.Id, startupCollection!.Id);
         Assert.AreEqual(TabCollectionService.StartupModeCollection, SettingsService.GetValue(TabCollectionService.StartupModeSettingKey));
     }
+
+    [TestMethod]
+    public void DeleteCollection_RemovesItemsAndClearsMatchingStartupCollection()
+    {
+        var collection = TabCollectionService.UpsertCollection("Temporary");
+        TabCollectionService.AddOrUpdateItem("Temporary", "https://example.com", "Example");
+        TabCollectionService.SetStartupCollection(collection.Id);
+
+        Assert.IsTrue(TabCollectionService.DeleteCollection("Temporary"));
+        Assert.IsNull(TabCollectionService.GetCollection(collection.Id));
+        Assert.AreEqual(0, TabCollectionService.GetItems(collection.Id).Count);
+        Assert.IsNull(TabCollectionService.GetStartupCollection());
+        Assert.AreEqual(TabCollectionService.StartupModeTabs, SettingsService.GetValue(TabCollectionService.StartupModeSettingKey));
+        Assert.AreEqual(string.Empty, SettingsService.GetValue(TabCollectionService.StartupCollectionSettingKey));
+    }
 }
