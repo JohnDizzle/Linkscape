@@ -29,6 +29,10 @@ internal sealed class BrowserWebViewHostController
     internal Func<Task<string?>>? CaptureActivePageImageAsyncCore { get; set; }
     internal Func<string, bool, Task>? SetExtensionEnabledAsyncCore { get; set; }
     internal Func<CoreWebView2BrowsingDataKinds, Task>? ClearBrowsingDataAsyncCore { get; set; }
+    internal Func<Task<SiteControlsSnapshot>>? GetSiteControlsAsyncCore { get; set; }
+    internal Func<CoreWebView2PermissionKind, CoreWebView2PermissionState, Task>? SetSitePermissionAsyncCore { get; set; }
+    internal Func<Task>? ResetSitePermissionsAsyncCore { get; set; }
+    internal Func<Task>? ClearSiteDataAsyncCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
 
@@ -64,6 +68,19 @@ internal sealed class BrowserWebViewHostController
 
     public Task ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds dataKinds) =>
         ClearBrowsingDataAsyncCore?.Invoke(dataKinds) ?? Task.CompletedTask;
+
+    public Task<SiteControlsSnapshot> GetSiteControlsAsync() =>
+        GetSiteControlsAsyncCore?.Invoke() ?? Task.FromResult(
+            new SiteControlsSnapshot(false, string.Empty, string.Empty, "Unavailable", false, 0, 0, [], "The page is not ready."));
+
+    public Task SetSitePermissionAsync(CoreWebView2PermissionKind kind, CoreWebView2PermissionState state) =>
+        SetSitePermissionAsyncCore?.Invoke(kind, state) ?? Task.CompletedTask;
+
+    public Task ResetSitePermissionsAsync() =>
+        ResetSitePermissionsAsyncCore?.Invoke() ?? Task.CompletedTask;
+
+    public Task ClearSiteDataAsync() =>
+        ClearSiteDataAsyncCore?.Invoke() ?? Task.CompletedTask;
 
 }
 
@@ -156,6 +173,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.CaptureActivePageImageAsyncCore = CaptureActiveViewportAsync;
         Props.Controller.SetExtensionEnabledAsyncCore = SetExtensionEnabledAsync;
         Props.Controller.ClearBrowsingDataAsyncCore = ClearBrowsingDataAsync;
+        Props.Controller.GetSiteControlsAsyncCore = () => SiteControlsService.GetSnapshotAsync(_activeWebView?.CoreWebView2);
+        Props.Controller.SetSitePermissionAsyncCore = SetActiveSitePermissionAsync;
+        Props.Controller.ResetSitePermissionsAsyncCore = () =>
+            SiteControlsService.ResetPermissionsAsync(_activeWebView?.CoreWebView2);
+        Props.Controller.ClearSiteDataAsyncCore = ClearActiveSiteDataAsync;
 
         return Border(null)
             .Set(host =>
@@ -813,6 +835,28 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         return core.Profile.ClearBrowsingDataAsync(dataKinds).AsTask();
+    }
+
+    private async Task SetActiveSitePermissionAsync(
+        CoreWebView2PermissionKind kind,
+        CoreWebView2PermissionState state)
+    {
+        var core = _activeWebView?.CoreWebView2;
+        await SiteControlsService.SetPermissionAsync(core, kind, state);
+
+        if (core is null)
+        {
+            return;
+        }
+
+        core.Reload();
+    }
+
+    private async Task ClearActiveSiteDataAsync()
+    {
+        var core = _activeWebView?.CoreWebView2;
+        await SiteControlsService.ClearSiteDataAsync(core);
+        core?.Reload();
     }
 
     private async Task<string?> CaptureActiveViewportAsync()

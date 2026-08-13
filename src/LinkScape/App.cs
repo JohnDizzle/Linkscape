@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml;
 
 var commandLineArgs = Environment.GetCommandLineArgs();
 
-ConfigureWebView2BrowserArguments();
+ConfigureWebView2Environment();
 
 if (await LocalMcpServerService.TryRunAsync(commandLineArgs))
 {
@@ -28,6 +28,7 @@ TabCollectionService.EnsureDatabase();
 InstalledWebAppService.EnsureDatabase();
 const string WebView2AdditionalBrowserArgumentsKey = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
 const string WebView2SingleSignOnPrimaryAccountArgument = "--allow-single-sign-on-os-primary-account";
+const string WebView2VisualHostingForOwnedWindowsKey = "WEBVIEW2_USE_VISUAL_HOSTING_FOR_OWNED_WINDOWS";
 
 var services = new ServiceCollection();
 _ = services.AddSingleton<WeakReferenceMessenger>();
@@ -61,8 +62,13 @@ ReactorApp.Run<App>("LinkScape",
         };
     });
 
-static void ConfigureWebView2BrowserArguments()
+static void ConfigureWebView2Environment()
 {
+    Environment.SetEnvironmentVariable(
+        WebView2VisualHostingForOwnedWindowsKey,
+        "1",
+        EnvironmentVariableTarget.Process);
+
     var existing = Environment.GetEnvironmentVariable(WebView2AdditionalBrowserArgumentsKey);
     if (existing?.Contains(WebView2SingleSignOnPrimaryAccountArgument, StringComparison.OrdinalIgnoreCase) == true)
     {

@@ -61,6 +61,7 @@ internal static class BrowserChrome
 
     public static Element BuildTitleBar(
         BrowserTab selectedTab,
+        BrowserWebViewHostController browserController,
         string addressText,
         string homeUrl,
         IReadOnlyDictionary<string, string> settingsSnapshot,
@@ -124,7 +125,7 @@ internal static class BrowserChrome
                     buttonSize: 32,
                     iconSize: 15,
                     useGlass: true),
-                BuildAddressBar(selectedTab, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
+                BuildAddressBar(selectedTab, browserController, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
                     .MinWidth(360)
                     .Flex(grow: 1, shrink: 1, basis: 0),
 
@@ -647,6 +648,7 @@ internal static class BrowserChrome
 
     private static Element BuildAddressBar(
         BrowserTab selectedTab,
+        BrowserWebViewHostController browserController,
         string addressText,
         Action<string> onAddressChanged,
         Action<string> onSubmitAddress,
@@ -658,7 +660,7 @@ internal static class BrowserChrome
         return Border(
             VStack(0,
                 (FlexRow(
-                    BuildAddressBarFavicon(selectedTab),
+                    BuildAddressBarFavicon(selectedTab, browserController),
                     Border(
                         AutoSuggestBox(addressText, onAddressChanged, submitted => onSubmitAddress(submitted))
                             .AutomationName("Address Bar")
@@ -694,34 +696,52 @@ internal static class BrowserChrome
         .Set(border => ConfigureAddressBarChrome(border, addressBarChrome = border));
     }
 
-    private static Element BuildAddressBarFavicon(BrowserTab selectedTab)
+    private static Element BuildAddressBarFavicon(
+        BrowserTab selectedTab,
+        BrowserWebViewHostController browserController)
     {
-        return Border(
+        return Button(
             Border(
                 Uri.TryCreate(selectedTab.Url, UriKind.Absolute, out _)
                     ? Image(BrowserUrl.GetDomainFaviconUrl(selectedTab.Url))
                         .AccessibilityHidden()
-                        .Width(16)
-                        .Height(16)
+                        .Width(20)
+                        .Height(20)
                         .HAlign(HorizontalAlignment.Center)
                         .VAlign(VerticalAlignment.Center)
                         .Set(image => image.Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill)
-                    : FluentIcon(BrowserConstants.GlyphHome, 14)
+                    : FluentIcon(BrowserConstants.GlyphHome, 17)
                         .HAlign(HorizontalAlignment.Center)
                         .VAlign(VerticalAlignment.Center))
-                .Width(16)
-                .Height(16)
+                .Width(22)
+                .Height(22)
                 .HAlign(HorizontalAlignment.Center)
-                .VAlign(VerticalAlignment.Center))
-            .Width(24)
-            .Height(24)
-            .CornerRadius(8)
-            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
-            .WithBorder(Theme.SurfaceStroke)
+                .VAlign(VerticalAlignment.Center)
+            .Width(28)
+            .Height(28)
+            .CornerRadius(9)
+            .Background(new SolidColorBrush(Microsoft.UI.Colors.Transparent))
             .Padding(0)
             .HAlign(HorizontalAlignment.Center)
             .VAlign(VerticalAlignment.Center)
-            .Flex(shrink: 0);
+            .Flex(shrink: 0),
+            () => { })
+            .AutomationName("Site controls")
+            .ToolTip("View site information and permissions")
+            .Width(32)
+            .Height(32)
+            .Padding(0)
+            .VAlign(VerticalAlignment.Center)
+            .HAlign(HorizontalAlignment.Center)
+            .Flex(shrink: 0)
+            .Set(button =>
+            {
+                button.Style = GetGlassIconButtonStyle();
+                button.HorizontalContentAlignment = HorizontalAlignment.Center;
+                button.VerticalContentAlignment = VerticalAlignment.Center;
+                ApplyGlassButtonDepth(button);
+                button.Flyout = SiteControlsFlyout.Create(selectedTab, browserController);
+            });
     }
 
     private static void ConfigureAddressBox(

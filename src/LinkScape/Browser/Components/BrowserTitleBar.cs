@@ -15,6 +15,7 @@ internal sealed class BrowserTitleBarController
 
 internal sealed record BrowserTitleBarProps(
     BrowserTitleBarController Controller,
+    BrowserWebViewHostController BrowserController,
     BrowserTab SelectedTab,
     IReadOnlyList<BrowserTab> Tabs,
     string HomeUrl,
@@ -80,6 +81,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
+            Props.BrowserController,
             _addressBarText,
             Props.HomeUrl,
             Props.SettingsSnapshot,

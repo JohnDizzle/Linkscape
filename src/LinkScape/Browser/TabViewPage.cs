@@ -2380,6 +2380,7 @@ class TabViewPage : Component
         var titleBar = Component<BrowserTitleBar, BrowserTitleBarProps>(
             new BrowserTitleBarProps(
                 _browserTitleBarController,
+                _browserWebViewHostController,
                 selectedTab,
                 tabs,
                 configuredHomeUrl,
