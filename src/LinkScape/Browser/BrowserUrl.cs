@@ -4,6 +4,9 @@ namespace LinkScape.Browser;
 
 internal static class BrowserUrl
 {
+    private const string InternalHost = "linker.local";
+    public const string AppLogoFaviconUrl = "ms-appx:///Assets/StoreLogo.png";
+
     public static string Normalize(string raw, string fallback, string? providerKey = null)
     {
         var input = (raw ?? string.Empty).Trim();
@@ -76,6 +79,27 @@ internal static class BrowserUrl
             input.StartsWith("edge:", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool TryGetExternalProtocolUri(string? raw, out Uri uri)
+    {
+        uri = null!;
+
+        var input = (raw ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(input) ||
+            IsBlockedInternalUrl(input) ||
+            !Uri.TryCreate(input, UriKind.Absolute, out var candidate))
+        {
+            return false;
+        }
+
+        if (candidate.Scheme is "http" or "https" or "file" or "about" or "data" or "javascript")
+        {
+            return false;
+        }
+
+        uri = candidate;
+        return true;
+    }
+
     public static bool IsSameDomain(string? left, string? right)
     {
         return TryGetComparableHost(left, out var leftHost) &&
@@ -93,6 +117,14 @@ internal static class BrowserUrl
 
         return "https://www.google.com/s2/favicons?sz=32&domain=bing.com";
     }
+
+    public static string GetFaviconUrl(string url) =>
+        IsInternalPage(url) ? AppLogoFaviconUrl : GetDomainFaviconUrl(url);
+
+    public static bool IsInternalPage(string? raw) =>
+        Uri.TryCreate(raw, UriKind.Absolute, out var uri) &&
+        string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(uri.Host, InternalHost, StringComparison.OrdinalIgnoreCase);
 
     private static bool TryNormalizeAbsoluteUrlCore(string input, out string normalizedUrl)
     {

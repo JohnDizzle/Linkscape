@@ -22,6 +22,11 @@ internal static class AppErrorStateService
     {
         lock (SyncRoot)
         {
+            if (ReferenceEquals(_currentError, exception))
+            {
+                return;
+            }
+
             _currentError = exception;
         }
 

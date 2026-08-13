@@ -21,11 +21,15 @@ internal sealed record SiteControlsSnapshot(
     bool IsSecure,
     int CookieCount,
     long StorageUsageBytes,
+    int ZoomPercent,
     IReadOnlyList<SitePermissionSetting> Permissions,
     string? Error = null);
 
 internal static class SiteControlsService
 {
+    internal const int MinZoomPercent = 100;
+    internal const int MaxZoomPercent = 500;
+
     private static readonly (CoreWebView2PermissionKind Kind, string Name)[] PermissionDefinitions =
     [
         (CoreWebView2PermissionKind.Camera, "Camera"),
@@ -58,7 +62,7 @@ internal static class SiteControlsService
         return true;
     }
 
-    internal static async Task<SiteControlsSnapshot> GetSnapshotAsync(CoreWebView2? core)
+    internal static async Task<SiteControlsSnapshot> GetSnapshotAsync(CoreWebView2? core, int zoomPercent)
     {
         if (core is null || !TryGetOrigin(core.Source, out var origin, out var host))
         {
@@ -93,6 +97,7 @@ internal static class SiteControlsService
                 isSecure,
                 cookies.Count,
                 storageUsage,
+                ClampZoomPercent(zoomPercent),
                 permissions);
         }
         catch (Exception ex)
@@ -173,6 +178,15 @@ internal static class SiteControlsService
         return $"{value:0.#} {units[unitIndex]} stored";
     }
 
+    internal static int ClampZoomPercent(int percent) =>
+        Math.Clamp(percent, MinZoomPercent, MaxZoomPercent);
+
+    internal static int FormatZoomPercent(double zoomFactor) =>
+        ClampZoomPercent((int)Math.Round(zoomFactor * 100, MidpointRounding.AwayFromZero));
+
+    internal static double ToZoomFactor(int percent) =>
+        ClampZoomPercent(percent) / 100d;
+
     private static async Task<long> GetStorageUsageAsync(CoreWebView2 core, string origin)
     {
         try
@@ -195,5 +209,5 @@ internal static class SiteControlsService
         string.Equals(normalizedLeft, right, StringComparison.OrdinalIgnoreCase);
 
     private static SiteControlsSnapshot Unavailable(string message, string origin = "", string host = "") =>
-        new(false, origin, host, "Unavailable", false, 0, 0, [], message);
+        new(false, origin, host, "Unavailable", false, 0, 0, 100, [], message);
 }

@@ -48,6 +48,16 @@ internal static class BrowserTabActions
         string homeUrl,
         out BrowserTab? nextSelected)
     {
+        return Close(tabs, selectedId, homeUrl, preferredSelectedId: null, out nextSelected);
+    }
+
+    public static BrowserTab[] Close(
+        BrowserTab[] tabs,
+        string selectedId,
+        string homeUrl,
+        string? preferredSelectedId,
+        out BrowserTab? nextSelected)
+    {
         nextSelected = null;
 
         var index = Array.FindIndex(tabs, tab => tab.Id == selectedId);
@@ -64,6 +74,17 @@ internal static class BrowserTabActions
         }
 
         var nextTabs = tabs.Where(tab => tab.Id != selectedId).ToArray();
+        if (!string.IsNullOrWhiteSpace(preferredSelectedId))
+        {
+            var preferredTab = nextTabs.FirstOrDefault(tab =>
+                string.Equals(tab.Id, preferredSelectedId, StringComparison.Ordinal));
+            if (preferredTab is not null)
+            {
+                nextSelected = preferredTab;
+                return nextTabs;
+            }
+        }
+
         var nextIndex = Math.Clamp(index - 1, 0, nextTabs.Length - 1);
 
         nextSelected = nextTabs[nextIndex];

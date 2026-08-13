@@ -53,6 +53,8 @@ class TabViewPage : Component
     private DateTime _commandCenterBusyStartedAtUtc;
     private BrowserSessionState _latestBrowserSession;
     private BrowserTab[] _latestTabs = [];
+    private readonly List<string> _tabActivationHistory = [];
+    private string? _lastTrackedSelectedTabId;
     private readonly BrowserTab[] _startupTabs;
     private readonly string _startupSelectedTabId;
     private Action<ActivationTarget>? _openActivatedTarget;
@@ -171,6 +173,7 @@ class TabViewPage : Component
         _latestTabs = tabs;
         var selectedTag = session.Value.SelectedTabId;
         _latestSelectedTabId = selectedTag;
+        TrackSelectedTab(selectedTag, tabs);
         var isTabsCollapsed = session.Value.IsTabsCollapsed;
         var canGoBack = session.Value.CanGoBack;
         var canGoForward = session.Value.CanGoForward;
@@ -1962,7 +1965,15 @@ class TabViewPage : Component
             }
 
             var wasSelected = string.Equals(selectedTag, tabId, StringComparison.Ordinal);
-            var nextTabs = BrowserTabActions.Close(currentTabs, tabId, configuredHomeUrl, out var nextTab);
+            var preferredSelectedTabId = wasSelected
+                ? GetLastActiveOpenTabId(tabId, currentTabs)
+                : null;
+            var nextTabs = BrowserTabActions.Close(
+                currentTabs,
+                tabId,
+                configuredHomeUrl,
+                preferredSelectedTabId,
+                out var nextTab);
 
             if (nextTab is null)
             {
@@ -1970,6 +1981,7 @@ class TabViewPage : Component
             }
 
             _browserWebViewHostController.CloseTab(tabId);
+            ForgetClosedTab(tabId);
             MarkTabsChanged(nextTabs);
 
             if (wasSelected)
@@ -3417,6 +3429,49 @@ class TabViewPage : Component
         }
         catch
         {
+        }
+    }
+
+    private void TrackSelectedTab(string? selectedTabId, BrowserTab[] tabs)
+    {
+        var openTabIds = tabs
+            .Select(tab => tab.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        _tabActivationHistory.RemoveAll(tabId => !openTabIds.Contains(tabId));
+
+        if (string.IsNullOrWhiteSpace(selectedTabId) ||
+            !openTabIds.Contains(selectedTabId) ||
+            string.Equals(_lastTrackedSelectedTabId, selectedTabId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _tabActivationHistory.RemoveAll(tabId => string.Equals(tabId, selectedTabId, StringComparison.Ordinal));
+        _tabActivationHistory.Insert(0, selectedTabId);
+        _lastTrackedSelectedTabId = selectedTabId;
+    }
+
+    private string? GetLastActiveOpenTabId(string closingTabId, BrowserTab[] tabs)
+    {
+        var openTabIds = tabs
+            .Where(tab => !string.Equals(tab.Id, closingTabId, StringComparison.Ordinal))
+            .Select(tab => tab.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return _tabActivationHistory.FirstOrDefault(tabId =>
+            !string.Equals(tabId, closingTabId, StringComparison.Ordinal) &&
+            openTabIds.Contains(tabId));
+    }
+
+    private void ForgetClosedTab(string tabId)
+    {
+        _tabActivationHistory.RemoveAll(candidate =>
+            string.Equals(candidate, tabId, StringComparison.Ordinal));
+
+        if (string.Equals(_lastTrackedSelectedTabId, tabId, StringComparison.Ordinal))
+        {
+            _lastTrackedSelectedTabId = null;
         }
     }
 

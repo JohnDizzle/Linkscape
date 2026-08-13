@@ -522,7 +522,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         {
             Width = 20,
             Height = 20,
-            Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(BrowserUrl.GetDomainFaviconUrl(result.Url), UriKind.Absolute)),
+            Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(BrowserUrl.GetFaviconUrl(result.Url), UriKind.Absolute)),
             Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
             VerticalAlignment = VerticalAlignment.Center
         };

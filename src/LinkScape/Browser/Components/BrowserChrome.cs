@@ -144,7 +144,7 @@ internal static class BrowserChrome
                     ? IconButton(
                         "\uE8A7", // temporary app/open glyph
                         onOpenWebApp,
-                        $"Open {installableWebApp.Name} as app",
+                        $"App available: Open {installableWebApp.Name}",
                         buttonSize: 32,
                         iconSize: 15,
                         useGlass: true)
@@ -155,7 +155,7 @@ internal static class BrowserChrome
                     : IconButton(
                         "\uE896",
                         onInstallWebApp,
-                        $"Install {installableWebApp.Name}",
+                        $"App available: Install {installableWebApp.Name}",
                         buttonSize: 32,
                         iconSize: 15,
                         useGlass: true)
@@ -703,7 +703,7 @@ internal static class BrowserChrome
         return Button(
             Border(
                 Uri.TryCreate(selectedTab.Url, UriKind.Absolute, out _)
-                    ? Image(BrowserUrl.GetDomainFaviconUrl(selectedTab.Url))
+                    ? Image(BrowserUrl.GetFaviconUrl(selectedTab.Url))
                         .AccessibilityHidden()
                         .Width(20)
                         .Height(20)
@@ -758,6 +758,12 @@ internal static class BrowserChrome
         addressBox.CornerRadius = new CornerRadius(12);
         addressBox.BorderThickness = new Thickness(0);
         addressBox.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        addressBox.QueryIcon = new Microsoft.UI.Xaml.Controls.FontIcon
+        {
+            Glyph = BrowserConstants.GlyphMagnifyGlass,
+            FontFamily = BrowserConstants.IconFontFamily,
+            FontSize = 14
+        };
         addressBox.GotFocus -= OnAddressBoxGotFocus;
         addressBox.GotFocus += OnAddressBoxGotFocus;
         addressBox.LostFocus -= OnAddressBoxLostFocus;
@@ -2095,7 +2101,7 @@ internal static class BrowserChrome
         UIElement icon = !string.IsNullOrWhiteSpace(url) && HasFaviconHost(url)
             ? new Microsoft.UI.Xaml.Controls.Image
             {
-                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(BrowserUrl.GetDomainFaviconUrl(url), UriKind.Absolute)),
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(BrowserUrl.GetFaviconUrl(url), UriKind.Absolute)),
                 Width = 16,
                 Height = 16,
                 Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill,
@@ -4871,7 +4877,7 @@ internal static class BrowserChrome
     private static Element BuildHistoryIcon(string url)
     {
         var iconContent = HasFaviconHost(url)
-            ? Image(BrowserUrl.GetDomainFaviconUrl(url))
+            ? Image(BrowserUrl.GetFaviconUrl(url))
                 .AccessibilityHidden()
                 .Width(18)
                 .Height(18)
@@ -4933,7 +4939,7 @@ internal static class BrowserChrome
     private static Element BuildTabFavicon(BrowserTab tab, bool useTileChrome = true)
     {
         var iconContent = HasFaviconHost(tab.Url)
-            ? Image(BrowserUrl.GetDomainFaviconUrl(tab.Url))
+            ? Image(BrowserUrl.GetFaviconUrl(tab.Url))
                 .AccessibilityHidden()
                 .Width(useTileChrome ? 16 : 17)
                 .Height(useTileChrome ? 16 : 17)

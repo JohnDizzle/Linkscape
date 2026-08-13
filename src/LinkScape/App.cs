@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
 using Microsoft.UI.Reactor;
 using Microsoft.UI.Xaml;
+using Windows.ApplicationModel.DataTransfer;
 
 var commandLineArgs = Environment.GetCommandLineArgs();
 
@@ -89,6 +90,7 @@ class App : Component
 {
     private const string BackdropGradientPresetSettingKey = "ui.backdrop.gradientPreset";
     private const int StartupSplashDurationMilliseconds = 1010;
+    private const string StoreLogoAssetPath = "ms-appx:///Assets/StoreLogo.png";
     private static readonly object UnhandledExceptionSyncRoot = new();
     private static bool _unhandledExceptionHandlerRegistered;
     private bool _errorListenerRegistered;
@@ -121,17 +123,28 @@ class App : Component
 
         try
         {
+            var activeError = fatalError.Value ?? AppErrorStateService.CurrentError;
 
-            return fatalError.Value is not null
-                ? BuildErrorSurface(backdropGradientPreset.Value, fatalError.Value)
-                : isShowingStartupSplash.Value
-                    ? AppLoadingSurface.Build()
+            if (activeError is not null)
+            {
+                return BuildErrorSurface(backdropGradientPreset.Value, activeError);
+            }
+
+            return isShowingStartupSplash.Value
+                ? AppLoadingSurface.Build()
                 : BuildMainSurface(backdropGradientPreset.Value, isFullScreenPresentationActive.Value);
         }
         catch (Exception ex)
         {
-            AppErrorStateService.SetError(ex);
-            return BuildErrorSurface(backdropGradientPreset.Value, ex);
+            var activeError = AppErrorStateService.CurrentError;
+
+            if (activeError is null)
+            {
+                AppErrorStateService.SetError(ex);
+                activeError = ex;
+            }
+
+            return BuildErrorSurface(backdropGradientPreset.Value, activeError);
         }
     }
 
@@ -286,87 +299,110 @@ class App : Component
             TitleBar("LinkScape Browser").Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png"),
             Border(
                 VStack(
-                    12,
-                    (TextBlock("LinkScape Browser hit an unexpected error") with
-                    {
-                        FontSize = 28,
-                        TextWrapping = TextWrapping.WrapWholeWords
-                    })
-                    .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-                    (TextBlock("The app shell was replaced with a safe page so you can recover without a raw stack trace.") with
-                    {
-                        FontSize = 14,
-                        TextWrapping = TextWrapping.WrapWholeWords
-                    })
-                    .Opacity(0.82),
+                    18,
+                    HStack(
+                        16,
+                        Border(
+                            Image(StoreLogoAssetPath)
+                                .AutomationName("LinkScape logo")
+                                .Width(44)
+                                .Height(44)
+                                .Set(image => image.Stretch = Stretch.UniformToFill))
+                            .Width(64)
+                            .Height(64)
+                            .CornerRadius(20)
+                            .Background(new SolidColorBrush(ColorHelper.FromArgb(0x22, 0xFF, 0xFF, 0xFF)))
+                            .WithBorder(new SolidColorBrush(ColorHelper.FromArgb(0x30, 0xFF, 0xFF, 0xFF))),
+                        VStack(
+                            5,
+                            (TextBlock("Recovery mode") with
+                            {
+                                FontSize = 12,
+                                CharacterSpacing = 80
+                            })
+                            .Opacity(0.72),
+                            (TextBlock("LinkScape caught a rough edge") with
+                            {
+                                FontSize = 30,
+                                TextWrapping = TextWrapping.WrapWholeWords
+                            })
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                            (TextBlock("Your browser shell is paused on this calm page so you can retry, restart, or share the diagnostic details without losing the plot.") with
+                            {
+                                FontSize = 14,
+                                TextWrapping = TextWrapping.WrapWholeWords
+                            })
+                            .Opacity(0.82)
+                        )
+                        .Flex(grow: 1, basis: 0)
+                    )
+                    .VAlign(VerticalAlignment.Center),
                     Border(
-                        TextBlock(error.Message) with
+                        VStack(
+                            8,
+                            (TextBlock("What happened") with
+                            {
+                                FontSize = 13
+                            })
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                            (TextBlock(error.Message) with
+                            {
+                                FontSize = 13,
+                                TextWrapping = TextWrapping.WrapWholeWords
+                            })
+                            .Opacity(0.86),
+                            (TextBlock("Use Copy details if you want the in-memory error text.") with
+                            {
+                                FontSize = 12,
+                                TextWrapping = TextWrapping.WrapWholeWords
+                            })
+                            .Opacity(0.66)
+                        ))
+                        .Padding(16)
+                        .CornerRadius(16)
+                        .Background(new SolidColorBrush(ColorHelper.FromArgb(0x24, 0xFF, 0xFF, 0xFF)))
+                        .WithBorder(new SolidColorBrush(ColorHelper.FromArgb(0x26, 0xFF, 0xFF, 0xFF))),
+                    Border(
+                        (TextBlock(BuildErrorDetails(error)) with
                         {
-                            FontSize = 13,
-                            TextWrapping = TextWrapping.WrapWholeWords
+                            FontSize = 12,
+                            TextWrapping = TextWrapping.WrapWholeWords,
+                            MaxLines = 8
                         })
+                        .Set(textBlock => textBlock.FontFamily = new FontFamily("Cascadia Code"))
+                        .Opacity(0.74))
                         .Padding(14)
-                        .CornerRadius(12)
-                        .Background(BrowserConstants.LayerFillDefaultBrush),
+                        .CornerRadius(14)
+                        .Background(new SolidColorBrush(ColorHelper.FromArgb(0x20, 0x00, 0x00, 0x00)))
+                        .WithBorder(new SolidColorBrush(ColorHelper.FromArgb(0x20, 0xFF, 0xFF, 0xFF))),
                     HStack(
                         10,
-                        Button("Retry", AppErrorStateService.Clear)
-                            .AutomationName("Retry app shell")
-                            .Height(36)
-                            .Padding(14, 0)
-                            .CornerRadius(18),
-                        Button("Restart app", RestartApplication)
-                            .AutomationName("Restart application")
-                            .Height(36)
-                            .Padding(14, 0)
-                            .CornerRadius(18),
-                        Button("Copy details", () =>
-                        {
-                            try
-                            {
-                                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-                                package.SetText(error.ToString());
-                                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-                            }
-                            catch
-                            {
-                            }
-                        })
-                            .AutomationName("Copy error details")
-                            .Height(36)
-                            .Padding(14, 0)
-                            .CornerRadius(18)
+                        BuildErrorButton("Retry", AppErrorStateService.Clear, "Retry app shell", isPrimary: true),
+                        BuildErrorButton("Restart", RestartApplication, "Restart application"),
+                        BuildErrorButton("Copy details", () => CopyErrorDetails(error), "Copy error details")
                     ),
-                    (FlexRow(
-                        (TextBlock("You may also send the details to ") with
-                        {
-                            FontSize = 12,
-                            TextWrapping = TextWrapping.WrapWholeWords
-                        })
-                        .Opacity(0.72),
-                        Button("Developer", OpenDeveloperContact)
-                            .AutomationName("Developer contact")
-                            .Padding(0)
-                            .CornerRadius(14),
-                        (TextBlock(" if you want direct help.") with
-                        {
-                            FontSize = 12,
-                            TextWrapping = TextWrapping.WrapWholeWords
-                        })
-                        .Opacity(0.72)
-                    ) with
+                    (TextBlock("You can also copy details and send them to the Developer contact when you want direct help.") with
                     {
-                        ColumnGap = 4
+                        FontSize = 12,
+                        TextWrapping = TextWrapping.WrapWholeWords
                     })
-                    .VAlign(VerticalAlignment.Center)
+                    .Opacity(0.66),
+                    Button("Developer", OpenDeveloperContact)
+                        .AutomationName("Developer contact")
+                        .HorizontalAlignment(HorizontalAlignment.Left)
+                        .Height(30)
+                        .Padding(12, 0)
+                        .CornerRadius(15)
+                        .Background(new SolidColorBrush(ColorHelper.FromArgb(0x18, 0xFF, 0xFF, 0xFF)))
+                        .Foreground(new SolidColorBrush(Colors.White))
                 )
                 .HAlign(HorizontalAlignment.Center)
                 .VAlign(VerticalAlignment.Center)
-                .MaxWidth(640)
-                .Padding(28)
-                .CornerRadius(24)
-                .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xD8, 0x4B, 0x1F, 0x24)))
-                .WithBorder(Theme.SurfaceStroke)
+                .MaxWidth(820)
+                .Padding(30)
+                .CornerRadius(28)
+                .Background(new SolidColorBrush(ColorHelper.FromArgb(0xD6, 0x1E, 0x20, 0x26)))
+                .WithBorder(new SolidColorBrush(ColorHelper.FromArgb(0x2E, 0xFF, 0xFF, 0xFF)))
             )
             .Padding(32)
             .HAlign(HorizontalAlignment.Stretch)
@@ -377,6 +413,45 @@ class App : Component
         .Backdrop(BackdropKind.AcrylicThin)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
+    }
+
+    private static Element BuildErrorButton(string label, Action onClick, string automationName, bool isPrimary = false)
+    {
+        return Button(label, onClick)
+            .AutomationName(automationName)
+            .Height(38)
+            .Padding(16, 0)
+            .CornerRadius(19)
+            .Background(isPrimary
+                ? new SolidColorBrush(ColorHelper.FromArgb(0xFF, 0xE8, 0x5F, 0x43))
+                : new SolidColorBrush(ColorHelper.FromArgb(0x1E, 0xFF, 0xFF, 0xFF)))
+            .Foreground(new SolidColorBrush(Colors.White));
+    }
+
+    private static string BuildErrorDetails(Exception error)
+    {
+        return $"""
+            Type: {error.GetType().Name}
+            Message: {error.Message}
+
+            {error}
+            """;
+    }
+
+    private static void CopyErrorDetails(Exception error)
+    {
+        try
+        {
+            var package = new DataPackage
+            {
+                RequestedOperation = DataPackageOperation.Copy
+            };
+            package.SetText(BuildErrorDetails(error));
+            Clipboard.SetContent(package);
+        }
+        catch
+        {
+        }
     }
 
     private void RegisterSettingsListener(Action<string> setBackdropGradientPreset)

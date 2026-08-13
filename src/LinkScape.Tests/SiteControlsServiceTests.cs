@@ -46,4 +46,28 @@ public sealed class SiteControlsServiceTests
     {
         Assert.AreEqual(expected, SiteControlsService.FormatStorageUsage(bytes));
     }
+
+    [DataTestMethod]
+    [DataRow(0.1, 100)]
+    [DataRow(0.4, 100)]
+    [DataRow(1.0, 100)]
+    [DataRow(1.25, 125)]
+    [DataRow(5.0, 500)]
+    [DataRow(6.0, 500)]
+    public void FormatZoomPercent_ClampsToSitePanelRange(double zoomFactor, int expected)
+    {
+        Assert.AreEqual(expected, SiteControlsService.FormatZoomPercent(zoomFactor));
+    }
+
+    [DataTestMethod]
+    [DataRow(1, 1.0)]
+    [DataRow(40, 1.0)]
+    [DataRow(100, 1.0)]
+    [DataRow(175, 1.75)]
+    [DataRow(500, 5.0)]
+    [DataRow(900, 5.0)]
+    public void ToZoomFactor_ConvertsClampedPercentToWebViewFactor(int percent, double expected)
+    {
+        Assert.AreEqual(expected, SiteControlsService.ToZoomFactor(percent), 0.001);
+    }
 }

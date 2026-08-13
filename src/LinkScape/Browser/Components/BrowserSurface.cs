@@ -1,5 +1,7 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using Microsoft.Web.WebView2.Core;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -23,6 +25,7 @@ internal sealed class BrowserSurfaceController
 
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
     private readonly HashSet<string> _hookedWebViewTabs = [];
+    private readonly HashSet<string> _closingWebViewTabs = [];
     private Microsoft.UI.Xaml.Controls.WebView2? _webView;
     private Microsoft.UI.Xaml.Controls.Border? _webViewHost;
     private string? _activeWebViewTabId;
@@ -151,6 +154,8 @@ internal sealed class BrowserSurfaceController
 
     public void CloseTab(string tabId)
     {
+        _closingWebViewTabs.Add(tabId);
+
         if (!_webViewsByTabId.Remove(tabId, out var closedWebView))
         {
             _hookedWebViewTabs.Remove(tabId);
@@ -162,7 +167,14 @@ internal sealed class BrowserSurfaceController
             _webViewHost.Child = null;
         }
 
-        closedWebView.Close();
+        try
+        {
+            closedWebView.Close();
+        }
+        catch
+        {
+        }
+
         _hookedWebViewTabs.Remove(tabId);
 
         if (string.Equals(_activeWebViewTabId, tabId, StringComparison.Ordinal))
@@ -268,16 +280,19 @@ internal sealed class BrowserSurfaceController
         {
             void SyncTabFromCore(bool completeLoading)
             {
-                var currentUrl = core.Source;
+                if (_closingWebViewTabs.Contains(tab.Id) || !_webViewsByTabId.ContainsKey(tab.Id))
+                {
+                    return;
+                }
+
+                var currentUrl = TryGetCoreSource(core);
 
                 if (string.IsNullOrWhiteSpace(currentUrl))
                 {
                     currentUrl = tab.Url;
                 }
 
-                var currentTitle = string.IsNullOrWhiteSpace(core.DocumentTitle)
-                    ? null
-                    : core.DocumentTitle;
+                var currentTitle = TryGetDocumentTitle(core);
 
                 var urlChanged = false;
                 string? favoriteIdToSync = null;
@@ -367,11 +382,11 @@ internal sealed class BrowserSurfaceController
                     }
 
                     _setAddressFromCore?.Invoke(currentUrl);
-                    _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
+                    SetNavAvailabilityFromCore(core, _setNavAvailability);
                 }
             }
 
-            webView.NavigationStarting += (_, args) =>
+            webView.NavigationStarting += (sender, args) =>
             {
                 if (BrowserUrl.IsBlockedInternalUrl(args.Uri))
                 {
@@ -381,10 +396,18 @@ internal sealed class BrowserSurfaceController
                     return;
                 }
 
+                if (BrowserUrl.TryGetExternalProtocolUri(args.Uri, out var externalUri))
+                {
+                    args.Cancel = true;
+                    _setLoadingStateFromCore?.Invoke(false);
+                    _ = LaunchExternalProtocolAsync(externalUri);
+                    return;
+                }
+
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
                     _setLoadingStateFromCore?.Invoke(true);
-                    _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
+                    SetNavAvailabilityFromCore(core, _setNavAvailability);
                 }
             };
 
@@ -400,12 +423,19 @@ internal sealed class BrowserSurfaceController
                 SyncTabFromCore(completeLoading: false);
             };
 
-            core.NewWindowRequested += (_, e) =>
+            core.NewWindowRequested += (sender, e) =>
             {
                 if (BrowserUrl.IsBlockedInternalUrl(e.Uri))
                 {
                     e.Handled = true;
                     BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    return;
+                }
+
+                if (BrowserUrl.TryGetExternalProtocolUri(e.Uri, out var externalUri))
+                {
+                    e.Handled = true;
+                    _ = LaunchExternalProtocolAsync(externalUri);
                     return;
                 }
 
@@ -415,7 +445,12 @@ internal sealed class BrowserSurfaceController
 
             core.DocumentTitleChanged += (_, _) =>
             {
-                var title = core.DocumentTitle;
+                if (_closingWebViewTabs.Contains(tab.Id) || !_webViewsByTabId.ContainsKey(tab.Id))
+                {
+                    return;
+                }
+
+                var title = TryGetDocumentTitle(core);
 
                 if (!string.IsNullOrWhiteSpace(title))
                 {
@@ -433,7 +468,7 @@ internal sealed class BrowserSurfaceController
         }
         else if (core is not null)
         {
-            _setNavAvailability?.Invoke(core.CanGoBack, core.CanGoForward);
+            SetNavAvailabilityFromCore(core, _setNavAvailability);
         }
 
         AttachWebViewToHost(host, webView);
@@ -468,6 +503,78 @@ internal sealed class BrowserSurfaceController
             webView.InvalidateArrange();
             webView.UpdateLayout();
         });
+    }
+
+    private static async Task LaunchExternalProtocolAsync(Uri uri)
+    {
+        try
+        {
+            var launched = await Windows.System.Launcher.LaunchUriAsync(uri);
+            if (!launched)
+            {
+                BrowserNoticeService.Show($"No app is available to open {uri.Scheme}: links.");
+            }
+        }
+        catch (Exception ex)
+        {
+            BrowserNoticeService.Show($"Could not open {uri.Scheme}: link: {ex.Message}");
+        }
+    }
+
+    private static string? TryGetDocumentTitle(CoreWebView2 core)
+    {
+        try
+        {
+            var title = core.DocumentTitle;
+            return string.IsNullOrWhiteSpace(title) ? null : title;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetCoreSource(CoreWebView2 core)
+    {
+        try
+        {
+            return core.Source;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static void SetNavAvailabilityFromCore(
+        CoreWebView2 core,
+        Action<bool, bool>? setNavAvailability)
+    {
+        if (setNavAvailability is null)
+        {
+            return;
+        }
+
+        try
+        {
+            setNavAvailability(core.CanGoBack, core.CanGoForward);
+        }
+        catch (COMException)
+        {
+            setNavAvailability(false, false);
+        }
+        catch (InvalidOperationException)
+        {
+            setNavAvailability(false, false);
+        }
     }
 
     private async Task RestoreScrollPositionAsync(string tabId, double scrollX, double scrollY)

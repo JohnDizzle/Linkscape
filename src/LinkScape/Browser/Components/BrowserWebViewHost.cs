@@ -4,6 +4,8 @@ using LinkScape.Models;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.IO;
@@ -33,6 +35,7 @@ internal sealed class BrowserWebViewHostController
     internal Func<CoreWebView2PermissionKind, CoreWebView2PermissionState, Task>? SetSitePermissionAsyncCore { get; set; }
     internal Func<Task>? ResetSitePermissionsAsyncCore { get; set; }
     internal Func<Task>? ClearSiteDataAsyncCore { get; set; }
+    internal Func<int, Task>? SetZoomPercentAsyncCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
 
@@ -71,7 +74,7 @@ internal sealed class BrowserWebViewHostController
 
     public Task<SiteControlsSnapshot> GetSiteControlsAsync() =>
         GetSiteControlsAsyncCore?.Invoke() ?? Task.FromResult(
-            new SiteControlsSnapshot(false, string.Empty, string.Empty, "Unavailable", false, 0, 0, [], "The page is not ready."));
+            new SiteControlsSnapshot(false, string.Empty, string.Empty, "Unavailable", false, 0, 0, 100, [], "The page is not ready."));
 
     public Task SetSitePermissionAsync(CoreWebView2PermissionKind kind, CoreWebView2PermissionState state) =>
         SetSitePermissionAsyncCore?.Invoke(kind, state) ?? Task.CompletedTask;
@@ -81,6 +84,9 @@ internal sealed class BrowserWebViewHostController
 
     public Task ClearSiteDataAsync() =>
         ClearSiteDataAsyncCore?.Invoke() ?? Task.CompletedTask;
+
+    public Task SetZoomPercentAsync(int percent) =>
+        SetZoomPercentAsyncCore?.Invoke(percent) ?? Task.CompletedTask;
 
 }
 
@@ -120,6 +126,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.WebView2> _webViewsByTabId = [];
     private readonly Dictionary<string, BrowserTab> _tabSnapshotsById = [];
     private readonly HashSet<string> _hookedWebViewTabs = [];
+    private readonly HashSet<string> _closingWebViewTabs = [];
+    private readonly Dictionary<string, int> _zoomPercentByTabId = [];
     private readonly HashSet<string> _pendingInitialScrollRestoreTabs = [];
     private readonly object _suspendDelayGate = new();
     private readonly Dictionary<string, CancellationTokenSource> _suspendDelayByTabId = [];
@@ -173,11 +181,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Props.Controller.CaptureActivePageImageAsyncCore = CaptureActiveViewportAsync;
         Props.Controller.SetExtensionEnabledAsyncCore = SetExtensionEnabledAsync;
         Props.Controller.ClearBrowsingDataAsyncCore = ClearBrowsingDataAsync;
-        Props.Controller.GetSiteControlsAsyncCore = () => SiteControlsService.GetSnapshotAsync(_activeWebView?.CoreWebView2);
+        Props.Controller.GetSiteControlsAsyncCore = () => SiteControlsService.GetSnapshotAsync(
+            _activeWebView?.CoreWebView2,
+            GetZoomPercent(_activeWebViewTabId));
         Props.Controller.SetSitePermissionAsyncCore = SetActiveSitePermissionAsync;
         Props.Controller.ResetSitePermissionsAsyncCore = () =>
             SiteControlsService.ResetPermissionsAsync(_activeWebView?.CoreWebView2);
         Props.Controller.ClearSiteDataAsyncCore = ClearActiveSiteDataAsync;
+        Props.Controller.SetZoomPercentAsyncCore = SetActiveZoomPercentAsync;
 
         return Border(null)
             .Set(host =>
@@ -252,7 +263,9 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
     private void CloseTab(string tabId)
     {
         CancelPendingSuspend(tabId);
+        _closingWebViewTabs.Add(tabId);
         _tabSnapshotsById.Remove(tabId);
+        _zoomPercentByTabId.Remove(tabId);
 
         if (_webViewsByTabId.Remove(tabId, out var closedWebView))
         {
@@ -266,7 +279,13 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 Messenger.Send(new WebViewFullScreenPresentationRequestMessage(false));
             }
 
-            closedWebView.Close();
+            try
+            {
+                closedWebView.Close();
+            }
+            catch
+            {
+            }
         }
 
         _hookedWebViewTabs.Remove(tabId);
@@ -359,17 +378,20 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         {
             void SyncTabFromCore(bool completeLoading)
             {
+                if (_closingWebViewTabs.Contains(tab.Id) || !_webViewsByTabId.ContainsKey(tab.Id))
+                {
+                    return;
+                }
+
                 var currentTab = GetTabSnapshot(tab.Id, tab);
-                var currentUrl = core.Source;
+                var currentUrl = TryGetCoreSource(core);
 
                 if (string.IsNullOrWhiteSpace(currentUrl))
                 {
                     currentUrl = currentTab.Url;
                 }
 
-                var currentTitle = string.IsNullOrWhiteSpace(core.DocumentTitle)
-                    ? null
-                    : core.DocumentTitle;
+                var currentTitle = TryGetDocumentTitle(core);
 
                 var urlChanged = false;
                 string? favoriteIdToSync = null;
@@ -441,11 +463,11 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     }
 
                     Props.SetAddressFromCore(currentUrl);
-                    Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
+                    SetNavAvailabilityFromCore(core, Props.SetNavAvailability);
                 }
             }
 
-            webView.NavigationStarting += (_, args) =>
+            webView.NavigationStarting += (sender, args) =>
             {
                 BrowserNoticeService.Clear();
 
@@ -467,10 +489,18 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     return;
                 }
 
+                if (BrowserUrl.TryGetExternalProtocolUri(args.Uri, out var externalUri))
+                {
+                    args.Cancel = true;
+                    Props.SetLoadingStateFromCore(false);
+                    _ = LaunchExternalProtocolAsync(externalUri);
+                    return;
+                }
+
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
                     Props.SetLoadingStateFromCore(true);
-                    Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
+                    SetNavAvailabilityFromCore(core, Props.SetNavAvailability);
                 }
                 
                 
@@ -514,6 +544,8 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     BrowserNoticeService.Show(message, "info");
                 }
 
+                await ApplyZoomPercentAsync(webView, GetZoomPercent(tab.Id));
+
             };
 
             core.HistoryChanged += (_, _) =>
@@ -521,12 +553,19 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                 SyncTabFromCore(completeLoading: false);
             };
 
-            core.NewWindowRequested += (_, e) =>
+            core.NewWindowRequested += (sender, e) =>
             {
                 if (BrowserUrl.IsBlockedInternalUrl(e.Uri))
                 {
                     e.Handled = true;
                     BrowserNoticeService.Show("Edge internal URLs are not available in LinkScape.");
+                    return;
+                }
+
+                if (BrowserUrl.TryGetExternalProtocolUri(e.Uri, out var externalUri))
+                {
+                    e.Handled = true;
+                    _ = LaunchExternalProtocolAsync(externalUri);
                     return;
                 }
 
@@ -536,7 +575,12 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
             core.DocumentTitleChanged += (_, _) =>
             {
-                var title = core.DocumentTitle;
+                if (_closingWebViewTabs.Contains(tab.Id) || !_webViewsByTabId.ContainsKey(tab.Id))
+                {
+                    return;
+                }
+
+                var title = TryGetDocumentTitle(core);
 
                 if (!string.IsNullOrWhiteSpace(title))
                 {
@@ -546,10 +590,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
             core.ContainsFullScreenElementChanged += (_, _) =>
             {
-                if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
+                if (_closingWebViewTabs.Contains(tab.Id) ||
+                    !_webViewsByTabId.ContainsKey(tab.Id) ||
+                    !string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
                 {
-                    Messenger.Send(new WebViewFullScreenPresentationRequestMessage(core.ContainsFullScreenElement));
+                    return;
                 }
+
+                Messenger.Send(new WebViewFullScreenPresentationRequestMessage(TryContainsFullScreenElement(core)));
             };
 
             core.ContextMenuRequested += (sender, args) =>
@@ -588,10 +636,10 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
         else if (core is not null)
         {
-            Props.SetNavAvailability(core.CanGoBack, core.CanGoForward);
+            SetNavAvailabilityFromCore(core, Props.SetNavAvailability);
         }
 
-        Messenger.Send(new WebViewFullScreenPresentationRequestMessage(core?.ContainsFullScreenElement == true));
+        Messenger.Send(new WebViewFullScreenPresentationRequestMessage(TryContainsFullScreenElement(core)));
         AttachWebViewToHost(_webViewHost ?? host, webView);
 
     }
@@ -859,6 +907,63 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         core?.Reload();
     }
 
+    private async Task SetActiveZoomPercentAsync(int percent)
+    {
+        var webView = _activeWebView;
+        if (webView is null || string.IsNullOrWhiteSpace(_activeWebViewTabId))
+        {
+            return;
+        }
+
+        var clampedPercent = SiteControlsService.ClampZoomPercent(percent);
+        _zoomPercentByTabId[_activeWebViewTabId] = clampedPercent;
+        await ApplyZoomPercentAsync(webView, clampedPercent);
+    }
+
+    private int GetZoomPercent(string? tabId) =>
+        !string.IsNullOrWhiteSpace(tabId) &&
+        _zoomPercentByTabId.TryGetValue(tabId, out var percent)
+            ? SiteControlsService.ClampZoomPercent(percent)
+            : 100;
+
+    private static async Task ApplyZoomPercentAsync(
+        Microsoft.UI.Xaml.Controls.WebView2 webView,
+        int percent)
+    {
+        var core = webView.CoreWebView2;
+        if (core is null)
+        {
+            return;
+        }
+
+        var zoomFactor = SiteControlsService.ToZoomFactor(percent);
+        var zoomValue = percent == 100
+            ? string.Empty
+            : zoomFactor.ToString("0.###", CultureInfo.InvariantCulture);
+        var zoomJson = JsonSerializer.Serialize(zoomValue);
+
+        await core.ExecuteScriptAsync(
+            $$"""
+            (() => {
+                const zoom = {{zoomJson}};
+                const root = document.documentElement;
+                const body = document.body;
+
+                if (!root) {
+                    return false;
+                }
+
+                root.style.zoom = zoom;
+
+                if (body) {
+                    body.style.zoom = '';
+                }
+
+                return true;
+            })();
+            """);
+    }
+
     private async Task<string?> CaptureActiveViewportAsync()
     {
         var webView = _activeWebView;
@@ -943,6 +1048,22 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri) &&
         string.Equals(uri.AbsolutePath, "/Updates/back", StringComparison.OrdinalIgnoreCase);
 
+    private static async Task LaunchExternalProtocolAsync(Uri uri)
+    {
+        try
+        {
+            var launched = await Windows.System.Launcher.LaunchUriAsync(uri);
+            if (!launched)
+            {
+                BrowserNoticeService.Show($"No app is available to open {uri.Scheme}: links.");
+            }
+        }
+        catch (Exception ex)
+        {
+            BrowserNoticeService.Show($"Could not open {uri.Scheme}: link: {ex.Message}");
+        }
+    }
+
     private static void AttachWebViewToHost(
         Microsoft.UI.Xaml.Controls.Border host,
         Microsoft.UI.Xaml.Controls.WebView2 webView)
@@ -999,6 +1120,78 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             CoreWebView2WebErrorStatus.HostNameNotResolved or
             CoreWebView2WebErrorStatus.CannotConnect or
             CoreWebView2WebErrorStatus.ServerUnreachable;
+    }
+
+    private static string? TryGetDocumentTitle(CoreWebView2 core)
+    {
+        try
+        {
+            var title = core.DocumentTitle;
+            return string.IsNullOrWhiteSpace(title) ? null : title;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetCoreSource(CoreWebView2 core)
+    {
+        try
+        {
+            return core.Source;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static void SetNavAvailabilityFromCore(
+        CoreWebView2 core,
+        Action<bool, bool> setNavAvailability)
+    {
+        try
+        {
+            setNavAvailability(core.CanGoBack, core.CanGoForward);
+        }
+        catch (COMException)
+        {
+            setNavAvailability(false, false);
+        }
+        catch (InvalidOperationException)
+        {
+            setNavAvailability(false, false);
+        }
+    }
+
+    private static bool TryContainsFullScreenElement(CoreWebView2? core)
+    {
+        if (core is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return core.ContainsFullScreenElement;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private async Task PauseMediaInTabAsync(string tabId)
