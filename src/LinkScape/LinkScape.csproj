@@ -38,8 +38,7 @@
         <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     </PropertyGroup>
     <ItemGroup>
-      <Compile Remove="AIChat.cs" />
-      <Compile Remove="ChatSuggestionService.cs" />
+      <Compile Remove="Legacy\AIChat.cs" />
       <Compile Remove="DesktopFlyoutTrayIconService.cs" />
     </ItemGroup>
     <!-- </snippet:template-shape> -->
@@ -91,11 +90,5 @@
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </Content>
     </ItemGroup>
-    <ItemGroup>
-      <Folder Include="Services\Mcp\Helpers\" />
-      <Folder Include="Services\Mcp\Server\" />
-      <Folder Include="Services\Mcp\Tools\" />
-    </ItemGroup>
-
     <Import Project="LinkScape.Signing.props" Condition="Exists('LinkScape.Signing.props')" />
 </Project>

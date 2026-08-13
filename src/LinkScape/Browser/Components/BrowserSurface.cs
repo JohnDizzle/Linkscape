@@ -3,7 +3,7 @@ using LinkScape.Models;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal sealed class BrowserSurfaceController
 {

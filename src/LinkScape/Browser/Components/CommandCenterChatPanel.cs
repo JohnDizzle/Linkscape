@@ -1,13 +1,13 @@
 using System.Threading;
 using System.Threading.Tasks;
 using LinkScape.Browser;
-using LinkScape.Services;
+using LinkScape.Models;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Reactor.Markdown;
 using System.Text.RegularExpressions;
 using Windows.ApplicationModel.DataTransfer;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal sealed record CommandCenterChatPanelProps(
     Action<string> OnOpenLinkInNewTab,

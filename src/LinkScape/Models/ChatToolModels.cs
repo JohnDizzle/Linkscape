@@ -1,5 +1,7 @@
 using System.Threading.Tasks;
 
+namespace LinkScape.Models;
+
 public sealed record CommandCenterChatResponse(
     string Text,
     bool IsError = false,

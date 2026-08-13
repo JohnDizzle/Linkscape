@@ -1,5 +1,7 @@
 using LinkScape.Browser;
 
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class BrowserUrlTests
 {

@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 
+namespace LinkScape.Services.Mcp.Server;
+
 public static class LocalMcpServerService
 {
     public static async Task<bool> TryRunAsync(string[] args, CancellationToken cancellationToken = default)

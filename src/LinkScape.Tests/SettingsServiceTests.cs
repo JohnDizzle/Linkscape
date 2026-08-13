@@ -1,3 +1,5 @@
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class SettingsServiceTests
 {

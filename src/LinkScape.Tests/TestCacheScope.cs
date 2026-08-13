@@ -3,6 +3,8 @@ using Microsoft.Data.Sqlite;
 
 [assembly: DoNotParallelize]
 
+namespace LinkScape.Tests;
+
 internal static class TestCacheScope
 {
     public static string RootPath { get; } = Path.Combine(Path.GetTempPath(), "LinkScape.Tests", Guid.NewGuid().ToString("N"));

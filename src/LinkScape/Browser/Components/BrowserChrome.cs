@@ -1,6 +1,5 @@
 using LinkScape.Browser;
 using LinkScape.Models;
-using LinkScape.Services;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Threading.Tasks;
@@ -8,7 +7,7 @@ using Windows.Services.Store;
 using Windows.System;
 using WinRT.Interop;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal static class BrowserChrome
 {
@@ -361,8 +360,6 @@ internal static class BrowserChrome
     {
         const string repositoryUrl = "https://github.com/JohnDizzle/AI-Agent";
         const string sponsorUrl = "https://paypal.me/johndizzleUS";
-        const string storeUri = "ms-windows-store://review/?ProductId=9NLNN451LC7T";
-
         // Header + description
         var header = new Microsoft.UI.Xaml.Controls.TextBlock
         {
@@ -3391,7 +3388,7 @@ internal static class BrowserChrome
         void SwitchToSelectedCollection()
         {
             if (selectedCollection is not null &&
-                !LinkScape.ActivationRoutingService.RequestCollectionActivation(selectedCollection.Id))
+                !ActivationRoutingService.RequestCollectionActivation(selectedCollection.Id))
             {
                 BrowserNoticeService.Show("Could not switch to the selected collection.");
             }
@@ -3400,7 +3397,7 @@ internal static class BrowserChrome
         void OpenSelectedCollectionInNewWindow()
         {
             if (selectedCollection is not null &&
-                !LinkScape.ActivationRoutingService.OpenCollectionInNewWindow(selectedCollection.Id))
+                !ActivationRoutingService.OpenCollectionInNewWindow(selectedCollection.Id))
             {
                 BrowserNoticeService.Show("Could not open the collection in a new window.");
             }

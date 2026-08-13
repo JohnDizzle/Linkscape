@@ -1,6 +1,5 @@
 using LinkScape.Browser;
 using LinkScape.Browser.Messages;
-using LinkScape.Services;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
@@ -16,7 +15,7 @@ if (await LocalMcpServerService.TryRunAsync(commandLineArgs))
     return;
 }
 
-if (!await LinkScape.ActivationRoutingService.InitializeAsync())
+if (!await ActivationRoutingService.InitializeAsync())
 {
     return;
 }
@@ -97,11 +96,11 @@ class App : Component
     public override Element Render()
     {
         var backdropGradientPreset = UseState(
-            LinkScape.AppBackdropBrushes.NormalizePreset(
+            AppBackdropBrushes.NormalizePreset(
                 SettingsService.GetValueOrDefault(
                     BackdropGradientPresetSettingKey,
-                    LinkScape.AppBackdropBrushes.DefaultPreset)));
-        var fatalError = UseState<Exception?>(LinkScape.AppErrorStateService.CurrentError, threadSafe: true);
+                    AppBackdropBrushes.DefaultPreset)));
+        var fatalError = UseState<Exception?>(AppErrorStateService.CurrentError, threadSafe: true);
         var isShowingStartupSplash = UseState(true, threadSafe: true);
         var isFullScreenPresentationActive = UseState(
             MainWindowActivation.IsFullScreenPresentationActive,
@@ -120,12 +119,12 @@ class App : Component
             return fatalError.Value is not null
                 ? BuildErrorSurface(backdropGradientPreset.Value, fatalError.Value)
                 : isShowingStartupSplash.Value
-                    ? LinkScape.AppLoadingSurface.Build()
+                    ? AppLoadingSurface.Build()
                 : BuildMainSurface(backdropGradientPreset.Value, isFullScreenPresentationActive.Value);
         }
         catch (Exception ex)
         {
-            LinkScape.AppErrorStateService.SetError(ex);
+            AppErrorStateService.SetError(ex);
             return BuildErrorSurface(backdropGradientPreset.Value, ex);
         }
     }
@@ -139,7 +138,7 @@ class App : Component
                 return;
             }
 
-            var application = Application.Current;
+            var application = Microsoft.UI.Xaml.Application.Current;
 
             if (application is null)
             {
@@ -153,7 +152,7 @@ class App : Component
 
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs args)
     {
-        LinkScape.AppErrorStateService.SetError(args.Exception);
+        AppErrorStateService.SetError(args.Exception);
         args.Handled = true;
     }
 
@@ -219,11 +218,11 @@ class App : Component
         }
 
         _errorListenerRegistered = true;
-        LinkScape.AppErrorStateService.ErrorChanged += OnErrorChanged;
+        AppErrorStateService.ErrorChanged += OnErrorChanged;
 
         void OnErrorChanged()
         {
-            setFatalError(LinkScape.AppErrorStateService.CurrentError);
+            setFatalError(AppErrorStateService.CurrentError);
         }
     }
 
@@ -233,10 +232,10 @@ class App : Component
             TitleBar("LinkScape Browser")
                 .Icon("ms-appx:///Assets/Square44x44Logo.targetsize-24.png")
                 .IsVisible(!isFullScreenPresentationActive),
-            Component<LinkScape.TabViewPage>()
+            Component<LinkScape.Browser.TabViewPage>()
                 .Flex(grow: 1, basis: 0)
         )
-        .Background(LinkScape.AppBackdropBrushes.CreateBrush(backdropGradientPreset))
+        .Background(AppBackdropBrushes.CreateBrush(backdropGradientPreset))
         .Backdrop(BackdropKind.AcrylicThin)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
@@ -305,7 +304,7 @@ class App : Component
                         .Background(BrowserConstants.LayerFillDefaultBrush),
                     HStack(
                         10,
-                        Button("Retry", LinkScape.AppErrorStateService.Clear)
+                        Button("Retry", AppErrorStateService.Clear)
                             .AutomationName("Retry app shell")
                             .Height(36)
                             .Padding(14, 0)
@@ -368,7 +367,7 @@ class App : Component
             .VAlign(VerticalAlignment.Stretch)
             .Flex(grow: 1, basis: 0)
         )
-        .Background(LinkScape.AppBackdropBrushes.CreateBrush(backdropGradientPreset))
+        .Background(AppBackdropBrushes.CreateBrush(backdropGradientPreset))
         .Backdrop(BackdropKind.AcrylicThin)
         .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
@@ -391,7 +390,7 @@ class App : Component
                 return;
             }
 
-            setBackdropGradientPreset(LinkScape.AppBackdropBrushes.NormalizePreset(value));
+            setBackdropGradientPreset(AppBackdropBrushes.NormalizePreset(value));
         }
     }
 }

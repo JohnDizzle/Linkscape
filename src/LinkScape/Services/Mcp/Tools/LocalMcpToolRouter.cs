@@ -1,3 +1,7 @@
+using LinkScape.Models;
+
+namespace LinkScape.Services.Mcp.Tools;
+
 public static class LocalMcpToolRouter
 {
     public const string WindowsIntentToolName = "windows.intent";

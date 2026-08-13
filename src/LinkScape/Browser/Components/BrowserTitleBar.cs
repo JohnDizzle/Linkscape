@@ -3,7 +3,7 @@ using LinkScape.Models;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal sealed class BrowserTitleBarController
 {

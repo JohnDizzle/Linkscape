@@ -1,6 +1,8 @@
 using System.Text;
 using LinkScape.Models;
 
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class ActiveTabsPackageTests
 {

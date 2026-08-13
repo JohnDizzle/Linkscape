@@ -1,4 +1,6 @@
-using LinkScape.Services;
+using LinkScape.Services.Application;
+
+namespace LinkScape.Tests;
 
 [TestClass]
 public sealed class AppUpdateServiceTests

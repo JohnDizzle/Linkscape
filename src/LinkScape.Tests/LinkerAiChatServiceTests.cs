@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class LinkerAiChatServiceTests
 {

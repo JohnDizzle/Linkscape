@@ -1,7 +1,6 @@
 using LinkScape.Browser;
 using LinkScape.Browser.Messages;
 using LinkScape.Models;
-using LinkScape.Services;
 using CommunityToolkit.Mvvm.Messaging;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.UI.Xaml.Input;
@@ -11,7 +10,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal sealed class BrowserWebViewHostController
 {

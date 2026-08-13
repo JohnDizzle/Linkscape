@@ -1,5 +1,7 @@
 using LinkScape;
 
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class ActivationRoutingServiceTests
 {

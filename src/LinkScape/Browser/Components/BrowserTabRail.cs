@@ -1,6 +1,6 @@
 using LinkScape.Models;
 
-namespace Browser.Components;
+namespace LinkScape.Browser.Components;
 
 internal sealed record BrowserTabRailProps(
     BrowserTab[] Tabs,

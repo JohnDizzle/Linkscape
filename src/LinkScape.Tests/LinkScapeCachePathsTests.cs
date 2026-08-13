@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
 
+namespace LinkScape.Tests;
+
 [TestClass]
 public sealed class LinkScapeCachePathsTests
 {

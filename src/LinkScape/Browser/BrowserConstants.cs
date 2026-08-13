@@ -64,7 +64,7 @@ internal static class BrowserConstants
 
     private static Brush GetBrush(string resourceKey)
     {
-        if (Application.Current.Resources.TryGetValue(resourceKey, out var resource) &&
+        if (Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(resourceKey, out var resource) &&
             resource is Brush brush)
         {
             return brush;
