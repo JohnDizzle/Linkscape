@@ -7,6 +7,8 @@
     <title>What's new in LinkScape</title>
     <link rel="icon" type="image/png" href="media/logo.png">
     <link rel="preload" href="media/logo.png" as="image">
+    <link rel="preload" href="media/Collections.png" as="image">
+    <link rel="preload" href="media/JumpList.png" as="image">
     <link rel="preload" href="media/LinkedShareFrom.mp4" as="video" type="video/mp4">
     <link rel="preload" href="media/LinkedShare2.mp4" as="video" type="video/mp4">
     <link rel="stylesheet" href="styles.css">
@@ -17,146 +19,257 @@
             <img class="app-logo" src="media/logo.png" alt="LinkScape globe">
             <div>
                 <p class="eyebrow">LINKSCAPE BROWSER</p>
-                <h1>What’s new</h1>
-                <p class="version-line">Version <span id="package-version">latest</span></p>
+                <h1>What's new</h1>
+                <p class="version-line">Installed version <span id="package-version">Development</span></p>
             </div>
         </header>
 
-        <section class="release-card">
+        <section class="release-card release-intro">
             <div class="release-copy">
-                <p class="eyebrow">NEW IN THIS RELEASE</p>
-                <h2>Open and share your workspace</h2>
-                <p>
-                    Open a ready-made set of tabs from another app or script, optionally save those tabs
-                    as a Collection, and share images and pages in either direction with Windows Share.
+                <p class="eyebrow">FEATURE CHANGELOG</p>
+                <h2>LinkScape through time</h2>
+                <p id="current-release-note">
+                    Follow the browser's feature progression from version 1.0.14, with each Store release,
+                    example, screenshot, and video kept in one visual timeline.
                 </p>
             </div>
         </section>
 
-        <section class="guide-section" aria-labelledby="activation-heading">
-            <div class="section-heading">
-                <p class="eyebrow">ACTIVATION PROTOCOL</p>
-                <h2 id="activation-heading">Open tabs with a simple package</h2>
-                <p>
-                    Encode the JSON as Base64URL and place it after
-                    <code>link2scape://tabs/active?payload=</code>. LinkScape validates the package before opening it.
-                </p>
-            </div>
+        <section class="release-timeline" aria-label="LinkScape release history">
+            <article class="timeline-release" id="release-1-0-17" data-version="1.0.17" data-release-state="preview">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="guide-section release-content">
+                    <header class="release-heading">
+                        <div>
+                            <p class="eyebrow" data-release-label>IN DEVELOPMENT</p>
+                            <h2>Site controls and a titlebar that adapts</h2>
+                        </div>
+                        <span class="release-version">1.0.17</span>
+                    </header>
 
-            <div class="example-grid">
-                <article class="example-card">
-                    <p class="feature-number">TABS + COLLECTION</p>
-                    <h3>Open tabs and save a Collection</h3>
-                    <p>The <code>collectionName</code> field also saves these URLs in a Collection named “Work Morning.”</p>
-                    <pre><code>{
+                    <ul class="change-list">
+                        <li>Click the address-bar favicon to inspect the current site, manage camera, microphone, and location access, clear its stored data, and adjust page zoom.</li>
+                        <li>Keep Back, Forward, Refresh, and the address bar visible when LinkScape is snapped or narrowed; secondary actions move into a compact icon menu.</li>
+                        <li>Delete an entire selected Collection after a confirmation step, with clear validation and dismissible feedback.</li>
+                        <li>Restart LinkScape now or later after an installed Store update is ready to apply.</li>
+                        <li>Recover from page-load failures with clearer error information and more reliable tab-closing behavior.</li>
+                    </ul>
+
+                    <div class="feature-grid release-examples">
+                        <article class="example-card">
+                            <p class="feature-number">SITE CONTROLS</p>
+                            <h3>Control the page from its favicon</h3>
+                            <p>Connection details, essential permissions, site data, and page zoom stay attached to the site they affect.</p>
+                        </article>
+
+                        <article class="example-card">
+                            <p class="feature-number">COMPACT BROWSING</p>
+                            <h3>Snap without losing navigation</h3>
+                            <p>The four-column toolbar protects navigation and the address bar, then collects less-used commands in an icon menu.</p>
+                        </article>
+
+                        <article class="example-card">
+                            <p class="feature-number">SAFER COLLECTIONS</p>
+                            <h3>Delete with confidence</h3>
+                            <p>LinkScape requires a selected Collection, asks for confirmation, and reports when deletion is complete.</p>
+                        </article>
+
+                        <article class="example-card">
+                            <p class="feature-number">UPDATE READY</p>
+                            <h3>Apply the new package on your schedule</h3>
+                            <p>Once Windows installs an update, choose whether LinkScape should restart immediately or wait until later.</p>
+                        </article>
+                    </div>
+
+                    <aside class="contributor-note">
+                        <strong>For contributors and power users</strong>
+                        <span>The source tree now uses modular folders and namespaces, and reusable PowerShell samples demonstrate Collection and tab activation packages.</span>
+                    </aside>
+                </div>
+            </article>
+
+            <article class="timeline-release" id="release-1-0-16" data-version="1.0.16">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="guide-section release-content">
+                    <header class="release-heading">
+                        <div>
+                            <p class="eyebrow">AUGUST 11, 2026</p>
+                            <h2>Workspace activation and Windows Share</h2>
+                        </div>
+                        <span class="release-version">1.0.16</span>
+                    </header>
+
+                    <ul class="change-list">
+                        <li>Open a validated package of active tabs through the <code>link2scape</code> protocol.</li>
+                        <li>Append tabs to the current session or replace the active session.</li>
+                        <li>Optionally save the resulting session and create or update a named Collection.</li>
+                        <li>Share a page snapshot and URL from LinkScape, or preview an image shared to LinkScape.</li>
+                    </ul>
+
+                    <div class="example-grid release-examples">
+                        <article class="example-card">
+                            <p class="feature-number">TABS + COLLECTION</p>
+                            <h3>Open tabs and save a Collection</h3>
+                            <pre><code>{
   "mode": "replace",
   "saveState": true,
   "collectionName": "Work Morning",
   "tabs": [
-    {
-      "title": "Outlook",
-      "url": "https://outlook.office.com",
-      "selected": true
-    },
-    {
-      "title": "GitHub",
-      "url": "https://github.com"
-    }
+    { "title": "Outlook", "url": "https://outlook.office.com", "selected": true },
+    { "title": "GitHub", "url": "https://github.com" }
   ]
 }</code></pre>
-                </article>
+                        </article>
 
-                <article class="example-card">
-                    <p class="feature-number">TABS ONLY</p>
-                    <h3>Open tabs without a Collection</h3>
-                    <p>Leave out <code>collectionName</code>. The tabs open normally, but no Collection is created or changed.</p>
-                    <pre><code>{
+                        <article class="example-card">
+                            <p class="feature-number">TABS ONLY</p>
+                            <h3>Open tabs without a Collection</h3>
+                            <pre><code>{
   "mode": "append",
   "saveState": false,
   "tabs": [
-    {
-      "title": "Docs",
-      "url": "https://learn.microsoft.com",
-      "selected": true
-    },
-    {
-      "title": "GitHub",
-      "url": "https://github.com"
-    }
+    { "title": "Docs", "url": "https://learn.microsoft.com", "selected": true },
+    { "title": "GitHub", "url": "https://github.com" }
   ]
 }</code></pre>
-                </article>
-            </div>
+                        </article>
+                    </div>
 
-            <div class="mode-grid" aria-label="Activation modes">
-                <article class="mode-card">
-                    <strong><code>replace</code></strong>
-                    <span>Replace the current active tabs with the tabs in the package.</span>
-                </article>
-                <article class="mode-card">
-                    <strong><code>append</code></strong>
-                    <span>Keep the current active tabs and add the package tabs after them.</span>
-                </article>
-                <article class="mode-card">
-                    <strong><code>saveState</code></strong>
-                    <span><code>true</code> saves the resulting session for startup; <code>false</code> opens it for this session only.</span>
-                </article>
-            </div>
+                    <div class="mode-grid" aria-label="Activation modes">
+                        <article class="mode-card">
+                            <strong><code>replace</code></strong>
+                            <span>Replace the current active tabs with the package tabs.</span>
+                        </article>
+                        <article class="mode-card">
+                            <strong><code>append</code></strong>
+                            <span>Keep the active tabs and add the package tabs after them.</span>
+                        </article>
+                        <article class="mode-card">
+                            <strong><code>saveState</code></strong>
+                            <span><code>true</code> saves the result for startup; <code>false</code> keeps it in this session.</span>
+                        </article>
+                    </div>
 
-            <div class="launch-example">
-                <h3>Launch either package from PowerShell</h3>
-                <p>Place either JSON example in <code>$json</code>, then encode and open it:</p>
-                <pre><code>$bytes = [Text.Encoding]::UTF8.GetBytes($json)
+                    <div class="launch-example">
+                        <h3>Launch the package from PowerShell</h3>
+                        <pre><code>$bytes = [Text.Encoding]::UTF8.GetBytes($json)
 $payload = [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-$uri = "link2scape://tabs/active?payload=$payload"
-Start-Process $uri</code></pre>
-            </div>
-        </section>
-
-        <section class="guide-section" aria-labelledby="sharing-heading">
-            <div class="section-heading">
-                <p class="eyebrow">WINDOWS SHARE</p>
-                <h2 id="sharing-heading">Share from LinkScape or to LinkScape</h2>
-                <p>The two directions are separate, so you always know whether LinkScape is sending or receiving.</p>
-            </div>
-
-            <div class="sharing-grid">
-                <article class="share-card">
-                    <div class="share-copy">
-                        <p class="feature-number">SHARE FROM LINKSCAPE</p>
-                        <h3>Send a page or Linker message</h3>
-                        <p>Use Share on the toolbar to send the current page snapshot and URL. Right-click a Linker response to share its message.</p>
+Start-Process "link2scape://tabs/active?payload=$payload"</code></pre>
                     </div>
-                    <div class="video-stage">
-                        <div class="video-loading" aria-hidden="true">
-                            <img src="media/logo.png" alt="">
-                            <span>Loading share preview…</span>
+
+                    <div class="sharing-grid release-media-grid">
+                        <article class="share-card">
+                            <div class="share-copy">
+                                <p class="feature-number">SHARE FROM LINKSCAPE</p>
+                                <h3>Send a page or Linker message</h3>
+                                <p>Share the current page snapshot and URL, or right-click a Linker response to share its message.</p>
+                            </div>
+                            <div class="video-stage">
+                                <div class="video-loading" aria-hidden="true">
+                                    <img src="media/logo.png" alt="">
+                                    <span>Loading share preview...</span>
+                                </div>
+                                <video controls preload="auto" playsinline>
+                                    <source src="media/LinkedShareFrom.mp4" type="video/mp4">
+                                </video>
+                            </div>
+                        </article>
+
+                        <article class="share-card">
+                            <div class="share-copy">
+                                <p class="feature-number">SHARE TO LINKSCAPE</p>
+                                <h3>Preview an incoming image</h3>
+                                <p>Choose LinkScape in Windows Share to preview an image, save it, or open its source URL.</p>
+                            </div>
+                            <div class="video-stage">
+                                <div class="video-loading" aria-hidden="true">
+                                    <img src="media/logo.png" alt="">
+                                    <span>Loading receive preview...</span>
+                                </div>
+                                <video controls preload="auto" playsinline>
+                                    <source src="media/LinkedShare2.mp4" type="video/mp4">
+                                </video>
+                            </div>
+                        </article>
+                    </div>
+                </div>
+            </article>
+
+            <article class="timeline-release" id="release-1-0-15" data-version="1.0.15">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="guide-section release-content">
+                    <header class="release-heading">
+                        <div>
+                            <p class="eyebrow">AUGUST 9, 2026</p>
+                            <h2>Collections, Jump Lists, and updates</h2>
                         </div>
-                        <video controls preload="auto" playsinline>
-                            <source src="media/LinkedShareFrom.mp4" type="video/mp4">
-                        </video>
-                    </div>
-                </article>
+                        <span class="release-version">1.0.15</span>
+                    </header>
 
-                <article class="share-card">
-                    <div class="share-copy">
-                        <p class="feature-number">SHARE TO LINKSCAPE</p>
-                        <h3>Preview an incoming image</h3>
-                        <p>Choose LinkScape in the Windows Share panel to preview a shared bitmap, save it, or open its source page when a URL is included.</p>
+                    <ul class="change-list">
+                        <li>Open saved Collections directly or launch them in a new LinkScape window.</li>
+                        <li>Use Windows taskbar Jump Lists to reach LinkScape destinations faster.</li>
+                        <li>Search and page through larger favorites lists without loading everything at once.</li>
+                        <li>See package-update progress and the bundled What's New experience.</li>
+                    </ul>
+
+                    <div class="media-grid">
+                        <figure class="media-card">
+                            <img src="media/Collections.png" alt="LinkScape Collections panel">
+                            <figcaption>Manage and launch named tab Collections.</figcaption>
+                        </figure>
+                        <figure class="media-card">
+                            <img src="media/JumpList.png" alt="LinkScape Windows taskbar Jump List">
+                            <figcaption>Open common destinations from the Windows taskbar.</figcaption>
+                        </figure>
                     </div>
-                    <div class="video-stage">
-                        <div class="video-loading" aria-hidden="true">
-                            <img src="media/logo.png" alt="">
-                            <span>Loading receive preview…</span>
+
+                    <div class="single-video">
+                        <div class="video-stage">
+                            <div class="video-loading" aria-hidden="true">
+                                <img src="media/logo.png" alt="">
+                                <span>Loading update preview...</span>
+                            </div>
+                            <video controls preload="metadata" playsinline>
+                                <source src="media/LinkedUpdater.mp4" type="video/mp4">
+                            </video>
                         </div>
-                        <video controls preload="auto" playsinline>
-                            <source src="media/LinkedShare2.mp4" type="video/mp4">
-                        </video>
                     </div>
-                </article>
-            </div>
-        </section>
+                </div>
+            </article>
 
+            <article class="timeline-release" id="release-1-0-14" data-version="1.0.14">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="guide-section release-content">
+                    <header class="release-heading">
+                        <div>
+                            <p class="eyebrow">AUGUST 8, 2026</p>
+                            <h2>Installable web apps</h2>
+                        </div>
+                        <span class="release-version">1.0.14</span>
+                    </header>
+
+                    <ul class="change-list">
+                        <li>Detect supported web app manifests from the active page.</li>
+                        <li>Install websites locally and reopen them as focused LinkScape app windows.</li>
+                        <li>Keep app-window navigation inside LinkScape while routing outside links safely.</li>
+                        <li>Restore normal minimize, maximize, resize, branding, and window controls.</li>
+                    </ul>
+
+                    <div class="single-video">
+                        <div class="video-stage">
+                            <div class="video-loading" aria-hidden="true">
+                                <img src="media/logo.png" alt="">
+                                <span>Loading web app preview...</span>
+                            </div>
+                            <video controls preload="metadata" playsinline>
+                                <source src="media/LinkedApps.mp4" type="video/mp4">
+                            </video>
+                        </div>
+                    </div>
+                </div>
+            </article>
+        </section>
 
         <footer class="action-bar">
             <div>

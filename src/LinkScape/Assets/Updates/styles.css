@@ -108,6 +108,152 @@ p {
   line-height: 1.05;
 }
 
+.release-intro {
+  min-height: 220px;
+}
+
+.release-timeline {
+  position: relative;
+  margin-top: 30px;
+  padding-left: 44px;
+}
+
+.release-timeline::before {
+  position: absolute;
+  top: 52px;
+  bottom: 52px;
+  left: 15px;
+  width: 2px;
+  content: "";
+  background: linear-gradient(#78b5ff, rgba(120, 181, 255, 0.18));
+}
+
+.timeline-release {
+  position: relative;
+  scroll-margin-top: 28px;
+}
+
+.timeline-marker {
+  position: absolute;
+  z-index: 3;
+  top: 48px;
+  left: -37px;
+  width: 18px;
+  height: 18px;
+  border: 4px solid #78b5ff;
+  border-radius: 50%;
+  background: #172532;
+  box-shadow: 0 0 0 6px rgba(120, 181, 255, 0.1);
+}
+
+.release-content {
+  margin: 0 0 24px;
+  transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms ease;
+}
+
+.release-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.release-heading h2 {
+  margin-bottom: 0;
+  font-size: clamp(25px, 4vw, 36px);
+}
+
+.release-version {
+  flex: 0 0 auto;
+  padding: 7px 11px;
+  border: 1px solid rgba(135, 189, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(70, 137, 216, 0.14);
+  color: #b9dcff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.timeline-release.current-release .timeline-marker {
+  background: #78b5ff;
+  box-shadow: 0 0 0 7px rgba(120, 181, 255, 0.16), 0 0 28px rgba(120, 181, 255, 0.52);
+}
+
+.timeline-release.current-release .release-content {
+  border-color: rgba(120, 181, 255, 0.58);
+  box-shadow: 0 24px 62px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(120, 181, 255, 0.08);
+}
+
+.timeline-release.current-release.is-focusing .release-content {
+  animation: release-focus 720ms ease-out;
+}
+
+@keyframes release-focus {
+  0% {
+    transform: translateY(8px) scale(0.992);
+    box-shadow: 0 0 0 rgba(120, 181, 255, 0);
+  }
+  55% {
+    transform: translateY(0) scale(1.003);
+    box-shadow: 0 26px 68px rgba(0, 0, 0, 0.32), 0 0 34px rgba(120, 181, 255, 0.2);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.change-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  color: #c3ccd6;
+  line-height: 1.55;
+}
+
+.change-list li::marker {
+  color: #78b5ff;
+}
+
+.release-examples,
+.release-media-grid,
+.single-video,
+.media-grid {
+  margin-top: 22px;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.media-card {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(16, 25, 34, 0.72);
+}
+
+.media-card img {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+  max-height: 360px;
+  object-fit: contain;
+  background: #090d12;
+}
+
+.media-card figcaption {
+  padding: 14px 16px 16px;
+  color: #b5c0cb;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 code {
   font-family: "Cascadia Code", "Consolas", monospace;
   color: #b9dcff;
@@ -129,7 +275,8 @@ code {
 }
 
 .example-grid,
-.sharing-grid {
+.sharing-grid,
+.feature-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
@@ -202,6 +349,26 @@ pre code {
 
 .launch-example pre {
   margin-top: 0;
+}
+
+.feature-grid .example-card p:last-child {
+  margin-bottom: 0;
+}
+
+.contributor-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-left: 3px solid #78b5ff;
+  border-radius: 0 14px 14px 0;
+  background: rgba(120, 181, 255, 0.08);
+}
+
+.contributor-note span {
+  color: #b5c0cb;
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .share-copy {
@@ -316,8 +483,27 @@ pre code {
 
   .example-grid,
   .sharing-grid,
-  .mode-grid {
+  .feature-grid,
+  .mode-grid,
+  .media-grid {
     grid-template-columns: 1fr;
+  }
+
+  .release-timeline {
+    padding-left: 30px;
+  }
+
+  .release-timeline::before {
+    left: 8px;
+  }
+
+  .timeline-marker {
+    left: -29px;
+  }
+
+  .release-heading {
+    flex-direction: column;
+    gap: 12px;
   }
 
   .share-copy {
@@ -327,5 +513,16 @@ pre code {
   .action-bar {
     align-items: stretch;
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline-release.current-release.is-focusing .release-content {
+    animation: none;
+  }
+
+  .video-stage video,
+  .release-content {
+    transition: none;
   }
 }

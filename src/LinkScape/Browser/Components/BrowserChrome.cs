@@ -28,6 +28,7 @@ internal static class BrowserChrome
     private const double TabItemHoverScale = 1.04;
     private const double TabItemHorizontalInset = 6;
     private const double SelectedTabBorderThickness = 1.25;
+    internal const double CompactTitleBarBreakpoint = 1180;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
     
@@ -57,11 +58,20 @@ internal static class BrowserChrome
         public Microsoft.UI.Xaml.Media.Animation.Storyboard? WidthStoryboard { get; set; }
     }
 
+    private sealed class TitleBarSizeRegistration
+    {
+        public SizeChangedEventHandler? Handler { get; init; }
+    }
+
     public static TimeSpan RailToggleDuration => TimeSpan.FromMilliseconds(RailToggleDurationMilliseconds);
+
+    internal static bool UseCompactTitleBar(double width) => width < CompactTitleBarBreakpoint;
 
     public static Element BuildTitleBar(
         BrowserTab selectedTab,
         BrowserWebViewHostController browserController,
+        bool useCompactLayout,
+        Action<double> onWidthChanged,
         string addressText,
         string homeUrl,
         IReadOnlyDictionary<string, string> settingsSnapshot,
@@ -101,101 +111,87 @@ internal static class BrowserChrome
         Action onAddTab,
         Action onCloseTab)
     {
-        return Border(
-            (FlexRow(
-                IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(BrowserConstants.GlyphCollections, onOpenCollections, "Open collections", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true),
-                Border(null).Width(6).Flex(shrink: 0),
-                IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
-                IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
-                IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(
-                    BrowserConstants.GlyphShare,
-                    onShareCurrentPage,
-                    "Share current page snapshot and URL",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true),
-                IconButton(
-                    selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
-                    onToggleFavorite,
-                    "Toggle favorite",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true),
-                BuildAddressBar(selectedTab, browserController, addressText, onAddressChanged, onSubmitAddress, onAddressBoxReady)
-                    .MinWidth(360)
-                    .Flex(grow: 1, shrink: 1, basis: 0),
+        var leadingControls = (FlexRow(
+            IconButton(BrowserConstants.GlyphMenu, onToggleTabs, isTabsCollapsed ? "Expand tabs" : "Collapse tabs to icons", buttonSize: 32, iconSize: 15, useGlass: true),
+            useCompactLayout ? null : IconButton(BrowserConstants.GlyphCollections, onOpenCollections, "Open collections", buttonSize: 32, iconSize: 15, useGlass: true),
+            useCompactLayout ? null : IconButton(BrowserConstants.GlyphAdd, onAddTab, "Add tab", buttonSize: 32, iconSize: 15, useGlass: true),
+            useCompactLayout ? null : IconButton(BrowserConstants.GlyphClose, onCloseTab, "Close active tab", buttonSize: 32, iconSize: 15, useGlass: true)) with
+        {
+            ColumnGap = 7
+        }).Grid(row: 0, column: 0);
 
-                Border(null).Width(6).Flex(shrink: 0),
+        var navigationControls = (FlexRow(
+            IconButton(BrowserConstants.GlyphBack, onBack, "Go back", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoBack),
+            IconButton(BrowserConstants.GlyphForward, onForward, "Go forward", buttonSize: 32, iconSize: 15, useGlass: true).IsEnabled(canGoForward),
+            IconButton(BrowserConstants.GlyphRefresh, onRefresh, "Refresh page", buttonSize: 32, iconSize: 15, useGlass: true),
+            useCompactLayout ? null : IconButton(BrowserConstants.GlyphShare, onShareCurrentPage, "Share current page snapshot and URL", buttonSize: 32, iconSize: 15, useGlass: true),
+            useCompactLayout ? null : IconButton(
+                selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
+                onToggleFavorite,
+                "Toggle favorite",
+                buttonSize: 32,
+                iconSize: 15,
+                useGlass: true)) with
+        {
+            ColumnGap = 7
+        }).Grid(row: 0, column: 1);
+
+        var addressBar = BuildAddressBar(
+                selectedTab,
+                browserController,
+                addressText,
+                onAddressChanged,
+                onSubmitAddress,
+                onAddressBoxReady)
+            .MinWidth(useCompactLayout ? 180 : 360)
+            .HAlign(HorizontalAlignment.Stretch)
+            .Grid(row: 0, column: 2);
+
+        Element trailingControls = useCompactLayout
+            ? BuildCompactTitleBarOverflowButton(
+                selectedTab,
+                homeUrl,
+                settingsSnapshot,
+                isChatOpen,
+                onOpenCollections,
+                onAddTab,
+                onCloseTab,
+                onShareCurrentPage,
+                onToggleFavorite,
+                onNavigateCurrentTab,
+                onSetCurrentPageAsHome,
+                installableWebApp,
+                isWebAppInstalled,
+                onInstallWebApp,
+                onOpenWebApp,
+                onOpenSelectedTabInNewWindow,
+                selectedSearchProviderKey,
+                searchProviders,
+                onSelectSearchProvider,
+                onToggleExtension,
+                onToggleChat,
+                onOpenAiKeyDialog,
+                onOpenAddressInNewTab,
+                onSaveSettingValue,
+                onClearCache,
+                onClearCookies,
+                onClearBrowsingHistory)
+            : FlexRow(
                 IconButton(BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl), "Go home", buttonSize: 32, iconSize: 15, useGlass: true),
-                IconButton(
-                    BrowserConstants.GlyphSave,
-                    onSetCurrentPageAsHome,
-                    "Set current page as home",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true),
-                // PWA / Web App install button
+                IconButton(BrowserConstants.GlyphSave, onSetCurrentPageAsHome, "Set current page as home", buttonSize: 32, iconSize: 15, useGlass: true),
                 installableWebApp is not null
-                ? isWebAppInstalled
-                    ? IconButton(
-                        "\uE8A7", // temporary app/open glyph
-                        onOpenWebApp,
-                        $"App available: Open {installableWebApp.Name}",
-                        buttonSize: 32,
-                        iconSize: 15,
-                        useGlass: true)
-                        .Set(button =>
-                        {
-                            StartAppAvailablePulse(button, installableWebApp.ManifestUrl);
-                        })
-                    : IconButton(
-                        "\uE896",
-                        onInstallWebApp,
-                        $"App available: Install {installableWebApp.Name}",
-                        buttonSize: 32,
-                        iconSize: 15,
-                        useGlass: true)
-                : null,
-                IconButton(
-                    BrowserConstants.GlyphNewWindow,
-                    onOpenSelectedTabInNewWindow,
-                    "Open active tab in new LinkScape window",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true),
+                    ? isWebAppInstalled
+                        ? IconButton("\uE8A7", onOpenWebApp, $"App available: Open {installableWebApp.Name}", buttonSize: 32, iconSize: 15, useGlass: true)
+                            .Set(button => StartAppAvailablePulse(button, installableWebApp.ManifestUrl))
+                        : IconButton("\uE896", onInstallWebApp, $"App available: Install {installableWebApp.Name}", buttonSize: 32, iconSize: 15, useGlass: true)
+                    : null,
+                IconButton(BrowserConstants.GlyphNewWindow, onOpenSelectedTabInNewWindow, "Open active tab in new LinkScape window", buttonSize: 32, iconSize: 15, useGlass: true),
                 BuildSearchProviderButton(selectedSearchProviderKey, searchProviders, onSelectSearchProvider),
                 BuildExtensionsButton(settingsSnapshot, onToggleExtension),
-                // Sponsor / Rate button - launches Store rate & review flow for packaged app
-                IconButton(
-                    BrowserConstants.GlyphHeart,
-                    () => { },
-                    "Sponsor / Rate",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true)
-                     .Set(button =>
-                     {
-                         var flyout = CreateSponsorFlyout(onOpenAddressInNewTab);
-                         button.Flyout = flyout;
-                     }),
-                IconButton(
-                    BrowserConstants.GlyphChat,
-                    onToggleChat,
-                    isChatOpen ? "Hide chat blade" : "Show chat blade",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true),
-                IconButton(
-                    BrowserConstants.GlyphSettings,
-                    () => { },
-                    "Settings",
-                    buttonSize: 32,
-                    iconSize: 15,
-                    useGlass: true)
+                IconButton(BrowserConstants.GlyphHeart, () => { }, "Sponsor / Rate", buttonSize: 32, iconSize: 15, useGlass: true)
+                    .Set(button => button.Flyout = CreateSponsorFlyout(onOpenAddressInNewTab)),
+                IconButton(BrowserConstants.GlyphChat, onToggleChat, isChatOpen ? "Hide chat blade" : "Show chat blade", buttonSize: 32, iconSize: 15, useGlass: true),
+                IconButton(BrowserConstants.GlyphSettings, () => { }, "Settings", buttonSize: 32, iconSize: 15, useGlass: true)
                     .Set(button =>
                     {
                         button.Flyout = CreateSettingsFlyout(
@@ -207,18 +203,240 @@ internal static class BrowserChrome
                             onClearCookies,
                             onClearBrowsingHistory);
                         AppUpdateService.RegisterFlyoutAnchor(button);
-                    })
-            ) with
+                    })) with
             {
                 ColumnGap = 7
-            })
-            .HAlign(HorizontalAlignment.Stretch)
-        )
+            };
+
+        return Border(
+            Grid(
+                columns: [GridSize.Auto, GridSize.Auto, GridSize.Star(), GridSize.Auto],
+                rows: [GridSize.Auto],
+                leadingControls,
+                navigationControls,
+                addressBar,
+                trailingControls.Grid(row: 0, column: 3))
+                .HAlign(HorizontalAlignment.Stretch)
+                .Set(grid => grid.ColumnSpacing = 7))
         .Padding(8, 6, 8, 6)
         .Background(Theme.LayerFill)
         .WithBorder(Theme.SurfaceStroke)
         .HAlign(HorizontalAlignment.Stretch)
-        .Flex(shrink: 0);
+        .Flex(shrink: 0)
+        .Set(border => ConfigureTitleBarWidthTracking(border, onWidthChanged));
+    }
+
+    private static Element BuildCompactTitleBarOverflowButton(
+        BrowserTab selectedTab,
+        string homeUrl,
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        bool isChatOpen,
+        Action onOpenCollections,
+        Action onAddTab,
+        Action onCloseTab,
+        Action onShareCurrentPage,
+        Action onToggleFavorite,
+        Action<string> onNavigateCurrentTab,
+        Action onSetCurrentPageAsHome,
+        InstallableWebApp? installableWebApp,
+        bool isWebAppInstalled,
+        Action onInstallWebApp,
+        Action onOpenWebApp,
+        Action onOpenSelectedTabInNewWindow,
+        string selectedSearchProviderKey,
+        IReadOnlyList<BrowserSearchProvider> searchProviders,
+        Action<string> onSelectSearchProvider,
+        Action<string, bool> onToggleExtension,
+        Action onToggleChat,
+        Action onOpenAiKeyDialog,
+        Action<string> onOpenAddressInNewTab,
+        Action<string, string> onSaveSettingValue,
+        Action onClearCache,
+        Action onClearCookies,
+        Action onClearBrowsingHistory)
+    {
+        return IconButton(
+            BrowserConstants.GlyphMore,
+            () => { },
+            "More browser actions",
+            buttonSize: 32,
+            iconSize: 15,
+            useGlass: true)
+            .Set(button =>
+            {
+                var menu = new MenuFlyout();
+                menu.Items.Add(CreateOverflowMenuItem("Collections", BrowserConstants.GlyphCollections, onOpenCollections));
+                menu.Items.Add(CreateOverflowMenuItem("New tab", BrowserConstants.GlyphAdd, onAddTab));
+                menu.Items.Add(CreateOverflowMenuItem("Close active tab", BrowserConstants.GlyphClose, onCloseTab));
+                menu.Items.Add(new MenuFlyoutSeparator());
+                menu.Items.Add(CreateOverflowMenuItem("Share page", BrowserConstants.GlyphShare, onShareCurrentPage));
+                menu.Items.Add(CreateOverflowMenuItem(
+                    selectedTab.IsFavorite ? "Remove favorite" : "Add favorite",
+                    selectedTab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
+                    onToggleFavorite));
+                menu.Items.Add(CreateOverflowMenuItem("Go home", BrowserConstants.GlyphHome, () => onNavigateCurrentTab(homeUrl)));
+                menu.Items.Add(CreateOverflowMenuItem("Set current page as home", BrowserConstants.GlyphSave, onSetCurrentPageAsHome));
+
+                if (installableWebApp is not null)
+                {
+                    menu.Items.Add(CreateOverflowMenuItem(
+                        isWebAppInstalled ? $"Open {installableWebApp.Name} as app" : $"Install {installableWebApp.Name}",
+                        isWebAppInstalled ? "\uE8A7" : "\uE896",
+                        isWebAppInstalled ? onOpenWebApp : onInstallWebApp));
+                }
+
+                menu.Items.Add(CreateOverflowMenuItem(
+                    "Open active tab in new window",
+                    BrowserConstants.GlyphNewWindow,
+                    onOpenSelectedTabInNewWindow));
+                menu.Items.Add(CreateSearchProviderOverflowSubmenu(
+                    selectedSearchProviderKey,
+                    searchProviders,
+                    onSelectSearchProvider));
+                menu.Items.Add(CreateExtensionsOverflowSubmenu(settingsSnapshot, onToggleExtension));
+                menu.Items.Add(new MenuFlyoutSeparator());
+                menu.Items.Add(CreateOverflowMenuItem(
+                    isChatOpen ? "Hide Linker" : "Show Linker",
+                    BrowserConstants.GlyphChat,
+                    onToggleChat));
+
+                var sponsorItem = CreateOverflowMenuItem("Sponsor / Rate", BrowserConstants.GlyphHeart, () => { });
+                sponsorItem.Click += (_, _) => ShowFlyoutAfterMenuCloses(
+                    menu,
+                    CreateSponsorFlyout(onOpenAddressInNewTab),
+                    button);
+                menu.Items.Add(sponsorItem);
+
+                var settingsItem = CreateOverflowMenuItem("Settings", BrowserConstants.GlyphSettings, () => { });
+                settingsItem.Click += (_, _) => ShowFlyoutAfterMenuCloses(
+                    menu,
+                    CreateSettingsFlyout(
+                        settingsSnapshot,
+                        onSaveSettingValue,
+                        onOpenAiKeyDialog,
+                        onOpenAddressInNewTab,
+                        onClearCache,
+                        onClearCookies,
+                        onClearBrowsingHistory),
+                    button);
+                menu.Items.Add(settingsItem);
+
+                button.Flyout = menu;
+                AppUpdateService.RegisterFlyoutAnchor(button);
+            });
+    }
+
+    private static MenuFlyoutItem CreateOverflowMenuItem(
+        string text,
+        string glyph,
+        Action onClick)
+    {
+        var item = new MenuFlyoutItem
+        {
+            Text = text,
+            Icon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = glyph,
+                FontSize = 14
+            }
+        };
+        item.Click += (_, _) => onClick();
+        return item;
+    }
+
+    private static MenuFlyoutSubItem CreateSearchProviderOverflowSubmenu(
+        string selectedSearchProviderKey,
+        IReadOnlyList<BrowserSearchProvider> searchProviders,
+        Action<string> onSelectSearchProvider)
+    {
+        var submenu = new MenuFlyoutSubItem
+        {
+            Text = $"Search provider: {BrowserSearchProviders.GetByKey(selectedSearchProviderKey).DisplayName}",
+            Icon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = BrowserConstants.GlyphMagnifyGlass,
+                FontSize = 14
+            }
+        };
+
+        foreach (var provider in searchProviders)
+        {
+            var providerKey = provider.Key;
+            var item = new MenuFlyoutItem
+            {
+                Text = provider.DisplayName,
+                Icon = new BitmapIcon
+                {
+                    UriSource = new Uri(BrowserSearchProviders.GetFaviconUrl(providerKey), UriKind.Absolute),
+                    ShowAsMonochrome = false
+                }
+            };
+            item.Click += (_, _) => onSelectSearchProvider(providerKey);
+            submenu.Items.Add(item);
+        }
+
+        return submenu;
+    }
+
+    private static MenuFlyoutSubItem CreateExtensionsOverflowSubmenu(
+        IReadOnlyDictionary<string, string> settingsSnapshot,
+        Action<string, bool> onToggleExtension)
+    {
+        var submenu = new MenuFlyoutSubItem
+        {
+            Text = "Extensions",
+            Icon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = BrowserConstants.GlyphExtensions,
+                FontSize = 14
+            }
+        };
+
+        foreach (var extension in BrowserExtensionService.Extensions)
+        {
+            var enabled = GetBooleanSetting(settingsSnapshot, extension.SettingKey);
+            var item = CreateOverflowMenuItem(
+                extension.IsAvailable
+                    ? $"{(enabled ? "Stop" : "Start")} {extension.DisplayName}"
+                    : $"{extension.DisplayName} (coming next)",
+                enabled ? BrowserConstants.GlyphStop : BrowserConstants.GlyphPlay,
+                () => onToggleExtension(extension.Id, !enabled));
+            item.IsEnabled = extension.IsAvailable;
+            submenu.Items.Add(item);
+        }
+
+        return submenu;
+    }
+
+    private static void ShowFlyoutAfterMenuCloses(
+        MenuFlyout menu,
+        Microsoft.UI.Xaml.Controls.Flyout flyout,
+        Microsoft.UI.Xaml.Controls.Button anchor)
+    {
+        menu.Hide();
+        _ = anchor.DispatcherQueue.TryEnqueue(() => flyout.ShowAt(anchor));
+    }
+
+    private static void ConfigureTitleBarWidthTracking(
+        Microsoft.UI.Xaml.Controls.Border border,
+        Action<double> onWidthChanged)
+    {
+        if (border.Tag is TitleBarSizeRegistration previous && previous.Handler is not null)
+        {
+            border.SizeChanged -= previous.Handler;
+        }
+
+        SizeChangedEventHandler handler = (_, args) => onWidthChanged(args.NewSize.Width);
+        border.Tag = new TitleBarSizeRegistration { Handler = handler };
+        border.SizeChanged += handler;
+
+        if (border.ActualWidth > 0)
+        {
+            onWidthChanged(border.ActualWidth);
+        }
     }
 
     private static async Task LaunchStoreReviewAsync()

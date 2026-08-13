@@ -71,6 +71,8 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
     public override Element Render()
     {
+        var useCompactLayout = UseState(false);
+
         if (!_isInitialized)
         {
             _addressBarText = Props.SelectedTab.Url;
@@ -82,6 +84,15 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
             Props.BrowserController,
+            useCompactLayout.Value,
+            width =>
+            {
+                var nextCompactLayout = BrowserChrome.UseCompactTitleBar(width);
+                if (nextCompactLayout != useCompactLayout.Value)
+                {
+                    useCompactLayout.Set(nextCompactLayout);
+                }
+            },
             _addressBarText,
             Props.HomeUrl,
             Props.SettingsSnapshot,

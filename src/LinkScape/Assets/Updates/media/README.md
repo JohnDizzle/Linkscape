@@ -1,30 +1,48 @@
 # Update-page media
 
-Place release screenshots, animated images, and videos in this folder.
+The What's New timeline in `../index.html` begins with Store version 1.0.14.
+Keep each release's media in this folder so older entries remain accurate.
 
-Reference them from `../index.html` with relative paths such as:
+## Release map
 
-- `media/collections.png`
-- `media/favorites.gif`
-- `media/demo.mp4`
+### 1.0.17 (in development)
 
-The project already packages everything under `Assets`, so no project-file change is required.
-```<section class="media-grid" aria-label="Feature screenshots">
-  <figure class="media-card">
-    <img src="media/collections.png" alt="LinkScape Collections">
-    <figcaption>Switch Collections or open them in a new window.</figcaption>
-  </figure>
+Planned capture list, in priority order:
 
-  <figure class="media-card">
-    <img src="media/jump-list.png" alt="Windows jump list">
-    <figcaption>Launch Search, Collections, and installed apps from Windows.</figcaption>
-  </figure>
+1. `CompactTitleBar.mp4` - resize from the full toolbar into snapped compact mode, then open the overflow icon menu
+2. `SiteControls.mp4` - click the favicon, show connection details and the three permissions, change zoom, and show the clear-site-data confirmation
+3. `CollectionDelete.png` - selected Collection with the icon-only delete action and confirmation dialog
+4. `UpdateRestart.png` - installed-update prompt with Restart now and Later choices
+5. `PageRecovery.png` - friendly page-load error state and recovery action
 
-  <figure class="media-card">
-    <img src="media/web-apps.png" alt="Installed LinkScape web apps">
-    <figcaption>Install supported websites as focused apps.</figcaption>
-  </figure>
-</section>
-Assets/Updates/media/collections.png
-Assets/Updates/media/jump-list.png
-Assets/Updates/media/web-apps.png```
+The first two videos tell most of the release story. The final three can remain screenshots to keep the package size controlled.
+
+### 1.0.16
+
+- `LinkedShareFrom.mp4` - sharing a page or Linker message from LinkScape
+- `LinkedShare2.mp4` - receiving and previewing an image in LinkScape
+
+### 1.0.15
+
+- `Collections.png` - Collections panel
+- `JumpList.png` - Windows taskbar Jump List
+- `LinkedUpdater.mp4` - package update experience
+
+### 1.0.14
+
+- `LinkedApps.mp4` - installing and opening web apps
+
+### Shared
+
+- `logo.png` - favicon, page branding, and video loading placeholder
+
+## Adding a release
+
+1. Choose the next version when preparing a package for testers or the Store, not for every commit.
+2. Bump the four-part version in `Package.appxmanifest`, for example `1.0.17.0`.
+3. Add the newest timeline article first in `../index.html` with `data-version="1.0.17"`.
+4. Add release screenshots or videos here using stable, descriptive names.
+5. Reference the media from that release article. Do not overwrite media used by older releases.
+6. Test `Updates/index.html?version=1.0.17.0`; the matching timeline entry should be marked Installed and focused.
+
+Everything under `Assets` is already included in the package, so adding media does not require a project-file change.
