@@ -5,7 +5,9 @@ using LinkScape.Browser;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Windows.AppLifecycle;
+using Windows.Management.Deployment;
 using Windows.Services.Store;
+using WindowsPackage = Windows.ApplicationModel.Package;
 
 namespace LinkScape.Services.Application;
 
@@ -130,13 +132,27 @@ internal static class AppUpdateService
             }
 
             var updates = availableUpdates.ToArray();
-            var latestVersion = FormatVersion(updates[0].Package.Id.Version);
+            var appUpdate = FindAppUpdate(updates);
+            if (appUpdate is null)
+            {
+                if (isManualCheck)
+                {
+                    ShowStatusFlyout(
+                        xamlRoot,
+                        "LinkScape is up to date",
+                        "Microsoft Store found optional package updates, but no LinkScape application update.");
+                }
+
+                return;
+            }
+
+            var latestVersion = FormatVersion(appUpdate.Package.Id.Version);
             if (!await ShowUpdatePromptAsync(xamlRoot, latestVersion))
             {
                 return;
             }
 
-            await DownloadAndInstallAsync(storeContext, updates, xamlRoot);
+            await DownloadAndInstallAsync(storeContext, updates, appUpdate, xamlRoot);
         }
         catch (Exception ex)
         {
@@ -206,6 +222,7 @@ internal static class AppUpdateService
     private static async Task DownloadAndInstallAsync(
         StoreContext storeContext,
         IReadOnlyList<StorePackageUpdate> updates,
+        StorePackageUpdate appUpdate,
         XamlRoot xamlRoot)
     {
         var statusText = new TextBlock
@@ -271,10 +288,11 @@ internal static class AppUpdateService
             if (result.OverallState == StorePackageUpdateState.Completed)
             {
                 progressBar.Value = 100;
-                statusText.Text = "Update installed — restart required";
-                detailText.Text = "Restart LinkScape to load the updated application files.";
+                statusText.Text = "Validating the installed update…";
+                detailText.Text = "Windows is verifying the new LinkScape package before restart.";
+                var validation = ValidateInstalledPackage(appUpdate.Package);
                 flyout.Hide();
-                await ShowRestartPromptAsync(xamlRoot);
+                await ShowRestartPromptAsync(xamlRoot, validation);
                 return;
             }
 
@@ -292,8 +310,44 @@ internal static class AppUpdateService
         }
     }
 
-    private static async Task ShowRestartPromptAsync(XamlRoot xamlRoot)
+    private static async Task ShowRestartPromptAsync(
+        XamlRoot xamlRoot,
+        PackageValidationResult validation)
     {
+        if (!validation.IsValid)
+        {
+            var validationDialog = new ContentDialog
+            {
+                XamlRoot = xamlRoot,
+                Title = "LinkScape update needs attention",
+                Content = new StackPanel
+                {
+                    Width = 390,
+                    Spacing = 12,
+                    Children =
+                    {
+                        CreateBrandHeader("Update could not be verified"),
+                        new TextBlock
+                        {
+                            Text = validation.Message,
+                            TextWrapping = TextWrapping.Wrap,
+                            Opacity = 0.78
+                        },
+                        new TextBlock
+                        {
+                            Text = "LinkScape will keep running the current version. Check Microsoft Store Library before restarting.",
+                            TextWrapping = TextWrapping.Wrap,
+                            Opacity = 0.78
+                        }
+                    }
+                },
+                CloseButtonText = "Close"
+            };
+
+            await validationDialog.ShowAsync();
+            return;
+        }
+
         var dialog = new ContentDialog
         {
             XamlRoot = xamlRoot,
@@ -305,6 +359,12 @@ internal static class AppUpdateService
                 Children =
                 {
                     CreateBrandHeader("Restart required"),
+                    new TextBlock
+                    {
+                        Text = validation.Message,
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.78
+                    },
                     new TextBlock
                     {
                         Text = "Restart LinkScape now to use the updated version, or choose Later and restart when convenient.",
@@ -331,6 +391,66 @@ internal static class AppUpdateService
             "LinkScape could not restart",
             $"Windows reported {failureReason}. Close and reopen LinkScape to finish the update.");
     }
+
+    private static StorePackageUpdate? FindAppUpdate(IReadOnlyList<StorePackageUpdate> updates)
+    {
+        string packageFamilyName;
+        try
+        {
+            packageFamilyName = WindowsPackage.Current.Id.FamilyName;
+        }
+        catch
+        {
+            return null;
+        }
+
+        return updates.FirstOrDefault(update =>
+            string.Equals(
+                update.Package.Id.FamilyName,
+                packageFamilyName,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static PackageValidationResult ValidateInstalledPackage(WindowsPackage expectedPackage)
+    {
+        var expectedVersion = FormatVersion(expectedPackage.Id.Version);
+
+        try
+        {
+            // PackageManager is used only to inspect the Store deployment. The
+            // Store API remains solely responsible for installing the update.
+            var packageManager = new PackageManager();
+            var installedPackage = packageManager.FindPackageForUser(
+                string.Empty,
+                expectedPackage.Id.FullName);
+
+            if (installedPackage is null)
+            {
+                return new PackageValidationResult(
+                    false,
+                    $"Microsoft Store reported completion, but LinkScape {expectedVersion} is not registered for this Windows user.");
+            }
+
+            if (!installedPackage.Status.VerifyIsOK())
+            {
+                return new PackageValidationResult(
+                    false,
+                    $"LinkScape {expectedVersion} is registered, but Windows reports that the package needs repair.");
+            }
+
+            return new PackageValidationResult(
+                true,
+                $"LinkScape {expectedVersion} is installed, registered, and verified by Windows.");
+        }
+        catch (Exception ex)
+        {
+            return new PackageValidationResult(
+                false,
+                $"Microsoft Store reported completion, but Windows could not verify LinkScape {expectedVersion}: {ex.Message}");
+        }
+    }
+
+    private sealed record PackageValidationResult(bool IsValid, string Message);
 
     private static Flyout CreateBrandedFlyout(string title, string? description, params UIElement[] content)
     {

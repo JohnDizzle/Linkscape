@@ -123,6 +123,7 @@ class App : Component
 
         try
         {
+
             var activeError = fatalError.Value ?? AppErrorStateService.CurrentError;
 
             if (activeError is not null)
@@ -179,23 +180,17 @@ class App : Component
     {
         try
         {
-            var executablePath = Environment.ProcessPath;
+            // A successful restart terminates this process and does not return.
+            var failureReason =
+                Microsoft.Windows.AppLifecycle.AppInstance.Restart(string.Empty);
 
-            if (string.IsNullOrWhiteSpace(executablePath))
-            {
-                return;
-            }
-
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = executablePath,
-                UseShellExecute = true
-            });
-
-            Environment.Exit(0);
+            AppErrorStateService.SetError(
+                new InvalidOperationException(
+                    $"Windows could not restart LinkScape: {failureReason}"));
         }
-        catch
+        catch (Exception ex)
         {
+            AppErrorStateService.SetError(ex);
         }
     }
 
