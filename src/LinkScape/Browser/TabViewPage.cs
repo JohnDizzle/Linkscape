@@ -36,6 +36,8 @@ class TabViewPage : Component
         Chat
     }
 
+    private sealed record FirstRunImportNotice(string Message, bool IsBusy, bool HasErrors);
+
     private CancellationTokenSource? _saveTabsCts;
     private string? _latestSelectedTabId;
     private bool _shutdownSaveRegistered;
@@ -212,6 +214,8 @@ class TabViewPage : Component
         var isRailTabsExpanded = session.Value.IsRailTabsExpanded;
         var settingsSnapshot = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
         var isFirstRunSetupVisible = UseState(FirstRunExperienceService.ShouldShow());
+        var firstRunImportNotice = UseState<FirstRunImportNotice?>(null, threadSafe: true);
+        var isFirstRunImportNoticeVisible = UseState(false, threadSafe: true);
         var browserNotice = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
         var isFullScreenPresentationActive = UseState(
             global::LinkScape.Application.MainWindowActivation.IsFullScreenPresentationActive,
@@ -698,42 +702,91 @@ class TabViewPage : Component
         }
 
         async Task<FirstRunImportResult> ImportFirstRunDataAsync(
-            IReadOnlyList<string> browserNames,
+            IReadOnlyList<FirstRunProfileSelection> profiles,
             bool importFavorites,
             bool importHistory)
         {
             var favoriteCount = 0;
             var historyCount = 0;
             var sourceCount = 0;
+            var errorCount = 0;
 
-            foreach (var browserName in browserNames.Distinct(StringComparer.OrdinalIgnoreCase))
+            firstRunImportNotice.Set(new FirstRunImportNotice(
+                $"{profiles.Count} selected profile{(profiles.Count == 1 ? "" : "s")}",
+                IsBusy: true,
+                HasErrors: false));
+            isFirstRunImportNoticeVisible.Set(true);
+
+            foreach (var profile in profiles.DistinctBy(
+                item => $"{item.BrowserName}\u001F{item.ProfileId}",
+                StringComparer.OrdinalIgnoreCase))
             {
                 if (importFavorites)
                 {
-                    var summary = await Task.Run(
-                        () => BrowserFavoritesImportService.ImportBrowserFavorites(browserName));
-                    favoriteCount += summary.ImportedItemCount;
-                    sourceCount += summary.SourceCount;
+                    try
+                    {
+                        var summary = await Task.Run(
+                            () => BrowserFavoritesImportService.ImportBrowserFavorites(
+                                profile.BrowserName,
+                                profile.ProfileId));
+                        favoriteCount += summary.ImportedItemCount;
+                        sourceCount += summary.SourceCount;
+                    }
+                    catch
+                    {
+                        errorCount++;
+                    }
                 }
 
                 if (importHistory)
                 {
-                    var summary = await Task.Run(
-                        () => BrowserHistoryImportService.ImportBrowserHistory(browserName));
-                    historyCount += summary.ImportedItemCount;
-                    sourceCount += summary.SourceCount;
+                    try
+                    {
+                        var summary = await Task.Run(
+                            () => BrowserHistoryImportService.ImportBrowserHistory(
+                                profile.BrowserName,
+                                profile.ProfileId));
+                        historyCount += summary.ImportedItemCount;
+                        sourceCount += summary.SourceCount;
+                    }
+                    catch
+                    {
+                        errorCount++;
+                    }
                 }
             }
 
             if (importFavorites)
             {
-                SetFavoritesStateFromDatabase();
+                try
+                {
+                    SetFavoritesStateFromDatabase();
+                }
+                catch
+                {
+                    errorCount++;
+                }
             }
 
             if (importHistory)
             {
-                SetHistoryStateFromDatabase();
+                try
+                {
+                    SetHistoryStateFromDatabase();
+                }
+                catch
+                {
+                    errorCount++;
+                }
             }
+
+            var importedCount = favoriteCount + historyCount;
+            firstRunImportNotice.Set(new FirstRunImportNotice(
+                errorCount == 0
+                    ? $"{importedCount:N0} items · {sourceCount} source{(sourceCount == 1 ? "" : "s")}"
+                    : $"{importedCount:N0} items · {errorCount} source{(errorCount == 1 ? "" : "s")} failed",
+                IsBusy: false,
+                HasErrors: errorCount > 0));
 
             return new FirstRunImportResult(
                 favoriteCount,
@@ -2792,6 +2845,12 @@ class TabViewPage : Component
                 .Grid(row: 0, column: 0)
             : null;
 
+        var firstRunImportStatus = BuildFirstRunImportStatus(
+                firstRunImportNotice.Value,
+                isFirstRunImportNoticeVisible.Value,
+                () => isFirstRunImportNoticeVisible.Set(false))
+            .Grid(row: 0, column: 0);
+
         var mainContent = Grid(
             [GridSize.Star()],
             [GridSize.Star()],
@@ -2802,7 +2861,8 @@ class TabViewPage : Component
             .Backdrop(BackdropKind.Transparent)
             .Grid(row: 0, column: 0),
             fullLinkerOverlay,
-            compactLinkerOverlay)
+            compactLinkerOverlay,
+            firstRunImportStatus)
             .Flex(grow: 1, basis: 0);
 
         var browserLayout = FlexColumn(
@@ -2817,6 +2877,70 @@ class TabViewPage : Component
             [GridSize.Star()],
             browserLayout,
             firstRunSetup);
+    }
+
+    private static Element BuildFirstRunImportStatus(
+        FirstRunImportNotice? notice,
+        bool isVisible,
+        Action onDismiss)
+    {
+        if (!isVisible || notice is null)
+        {
+            return Border(null).IsVisible(false);
+        }
+
+        Element statusVisual = notice.IsBusy
+            ? ProgressRing()
+                .Width(20)
+                .Height(20)
+                .IsActive(true)
+                .Set(ring => ring.Foreground = BrowserConstants.AccentFillColorDefaultBrush)
+            : Border(
+                BrowserIcons.FluentIcon(
+                        notice.HasErrors ? BrowserConstants.GlyphWarning : BrowserConstants.GlyphCheckMark,
+                        13)
+                    .Foreground(new SolidColorBrush(Microsoft.UI.Colors.White)))
+                .Width(24)
+                .Height(24)
+                .CornerRadius(12)
+                .Background(notice.HasErrors
+                    ? new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0xFF, 0xB8, 0x5C, 0x2C))
+                    : BrowserConstants.AccentFillColorDefaultBrush);
+
+        return Border(
+            (FlexRow(
+                statusVisual,
+                VStack(2,
+                    TextBlock(notice.IsBusy
+                            ? "Importing browser data"
+                            : notice.HasErrors
+                                ? "Import finished with issues"
+                                : "Import complete")
+                        .Set(text => text.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock(notice.Message)
+                        .Opacity(0.76)
+                        .TextWrapping(TextWrapping.WrapWholeWords))
+                    .Flex(grow: 1, basis: 0),
+                Button(BrowserIcons.FluentIcon(BrowserConstants.GlyphClose, 11), onDismiss)
+                    .AutomationName("Dismiss browser import status")
+                    .ToolTip("Dismiss")
+                    .Width(28)
+                    .Height(28)
+                    .Padding(0)
+                    .CornerRadius(14)
+                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush)) with
+            {
+                ColumnGap = 12
+            }))
+            .Width(320)
+            .Height(72)
+            .Padding(12, 10)
+            .Margin(12)
+            .CornerRadius(8)
+            .Background(BrowserConstants.LayerOnMicaBaseAltFillColorDefaultBrush)
+            .WithBorder(Theme.SurfaceStroke)
+            .HAlign(HorizontalAlignment.Right)
+            .VAlign(VerticalAlignment.Top);
     }
 
     private static void OnCompactLinkerDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args)
@@ -3353,13 +3477,18 @@ class TabViewPage : Component
                 historyProfiles.TryGetValue(browserName, out var browserHistoryProfiles);
                 favoriteProfiles.TryGetValue(browserName, out var browserFavoriteProfiles);
 
-                var profileCount = (browserHistoryProfiles ?? [])
+                var profiles = (browserHistoryProfiles ?? [])
                     .Concat(browserFavoriteProfiles ?? [])
-                    .Select(profile => profile.Id)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Count();
+                    .GroupBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+                    .Select(group =>
+                    {
+                        var profile = group.First();
+                        return new FirstRunProfileOption(profile.Id, profile.Name);
+                    })
+                    .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
 
-                return new FirstRunBrowserOption(browserName, profileCount);
+                return new FirstRunBrowserOption(browserName, profiles);
             })
             .ToArray();
     }

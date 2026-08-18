@@ -5,7 +5,13 @@ using Windows.UI.ViewManagement;
 
 namespace LinkScape.Browser.Components;
 
-internal sealed record FirstRunBrowserOption(string Name, int ProfileCount);
+internal sealed record FirstRunProfileOption(string Id, string Name);
+
+internal sealed record FirstRunBrowserOption(
+    string Name,
+    IReadOnlyList<FirstRunProfileOption> Profiles);
+
+internal sealed record FirstRunProfileSelection(string BrowserName, string ProfileId);
 
 internal sealed record FirstRunImportResult(int FavoriteCount, int HistoryCount, int SourceCount);
 
@@ -14,7 +20,7 @@ internal sealed record FirstRunSetupPanelProps(
     IReadOnlyList<BrowserSearchProvider> SearchProviders,
     IReadOnlyList<FirstRunBrowserOption> BrowserOptions,
     Action<string> OnSelectSearchProvider,
-    Func<IReadOnlyList<string>, bool, bool, Task<FirstRunImportResult>> OnImportAsync,
+    Func<IReadOnlyList<FirstRunProfileSelection>, bool, bool, Task<FirstRunImportResult>> OnImportAsync,
     Action OnComplete);
 
 internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
@@ -35,62 +41,46 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
 
     public override Element Render()
     {
-        var selectedBrowserState = UseState<string?>(null);
+        var allProfiles = Props.BrowserOptions
+            .SelectMany(browser => browser.Profiles.Select(profile =>
+                new FirstRunProfileSelection(browser.Name, profile.Id)))
+            .ToArray();
+        var selectedProfileState = UseState<string?>(null);
         var selectedSearchProvider = UseState(Props.SelectedSearchProviderKey);
         var importFavorites = UseState(true);
         var importHistory = UseState(false);
-        var isImporting = UseState(false, threadSafe: true);
-        var importStatus = UseState(string.Empty, threadSafe: true);
         var useCompactLayout = UseState(false);
         var pillColumns = useCompactLayout.Value ? 2 : 3;
-        var selectedBrowserNames = selectedBrowserState.Value is null
-            ? Props.BrowserOptions.Select(option => option.Name).ToArray()
-            : ParseBrowserSelection(selectedBrowserState.Value);
-        var hasImportSelection = selectedBrowserNames.Length > 0 &&
-            (importFavorites.Value || importHistory.Value);
+        var selectedProfileKeys = (selectedProfileState.Value is null && allProfiles.Length > 0
+                ? [ProfileSelectionKey(allProfiles[0])]
+                : ParseProfileSelection(selectedProfileState.Value ?? string.Empty))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selectedProfiles = allProfiles
+            .Where(profile => selectedProfileKeys.Contains(ProfileSelectionKey(profile)))
+            .ToArray();
+        var wantsImport = importFavorites.Value || importHistory.Value;
+        var hasImportSelection = selectedProfiles.Length > 0 && wantsImport;
+        var canSubmit = !wantsImport || selectedProfiles.Length > 0;
 
-        void ToggleBrowser(string browserName)
+        void Submit()
         {
-            var selected = new HashSet<string>(selectedBrowserNames, StringComparer.OrdinalIgnoreCase);
-            if (!selected.Add(browserName))
-            {
-                selected.Remove(browserName);
-            }
-
-            selectedBrowserState.Set(string.Join("\n", selected.Order(StringComparer.OrdinalIgnoreCase)));
-        }
-
-        async Task SubmitAsync()
-        {
-            if (isImporting.Value)
+            if (!canSubmit)
             {
                 return;
             }
 
-            if (!hasImportSelection)
+            Props.OnSelectSearchProvider(selectedSearchProvider.Value);
+            Props.OnComplete();
+
+            if (!wantsImport)
             {
-                Props.OnSelectSearchProvider(selectedSearchProvider.Value);
-                Props.OnComplete();
                 return;
             }
 
-            isImporting.Set(true);
-            importStatus.Set("Bringing your selected browser data into LinkScape...");
-
-            try
-            {
-                await Props.OnImportAsync(
-                    selectedBrowserNames,
-                    importFavorites.Value,
-                    importHistory.Value);
-                Props.OnSelectSearchProvider(selectedSearchProvider.Value);
-                Props.OnComplete();
-            }
-            catch (Exception ex)
-            {
-                importStatus.Set($"Import could not finish: {ex.Message}");
-                isImporting.Set(false);
-            }
+            _ = Props.OnImportAsync(
+                selectedProfiles,
+                importFavorites.Value,
+                importHistory.Value);
         }
 
         var browserPills = Props.BrowserOptions.Count == 0
@@ -115,8 +105,14 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
                 Props.BrowserOptions.Select(option =>
                     BuildBrowserPill(
                         option,
-                        selectedBrowserNames.Contains(option.Name, StringComparer.OrdinalIgnoreCase),
-                        () => ToggleBrowser(option.Name))).ToArray(),
+                        option.Profiles
+                            .Where(profile => selectedProfileKeys.Contains(ProfileSelectionKey(
+                                new FirstRunProfileSelection(option.Name, profile.Id))))
+                            .ToArray(),
+                        selectedProfileKeys,
+                        selection => selectedProfileState.Set(string.Join(
+                            "\n",
+                            selection.Order(StringComparer.OrdinalIgnoreCase))))).ToArray(),
                 maxPerRow: pillColumns);
 
         var searchPills = BuildPillRows(
@@ -136,7 +132,7 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
                         "1",
                         BrowserConstants.GlyphGlobe,
                         "Bring data from",
-                        "Choose one or more detected browsers",
+                        "Choose profiles from each detected browser",
                         browserPills),
                     BuildDivider(),
                     BuildFormSection(
@@ -186,11 +182,13 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
                 .Grid(row: 0, column: 1),
             setupForm,
             BuildFooter(
-                isImporting.Value,
-                importStatus.Value,
+                canSubmit
+                    ? string.Empty
+                    : "Select at least one profile, or turn off Favorites and History.",
                 hasImportSelection,
+                canSubmit,
                 Props.OnComplete,
-                () => _ = SubmitAsync())
+                Submit)
                 .Grid(row: 2, column: 1));
 
         return Grid(
@@ -251,27 +249,19 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
             .Set(border => ConfigurePanelSection(border, new CornerRadius(8), 10));
 
     private static Element BuildFooter(
-        bool isImporting,
         string status,
         bool hasImportSelection,
+        bool canSubmit,
         Action onSkip,
         Action onSubmit) =>
         Border(
             FlexRow(
-                FlexRow(
-                    ProgressRing()
-                        .Width(20)
-                        .Height(20)
-                        .IsActive(isImporting)
-                        .IsVisible(isImporting)
-                        .Set(ring => ring.Foreground = AccentStrokeBrush),
-                    TextBlock(string.IsNullOrWhiteSpace(status)
+                TextBlock(string.IsNullOrWhiteSpace(status)
                             ? "You can change these choices later in Settings."
                             : status)
-                        .Foreground(MutedTextBrush)
-                        .FontFamily(UiFontFamily)
-                        .TextWrapping(TextWrapping.Wrap)
-                        .VAlign(VerticalAlignment.Center))
+                    .Foreground(MutedTextBrush)
+                    .FontFamily(UiFontFamily)
+                    .TextWrapping(TextWrapping.Wrap)
                     .Flex(grow: 1, basis: 0)
                     .VAlign(VerticalAlignment.Center),
                 Button("Cancel", onSkip)
@@ -285,7 +275,7 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
                     .WithBorder(QuietStrokeBrush),
                 Button("Save & continue", onSubmit)
                     .AutomationName(hasImportSelection ? "Save choices, import selected data, and continue" : "Save choices and continue")
-                    .IsEnabled(!isImporting)
+                    .IsEnabled(canSubmit)
                     .Height(48)
                     .Padding(26, 0)
                     .CornerRadius(6)
@@ -383,8 +373,19 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
 
     private static Element BuildBrowserPill(
         FirstRunBrowserOption option,
-        bool isSelected,
-        Action onClick) =>
+        IReadOnlyList<FirstRunProfileOption> selectedProfiles,
+        IReadOnlySet<string> selectedProfileKeys,
+        Action<IReadOnlyCollection<string>> onSelectionChanged)
+    {
+        var isSelected = selectedProfiles.Count > 0;
+        var selectionSummary = selectedProfiles.Count switch
+        {
+            0 => "Choose profiles",
+            1 => selectedProfiles[0].Name,
+            _ => $"{selectedProfiles.Count} of {option.Profiles.Count} profiles"
+        };
+
+        return
         Button(
                 (FlexRow(
                     PersonPicture()
@@ -396,28 +397,114 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
                             .Foreground(BrightTextBrush)
                             .FontFamily(UiFontFamily)
                             .Set(text => text.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-                        TextBlock(option.ProfileCount == 1 ? "1 profile" : $"{option.ProfileCount} profiles")
+                        TextBlock(selectionSummary)
                             .Foreground(MutedTextBrush)
                             .FontFamily(UiFontFamily))
                         .MinWidth(0)
                         .Flex(grow: 1, basis: 0),
                     BrowserIcons.FluentIcon(
-                        isSelected ? BrowserConstants.GlyphCheckMark : BrowserConstants.GlyphAdd,
+                        BrowserConstants.GlyphChevronDown,
                         11)
                         .Foreground(isSelected ? AccentStrokeBrush : MutedTextBrush))
                     .VAlign(VerticalAlignment.Center)) with
                 {
                     ColumnGap = 12
                 },
-                onClick)
-            .AutomationName($"{(isSelected ? "Deselect" : "Select")} {option.Name} for import")
+                () => { })
+            .AutomationName($"Choose {option.Name} profiles for import")
             .Height(62)
             .Padding(18, 8)
             .CornerRadius(31)
             .Foreground(BrightTextBrush)
             .Background(isSelected ? SelectedSurfaceBrush : QuietSurfaceBrush)
             .WithBorder(isSelected ? SelectedStrokeBrush : QuietStrokeBrush)
+            .Set(button => button.Flyout = CreateProfileSelectionFlyout(
+                option,
+                selectedProfileKeys,
+                onSelectionChanged))
             .Flex(grow: 1, basis: 0);
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Flyout CreateProfileSelectionFlyout(
+        FirstRunBrowserOption option,
+        IReadOnlySet<string> selectedProfileKeys,
+        Action<IReadOnlyCollection<string>> onSelectionChanged)
+    {
+        var selection = new HashSet<string>(selectedProfileKeys, StringComparer.OrdinalIgnoreCase);
+        var checkBoxes = new List<Microsoft.UI.Xaml.Controls.CheckBox>();
+        var content = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Width = 300,
+            Spacing = 6,
+            Padding = new Thickness(4)
+        };
+
+        content.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+        {
+            Text = $"{option.Name} profiles",
+            FontFamily = new FontFamily(DisplayFontFamily),
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = BrightTextBrush,
+            Margin = new Thickness(8, 4, 8, 6)
+        });
+
+        foreach (var profile in option.Profiles)
+        {
+            var key = ProfileSelectionKey(new FirstRunProfileSelection(option.Name, profile.Id));
+            var checkBox = new Microsoft.UI.Xaml.Controls.CheckBox
+            {
+                Content = profile.Name,
+                IsChecked = selection.Contains(key),
+                FontFamily = new FontFamily(UiFontFamily),
+                Foreground = BrightTextBrush,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(8, 6, 8, 6)
+            };
+
+            checkBox.Checked += (_, _) =>
+            {
+                _ = selection.Add(key);
+                onSelectionChanged(selection);
+            };
+            checkBox.Unchecked += (_, _) =>
+            {
+                _ = selection.Remove(key);
+                onSelectionChanged(selection);
+            };
+            checkBoxes.Add(checkBox);
+            content.Children.Add(checkBox);
+        }
+
+        var actions = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(8, 8, 8, 2)
+        };
+        var clearButton = new Microsoft.UI.Xaml.Controls.Button { Content = "Clear" };
+        var selectAllButton = new Microsoft.UI.Xaml.Controls.Button { Content = "Select all" };
+        clearButton.Click += (_, _) => SetAllProfileSelections(false);
+        selectAllButton.Click += (_, _) => SetAllProfileSelections(true);
+        actions.Children.Add(clearButton);
+        actions.Children.Add(selectAllButton);
+        content.Children.Add(actions);
+
+        return new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Content = content,
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft
+        };
+
+        void SetAllProfileSelections(bool isSelected)
+        {
+            foreach (var checkBox in checkBoxes)
+            {
+                checkBox.IsChecked = isSelected;
+            }
+        }
+    }
 
     private static Element BuildDataPill(
         string glyph,
@@ -522,8 +609,11 @@ internal sealed class FirstRunSetupPanel : Component<FirstRunSetupPanelProps>
             .Height(1)
             .Background(new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0x20, 0x74, 0xE5, 0xFF)));
 
-    private static string[] ParseBrowserSelection(string value) =>
+    private static string[] ParseProfileSelection(string value) =>
         value.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string ProfileSelectionKey(FirstRunProfileSelection profile) =>
+        $"{profile.BrowserName}\u001F{profile.ProfileId}";
 
     private static void ConfigureProfilePicture(
         Microsoft.UI.Xaml.Controls.PersonPicture picture,
