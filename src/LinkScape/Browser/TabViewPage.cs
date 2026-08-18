@@ -211,6 +211,7 @@ class TabViewPage : Component
         var isCommandCenterExpanded = session.Value.IsCommandCenterExpanded;
         var isRailTabsExpanded = session.Value.IsRailTabsExpanded;
         var settingsSnapshot = UseState<IReadOnlyDictionary<string, string>>(SettingsService.Dump());
+        var isFirstRunSetupVisible = UseState(FirstRunExperienceService.ShouldShow());
         var browserNotice = UseState<BrowserNotice?>(BrowserNoticeService.CurrentNotice, threadSafe: true);
         var isFullScreenPresentationActive = UseState(
             global::LinkScape.Application.MainWindowActivation.IsFullScreenPresentationActive,
@@ -667,6 +668,12 @@ class TabViewPage : Component
             SettingsService.SetValue(key, value);
             settingsSnapshot.Set(SettingsService.Dump());
 
+            if (string.Equals(key, FirstRunExperienceService.SettingKey, StringComparison.Ordinal) &&
+                string.Equals(value, FirstRunExperienceService.PendingValue, StringComparison.OrdinalIgnoreCase))
+            {
+                isFirstRunSetupVisible.Set(true);
+            }
+
             if (string.Equals(key, DefaultSearchProviderSettingKey, StringComparison.Ordinal))
             {
                 UpdateBrowserSession(state => BrowserSessionStore.SetSelectedSearchProvider(
@@ -688,6 +695,57 @@ class TabViewPage : Component
                     ScheduleTabsSave(_latestTabs.Length > 0 ? _latestTabs : tabs, _latestSelectedTabId ?? selectedTag);
                 }
             }
+        }
+
+        async Task<FirstRunImportResult> ImportFirstRunDataAsync(
+            IReadOnlyList<string> browserNames,
+            bool importFavorites,
+            bool importHistory)
+        {
+            var favoriteCount = 0;
+            var historyCount = 0;
+            var sourceCount = 0;
+
+            foreach (var browserName in browserNames.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (importFavorites)
+                {
+                    var summary = await Task.Run(
+                        () => BrowserFavoritesImportService.ImportBrowserFavorites(browserName));
+                    favoriteCount += summary.ImportedItemCount;
+                    sourceCount += summary.SourceCount;
+                }
+
+                if (importHistory)
+                {
+                    var summary = await Task.Run(
+                        () => BrowserHistoryImportService.ImportBrowserHistory(browserName));
+                    historyCount += summary.ImportedItemCount;
+                    sourceCount += summary.SourceCount;
+                }
+            }
+
+            if (importFavorites)
+            {
+                SetFavoritesStateFromDatabase();
+            }
+
+            if (importHistory)
+            {
+                SetHistoryStateFromDatabase();
+            }
+
+            return new FirstRunImportResult(
+                favoriteCount,
+                historyCount,
+                sourceCount);
+        }
+
+        void CompleteFirstRunSetup()
+        {
+            FirstRunExperienceService.Complete();
+            settingsSnapshot.Set(SettingsService.Dump());
+            isFirstRunSetupVisible.Set(false);
         }
 
         void SetCurrentPageAsHome()
@@ -2718,6 +2776,22 @@ class TabViewPage : Component
             })
             .Grid(row: 0, column: 0);
 
+        Element? firstRunSetup = isFirstRunSetupVisible.Value
+            ? Component<FirstRunSetupPanel, FirstRunSetupPanelProps>(
+                new FirstRunSetupPanelProps(
+                    selectedSearchProviderKey,
+                    BrowserSearchProviders.Providers,
+                    BuildFirstRunBrowserOptions(
+                        historyImportBrowserProfiles.Value,
+                        favoritesImportBrowserProfiles.Value),
+                    SetDefaultSearchProvider,
+                    ImportFirstRunDataAsync,
+                    CompleteFirstRunSetup))
+                .HAlign(HorizontalAlignment.Stretch)
+                .VAlign(VerticalAlignment.Stretch)
+                .Grid(row: 0, column: 0)
+            : null;
+
         var mainContent = Grid(
             [GridSize.Star()],
             [GridSize.Star()],
@@ -2731,11 +2805,18 @@ class TabViewPage : Component
             compactLinkerOverlay)
             .Flex(grow: 1, basis: 0);
 
-        return FlexColumn(
-            titleBar.IsVisible(!isFullScreenPresentationActive.Value),
-            BuildBrowserNoticeBanner(browserNotice.Value),
-            mainContent
-        );
+        var browserLayout = FlexColumn(
+                titleBar.IsVisible(!isFullScreenPresentationActive.Value),
+                BuildBrowserNoticeBanner(browserNotice.Value),
+                mainContent)
+            .IsEnabled(!isFirstRunSetupVisible.Value)
+            .Grid(row: 0, column: 0);
+
+        return Grid(
+            [GridSize.Star()],
+            [GridSize.Star()],
+            browserLayout,
+            firstRunSetup);
     }
 
     private static void OnCompactLinkerDoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args)
@@ -3258,6 +3339,29 @@ class TabViewPage : Component
         {
             return new Dictionary<string, BrowserImportProfile[]>(StringComparer.OrdinalIgnoreCase);
         }
+    }
+
+    private static FirstRunBrowserOption[] BuildFirstRunBrowserOptions(
+        IReadOnlyDictionary<string, BrowserImportProfile[]> historyProfiles,
+        IReadOnlyDictionary<string, BrowserImportProfile[]> favoriteProfiles)
+    {
+        return historyProfiles.Keys
+            .Union(favoriteProfiles.Keys, StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .Select(browserName =>
+            {
+                historyProfiles.TryGetValue(browserName, out var browserHistoryProfiles);
+                favoriteProfiles.TryGetValue(browserName, out var browserFavoriteProfiles);
+
+                var profileCount = (browserHistoryProfiles ?? [])
+                    .Concat(browserFavoriteProfiles ?? [])
+                    .Select(profile => profile.Id)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
+                return new FirstRunBrowserOption(browserName, profileCount);
+            })
+            .ToArray();
     }
 
     private static string GetProfileLabel(

@@ -1198,7 +1198,8 @@ internal static class BrowserChrome
                 button.Style = GetGlassIconButtonStyle();
                 button.Flyout = flyout;
                 ApplyGlassButtonDepth(button);
-            });
+            })
+            .WithKey($"search-provider:{selectedProvider.Key}");
     }
 
     private static MenuFlyout CreateTabContextFlyout(
@@ -2192,6 +2193,19 @@ internal static class BrowserChrome
                     CreateSettingsFlyoutActionButton(
                         "Check for updates now",
                         () => _ = AppUpdateService.CheckForUpdatesNowAsync())),
+                CreateSettingsFlyoutCard(
+                    CreateSettingsFlyoutCardHeader("First-time setup", glyph: BrowserConstants.GlyphSettings),
+                    new TextBlock
+                    {
+                        Text = "Reopen the setup used to import browser data and choose a search provider.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutActionButton(
+                        "Run setup again",
+                        () => onSaveSettingValue(
+                            FirstRunExperienceService.SettingKey,
+                            FirstRunExperienceService.PendingValue))),
                 CreateSettingsFlyoutCard(
                     CreateSettingsFlyoutCardHeader("Clear browsing data", glyph: BrowserConstants.GlyphTrash),
                     new TextBlock
@@ -4087,6 +4101,24 @@ internal static class BrowserChrome
                         nextValue => onSaveSettingValue(AppUpdateService.AutomaticDailyChecksSettingKey, nextValue ? "true" : "false")),
                     Button("Check for updates now", () => _ = AppUpdateService.CheckForUpdatesNowAsync())
                         .CornerRadius(999)
+                        .Padding(12, 6)
+                )
+            )
+            .Padding(10)
+            .WithBorder(Theme.SurfaceStroke),
+            Border(
+                VStack(8,
+                    TextBlock("First-time setup")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock("Reopen the setup used to import browser data and choose a search provider.")
+                        .TextWrapping(TextWrapping.Wrap)
+                        .Opacity(0.76),
+                    Button(
+                        "Run setup again",
+                        () => onSaveSettingValue(
+                            FirstRunExperienceService.SettingKey,
+                            FirstRunExperienceService.PendingValue))
+                        .CornerRadius(6)
                         .Padding(12, 6)
                 )
             )

@@ -48,6 +48,9 @@ internal static class BrowserConstants
     public const string GlyphStop = "\uE71A";
     public const string GlyphInfo = "\uE946";
     public const string GlyphWarning = "\uE7BA";
+    public const string GlyphHistory = "\uE81C";
+    public const string GlyphCheckMark = "\uE73E";
+    public const string GlyphImport = "\uE8B5";
     public const string GlyphMore = "\uE712";
     // use emoji red heart (U+2764 U+FE0F)
     // use emoji red heart (U+2764 U+FE0F)

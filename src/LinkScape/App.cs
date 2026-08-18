@@ -21,9 +21,12 @@ if (!await ActivationRoutingService.InitializeAsync())
     return;
 }
 
+var hadExistingSettingsProfile = FirstRunExperienceService.HasExistingSettingsProfile();
+
 TabPersistenceService.EnsureDatabase();
 HistoryPersistenceService.EnsureDatabase();
 SettingsService.EnsureDatabase();
+FirstRunExperienceService.Initialize(hadExistingSettingsProfile);
 FavoritesService.EnsureDatabase();
 TabCollectionService.EnsureDatabase();
 InstalledWebAppService.EnsureDatabase();
@@ -51,7 +54,7 @@ ReactorApp.Run<App>("LinkScape",
             }
 
             restored = true;
-            MainWindowActivation.RestoreWindowPlacement();
+            MainWindowActivation.RestoreWindowPlacement(centerOnFirstLaunch: !hadExistingSettingsProfile);
             _ = AppJumpListService.RefreshAsync(reportUnavailable: true);
             
         };

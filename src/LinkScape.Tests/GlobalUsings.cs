@@ -15,6 +15,7 @@ global using LinkScape.Services.Mcp.Diagnostics;
 global using LinkScape.Services.Mcp.Protocol;
 global using LinkScape.Services.Mcp.Server;
 global using LinkScape.Services.Mcp.Tools;
+global using LinkScape.Services.Onboarding;
 global using LinkScape.Services.Sharing;
 global using LinkScape.Services.Tabs;
 global using LinkScape.Services.WebApps;

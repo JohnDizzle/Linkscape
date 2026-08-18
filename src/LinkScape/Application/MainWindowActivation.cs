@@ -21,6 +21,7 @@ internal static class MainWindowActivation
     private const int MinimumWindowHeight = 400;
     private const int DefaultWindowWidth = 1200;
     private const int DefaultWindowHeight = 800;
+    private const int FirstLaunchHorizontalMargin = 32;
     private const int MinimumRestoredWidth = 800;
     private const int MinimumRestoredHeight = 400;
     private const int DefaultRestoredWidth = 1200;
@@ -84,7 +85,7 @@ internal static class MainWindowActivation
         }
     }
 
-    internal static void RestoreWindowPlacement()
+    internal static void RestoreWindowPlacement(bool centerOnFirstLaunch = false)
     {
         AppWindow? appWindow;
 
@@ -122,6 +123,11 @@ internal static class MainWindowActivation
                             width,
                             height));
                 }
+                else if (centerOnFirstLaunch)
+                {
+                    var displayArea = DisplayArea.GetFromWindowId(appWindow.Id, DisplayAreaFallback.Nearest);
+                    appWindow.MoveAndResize(CalculateFirstLaunchBounds(displayArea.WorkArea, width));
+                }
                 else
                 {
                     appWindow.Resize(
@@ -141,6 +147,19 @@ internal static class MainWindowActivation
         catch
         {
         }
+    }
+
+    internal static RectInt32 CalculateFirstLaunchBounds(
+        RectInt32 workArea,
+        int preferredWidth)
+    {
+        var availableWidth = Math.Max(1, workArea.Width - (FirstLaunchHorizontalMargin * 2));
+        var width = Math.Min(preferredWidth, availableWidth);
+        var height = workArea.Height;
+        var x = workArea.X + Math.Max(0, (workArea.Width - width) / 2);
+        var y = workArea.Y;
+
+        return new RectInt32(x, y, width, height);
     }
 
     internal static void SaveWindowPlacement()

@@ -30,6 +30,7 @@ It includes a tabbed browsing shell, a command center rail, persistent history a
 - Persistent browsing history
 - Persistent favorites store
 - Search provider selection
+- First-run browser-data import and search setup for new profiles
 - Acrylic backdrop gradient presets
 - Windows desktop packaging via MSIX
 
@@ -115,7 +116,6 @@ Command Center sections should be clearly differentiated by purpose:
 - Add polished empty states
 
 **Next**
-- Add first-run hints/onboarding cards
 - Add tab pinning and quick tab recovery affordances
 - Improve compact rail discoverability
 
@@ -123,6 +123,7 @@ Command Center sections should be clearly differentiated by purpose:
 - Advanced tab grouping
 - Optional command customization
 - Expanded personalization presets
+- Explore a paid privacy and backup tier: scheduled daily or weekly browsing-data purge, plus encrypted backup and restore through OneDrive or a user-selected vault
 
 ## Project Structure
 
