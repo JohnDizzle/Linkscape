@@ -540,7 +540,9 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         var popupWidth = Math.Min(720, Math.Min(Math.Max(260, addressBox.ActualWidth), availableWidth));
         var resultsContent = new Microsoft.UI.Xaml.Controls.StackPanel
         {
-            Spacing = 10
+            Spacing = 10,
+            Width = Math.Max(0, popupWidth - 24),
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
         if (_isWebSearchRunning)

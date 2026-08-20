@@ -40,9 +40,9 @@ internal sealed class CommandPaletteControl : UserControl
         _filterBox.QuerySubmitted += OnFilterSubmitted;
         _filterBox.KeyDown += OnKeyDown;
 
-        _headerHost = new ContentControl();
-        _sourceHost = new ContentControl();
-        _resultsHost = new ContentControl();
+        _headerHost = CreateStretchingHost();
+        _sourceHost = CreateStretchingHost();
+        _resultsHost = CreateStretchingHost();
 
         var content = new StackPanel
         {
@@ -70,8 +70,15 @@ internal sealed class CommandPaletteControl : UserControl
         };
 
         Content = _surface;
+        HorizontalContentAlignment = HorizontalAlignment.Stretch;
         KeyDown += OnKeyDown;
     }
+
+    private static ContentControl CreateStretchingHost() => new()
+    {
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        HorizontalContentAlignment = HorizontalAlignment.Stretch
+    };
 
     internal void Update(
         double width,
