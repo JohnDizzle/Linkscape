@@ -149,6 +149,52 @@ public static class HistoryPersistenceService
             command => command.Parameters.AddWithValue("$limit", limit));
     }
 
+    public static IReadOnlyDictionary<string, int> GetVisitCounts(IEnumerable<string> urls)
+    {
+        var normalizedUrls = urls
+            .Select(NormalizeHistoryUrl)
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var visitCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var batch in normalizedUrls.Chunk(400))
+        {
+            using var conn = new SqliteConnection(DbConnectionString);
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            var parameters = string.Join(", ", batch.Select((_, index) => $"$url{index}"));
+            cmd.CommandText = $"""
+                SELECT Url, SUM(VisitCount)
+                FROM (
+                    SELECT Url, VisitCount
+                    FROM HistoryItems
+                    WHERE Url IN ({parameters})
+                    UNION ALL
+                    SELECT Url, VisitCount
+                    FROM HistoryArchiveItems
+                    WHERE Url IN ({parameters})
+                )
+                GROUP BY Url;
+                """;
+
+            for (var index = 0; index < batch.Length; index++)
+            {
+                cmd.Parameters.AddWithValue($"$url{index}", batch[index]);
+            }
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                visitCounts[reader.GetString(0)] = reader.GetInt32(1);
+            }
+        }
+
+        return visitCounts;
+    }
+
     public static IReadOnlyList<HistoryItem> SearchHistory(string? query, int limit = 100)
     {
         var search = $"%{(query ?? string.Empty).Trim()}%";

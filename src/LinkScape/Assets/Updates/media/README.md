@@ -8,9 +8,12 @@ Keep each release's media in this folder so older entries remain accurate.
 ### 1.0.19
 
 - `CompactCommandRail.png` - the persistent command group shown without surrounding page content
-- `TitlebarSearchPalette.png` - the titlebar address field and its unified results palette
-- `CommandCenter.mp4` - a short, silent walkthrough of titlebar search and active-tab management
-- `CommandCenter.en.vtt` - synchronized English subtitles for the video player
+- `SearchFilterAll.png` - current All-source Search and Filter palette
+- `SearchFilterCollections.png` - Collection accordion cards and startup controls
+- `SearchFilterFavorites.png` - Favorites ranked using browsing visit counts
+
+The release page intentionally uses the current screenshot slideshow instead of the earlier command-center video. The original
+`TitlebarSearchPalette.png`, `CommandCenter.mp4`, and `CommandCenter.en.vtt` files remain archived here but are not loaded by the page.
 
 ### 1.0.17 (in development)
 

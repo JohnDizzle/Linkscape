@@ -6,7 +6,7 @@ namespace LinkScape.Browser.Components;
 
 internal sealed class CommandPaletteControl : UserControl
 {
-    private readonly AutoSuggestBox _filterBox;
+    private readonly TextBox _filterBox;
     private readonly ContentControl _headerHost;
     private readonly ContentControl _sourceHost;
     private readonly ContentControl _resultsHost;
@@ -25,19 +25,14 @@ internal sealed class CommandPaletteControl : UserControl
         _onSubmitted = onSubmitted;
         _onDismissed = onDismissed;
 
-        _filterBox = new AutoSuggestBox
+        _filterBox = new TextBox
         {
             Height = 38,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            QueryIcon = new FontIcon
-            {
-                FontFamily = BrowserConstants.IconFontFamily,
-                Glyph = BrowserConstants.GlyphMagnifyGlass,
-                FontSize = 14
-            }
+            IsSpellCheckEnabled = false,
+            IsTextPredictionEnabled = false
         };
         _filterBox.TextChanged += OnFilterTextChanged;
-        _filterBox.QuerySubmitted += OnFilterSubmitted;
         _filterBox.KeyDown += OnKeyDown;
 
         _headerHost = CreateStretchingHost();
@@ -98,7 +93,19 @@ internal sealed class CommandPaletteControl : UserControl
 
     internal void FocusFilter()
     {
+        if (_filterBox.FocusState != FocusState.Unfocused)
+        {
+            return;
+        }
+
         _filterBox.Focus(FocusState.Programmatic);
+        MoveCaretToEnd();
+    }
+
+    private void MoveCaretToEnd()
+    {
+        _filterBox.SelectionStart = _filterBox.Text.Length;
+        _filterBox.SelectionLength = 0;
     }
 
     private void SetFilterText(string value)
@@ -112,6 +119,7 @@ internal sealed class CommandPaletteControl : UserControl
         try
         {
             _filterBox.Text = value;
+            MoveCaretToEnd();
         }
         finally
         {
@@ -119,21 +127,23 @@ internal sealed class CommandPaletteControl : UserControl
         }
     }
 
-    private void OnFilterTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    private void OnFilterTextChanged(object sender, TextChangedEventArgs args)
     {
-        if (!_suppressFilterChanged && args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+        if (!_suppressFilterChanged)
         {
-            _onFilterChanged(sender.Text);
+            _onFilterChanged(_filterBox.Text);
         }
-    }
-
-    private void OnFilterSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
-    {
-        _onSubmitted(args.QueryText);
     }
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs args)
     {
+        if (args.Key == Windows.System.VirtualKey.Enter)
+        {
+            args.Handled = true;
+            _onSubmitted(_filterBox.Text);
+            return;
+        }
+
         if (args.Key != Windows.System.VirtualKey.Escape)
         {
             return;
