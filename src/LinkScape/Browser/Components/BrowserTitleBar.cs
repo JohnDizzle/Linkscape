@@ -91,6 +91,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         Props.Controller.SetAddressTextCore = SetAddressBarText;
         Props.Controller.OpenCommandPaletteCore = OpenCommandPalette;
 
+        var renderedAddressText = _isCommandPaletteRequested
+            ? _paletteFilterText
+            : _addressBarText;
+
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
             Props.BrowserController,
@@ -103,7 +107,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
                     useCompactLayout.Set(nextCompactLayout);
                 }
             },
-            _addressBarText,
+            renderedAddressText,
             Props.HomeUrl,
             Props.SettingsSnapshot,
             Props.IsTabsCollapsed,
@@ -422,14 +426,15 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
                 await Task.Delay(260, cancellationToken);
             }
 
-            var visibleLimit = _selectedSearchSource == AddressSearchSource.All
+            var searchSource = _selectedSearchSource;
+            var visibleLimit = searchSource == AddressSearchSource.All
                 ? 8
                 : Math.Clamp(_localSearchLimit, PalettePageSize, PaletteMaximumItems);
-            var requestedLimit = _selectedSearchSource == AddressSearchSource.All
+            var requestedLimit = searchSource == AddressSearchSource.All
                 ? visibleLimit
                 : Math.Min(visibleLimit + 1, PaletteMaximumItems);
             var results = await Task.Run(
-                () => AddressSearchService.SearchLocal(query, Props.Tabs, _selectedSearchSource, requestedLimit),
+                () => AddressSearchService.SearchLocal(query, Props.Tabs, searchSource, requestedLimit),
                 cancellationToken);
 
             if (cancellationToken.IsCancellationRequested || _addressBox is null)
@@ -439,13 +444,23 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
             _addressBox.DispatcherQueue.TryEnqueue(() =>
             {
+                var activeQuery = _isCommandPaletteRequested
+                    ? _paletteFilterText.Trim()
+                    : _addressBarText.Trim();
+                if (cancellationToken.IsCancellationRequested ||
+                    searchSource != _selectedSearchSource ||
+                    !string.Equals(query, activeQuery, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
                 if (!_isCommandPaletteRequested && !IsAddressBoxFocused())
                 {
                     CloseSearchPopup();
                     return;
                 }
 
-                _hasMoreLocalResults = _selectedSearchSource != AddressSearchSource.All &&
+                _hasMoreLocalResults = searchSource != AddressSearchSource.All &&
                     visibleLimit < PaletteMaximumItems &&
                     results.Count > visibleLimit;
                 _searchResults = results.Take(visibleLimit).ToArray();
@@ -507,7 +522,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             _searchPopup.Closed += OnSearchPopupClosed;
         }
 
-        _searchPopup.IsLightDismissEnabled = _isCommandPaletteRequested;
+        // The titlebar address box and the popup form one command-palette surface.
+        // Native light dismissal treats the address box as outside the Popup and
+        // closes it before the user can continue editing the active filter.
+        _searchPopup.IsLightDismissEnabled = false;
         _searchPopup.XamlRoot = addressBox.XamlRoot;
 
         var point = addressBox.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
@@ -650,10 +668,6 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         _searchPopup.HorizontalOffset = Math.Clamp(centeredOffset, leftLimit, Math.Max(leftLimit, rightLimit - popupWidth));
         _searchPopup.VerticalOffset = point.Y + addressBox.ActualHeight + 6;
         _searchPopup.IsOpen = true;
-        if (_isCommandPaletteRequested)
-        {
-            _ = addressBox.DispatcherQueue.TryEnqueue(() => addressBox.Focus(FocusState.Programmatic));
-        }
     }
 
     private static Microsoft.UI.Xaml.Controls.TextBox? FindAddressTextBox(DependencyObject parent)
@@ -1076,8 +1090,8 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
     private void OnSearchPopupClosed(object? sender, object e)
     {
-        // Native light dismissal closes the Popup first; synchronize the component's
-        // filter/address state through the same cleanup path as X and Escape.
+        // Synchronize state if the popup is closed by its XAML root or window lifetime.
+        // Normal palette dismissal is explicit through X, Escape, or result selection.
         if (_searchPopup is not null)
         {
             CloseSearchPopup();
