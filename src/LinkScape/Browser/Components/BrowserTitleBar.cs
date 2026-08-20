@@ -295,23 +295,61 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
     private async void OnAddressBoxLostFocus(object sender, RoutedEventArgs e)
     {
-        await Task.Delay(50);
+        if (sender is not Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+        {
+            return;
+        }
 
+        var dispatcherQueue = addressBox.DispatcherQueue;
+        await Task.Delay(50).ConfigureAwait(false);
+
+        try
+        {
+            dispatcherQueue.TryEnqueue(HandleAddressBoxLostFocus);
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // The dispatcher can shut down while the delayed focus callback is pending.
+        }
+        catch (InvalidOperationException)
+        {
+            // A stopped dispatcher means the window has already completed this cleanup.
+        }
+    }
+
+    private void HandleAddressBoxLostFocus()
+    {
         if (_isCommandPaletteRequested)
         {
             return;
         }
 
-        if (_addressBox?.XamlRoot is null)
+        var currentAddressBox = _addressBox;
+        if (currentAddressBox is null)
         {
             CloseSearchPopup();
             return;
         }
 
-        var focusedElement = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(_addressBox.XamlRoot) as DependencyObject;
-        if (focusedElement is not null && IsInsideSearchPopup(focusedElement))
+        try
         {
-            return;
+            var xamlRoot = currentAddressBox.XamlRoot;
+            if (xamlRoot is not null)
+            {
+                var focusedElement = Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(xamlRoot) as DependencyObject;
+                if (focusedElement is not null && IsInsideSearchPopup(focusedElement))
+                {
+                    return;
+                }
+            }
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // The window can disconnect its XAML tree during the delayed focus check.
+        }
+        catch (InvalidOperationException)
+        {
+            // Treat a disconnected address box as an already-dismissed search surface.
         }
 
         CloseSearchPopup();
@@ -961,23 +999,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         _isCommandPaletteRequested = false;
         _paletteFilterText = string.Empty;
         _selectedSearchSource = AddressSearchSource.All;
-        if (_addressBox is not null)
-        {
-            _addressBox.PlaceholderText = "Search or enter web address";
-            _addressBox.QueryIcon = new FontIcon
-            {
-                FontFamily = BrowserConstants.IconFontFamily,
-                Glyph = BrowserConstants.GlyphMagnifyGlass,
-                FontSize = 14
-            };
-            if (shouldRestoreAddress && !string.Equals(_addressBox.Text, _addressBarText, StringComparison.Ordinal))
-            {
-                _suppressAddressBoxTextChanged = true;
-                _addressBox.Text = _addressBarText;
-                _suppressAddressBoxTextChanged = false;
-                _isAddressBarEditing = false;
-            }
-        }
+        RestoreAddressBoxAfterSearchClose(shouldRestoreAddress);
         var popup = _searchPopup;
         _searchPopup = null;
 
@@ -998,6 +1020,57 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         catch (InvalidOperationException)
         {
             // Treat disconnected popup cleanup as best-effort.
+        }
+    }
+
+    private void RestoreAddressBoxAfterSearchClose(bool shouldRestoreAddress)
+    {
+        var addressBox = _addressBox;
+        if (addressBox is null)
+        {
+            return;
+        }
+
+        try
+        {
+            addressBox.PlaceholderText = "Search or enter web address";
+            addressBox.QueryIcon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = BrowserConstants.GlyphMagnifyGlass,
+                FontSize = 14
+            };
+            if (shouldRestoreAddress && !string.Equals(addressBox.Text, _addressBarText, StringComparison.Ordinal))
+            {
+                _suppressAddressBoxTextChanged = true;
+                try
+                {
+                    addressBox.Text = _addressBarText;
+                }
+                finally
+                {
+                    _suppressAddressBoxTextChanged = false;
+                }
+
+                _isAddressBarEditing = false;
+            }
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            DetachDisconnectedAddressBox(addressBox);
+        }
+        catch (InvalidOperationException)
+        {
+            DetachDisconnectedAddressBox(addressBox);
+        }
+    }
+
+    private void DetachDisconnectedAddressBox(Microsoft.UI.Xaml.Controls.AutoSuggestBox addressBox)
+    {
+        _suppressAddressBoxTextChanged = false;
+        if (ReferenceEquals(_addressBox, addressBox))
+        {
+            _addressBox = null;
         }
     }
 
