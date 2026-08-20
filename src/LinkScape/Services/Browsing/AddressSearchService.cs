@@ -26,6 +26,12 @@ public sealed record AddressSearchResult(
     string Detail,
     string? TabId = null);
 
+public sealed record AddressSearchCollectionGroup(
+    string CollectionId,
+    string CollectionName,
+    int ItemCount,
+    IReadOnlyList<AddressSearchResult> Items);
+
 public static class AddressSearchService
 {
     private const int DefaultResultLimit = 8;
@@ -80,7 +86,14 @@ public static class AddressSearchService
         if (source is AddressSearchSource.All or AddressSearchSource.Favorites)
         {
             var sourceLimit = source == AddressSearchSource.All ? 3 : limit;
-            results.AddRange(FavoritesService.SearchFavorites(query)
+            var favorites = FavoritesService.SearchFavorites(query);
+            var visitCounts = HistoryPersistenceService.GetVisitCounts(favorites.Select(item => item.Url));
+            results.AddRange(favorites
+                .OrderByDescending(item => string.Equals(item.Title, query, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(item => item.Title.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(item => visitCounts.TryGetValue(item.Url, out var count) ? count : 0)
+                .ThenByDescending(item => item.UpdatedAt)
+                .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
                 .Take(sourceLimit)
                 .Select(item => new AddressSearchResult(
                     $"favorite:{item.Id}",
@@ -93,18 +106,8 @@ public static class AddressSearchService
         if (source is AddressSearchSource.All or AddressSearchSource.Collections)
         {
             var sourceLimit = source == AddressSearchSource.All ? 3 : limit;
-            results.AddRange(TabCollectionService.GetCollections()
-                .SelectMany(collection => TabCollectionService.GetItems(collection.Id)
-                    .Where(item =>
-                        Contains(collection.Name, query) ||
-                        Contains(item.Title, query) ||
-                        Contains(item.Url, query))
-                    .Select(item => new AddressSearchResult(
-                        $"collection:{collection.Id}:{item.Id}",
-                        AddressSearchSource.Collections,
-                        DisplayTitle(item.Title, item.Url),
-                        item.Url,
-                        $"Collections › {collection.Name}")))
+            results.AddRange(SearchCollectionGroups(query, sourceLimit)
+                .SelectMany(group => group.Items)
                 .Take(sourceLimit));
         }
 
@@ -112,6 +115,56 @@ public static class AddressSearchService
             .DistinctBy(result => result.Key)
             .Take(Math.Clamp(limit, 1, 100))
             .ToArray();
+    }
+
+    internal static IReadOnlyList<AddressSearchCollectionGroup> SearchCollectionGroups(
+        string query,
+        int itemLimit = 100)
+    {
+        query = query?.Trim() ?? string.Empty;
+        itemLimit = Math.Clamp(itemLimit, 1, 100);
+        var groups = new List<AddressSearchCollectionGroup>();
+
+        var collections = TabCollectionService.GetCollections()
+            .OrderByDescending(collection => string.Equals(
+                collection.Name,
+                query,
+                StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(collection => collection.Name.StartsWith(
+                query,
+                StringComparison.OrdinalIgnoreCase));
+
+        foreach (var collection in collections)
+        {
+            var collectionMatches = Contains(collection.Name, query);
+            var matchingItems = TabCollectionService.GetItems(collection.Id)
+                .Where(item =>
+                    collectionMatches ||
+                    Contains(item.Title, query) ||
+                    Contains(item.Url, query))
+                .ToArray();
+
+            if (query.Length > 0 && !collectionMatches && matchingItems.Length == 0)
+            {
+                continue;
+            }
+
+            groups.Add(new AddressSearchCollectionGroup(
+                collection.Id,
+                collection.Name,
+                matchingItems.Length,
+                matchingItems
+                    .Take(itemLimit)
+                    .Select(item => new AddressSearchResult(
+                        $"collection:{collection.Id}:{item.Id}",
+                        AddressSearchSource.Collections,
+                        DisplayTitle(item.Title, item.Url),
+                        item.Url,
+                        $"Collections › {collection.Name}"))
+                    .ToArray()));
+        }
+
+        return groups;
     }
 
     public static async Task<IReadOnlyList<AddressSearchResult>> SearchAiResultsAsync(

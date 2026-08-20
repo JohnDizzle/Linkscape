@@ -69,3 +69,30 @@ for (const video of document.querySelectorAll(".video-stage video")) {
 
   video.load();
 }
+
+for (const slideshow of document.querySelectorAll("[data-slideshow]")) {
+  const slides = [...slideshow.querySelectorAll("[data-slide]")];
+  const previousButton = slideshow.querySelector("[data-slide-previous]");
+  const nextButton = slideshow.querySelector("[data-slide-next]");
+  const status = slideshow.querySelector("[data-slide-status]");
+  let activeIndex = 0;
+
+  const showSlide = (index) => {
+    if (slides.length === 0) {
+      return;
+    }
+
+    activeIndex = (index + slides.length) % slides.length;
+    slides.forEach((slide, slideIndex) => {
+      slide.hidden = slideIndex !== activeIndex;
+    });
+
+    if (status) {
+      status.textContent = `${activeIndex + 1} of ${slides.length}`;
+    }
+  };
+
+  previousButton?.addEventListener("click", () => showSlide(activeIndex - 1));
+  nextButton?.addEventListener("click", () => showSlide(activeIndex + 1));
+  showSlide(0);
+}

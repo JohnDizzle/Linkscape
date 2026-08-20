@@ -8,8 +8,7 @@
     <link rel="icon" type="image/png" href="media/logo.png">
     <link rel="preload" href="media/logo.png" as="image">
     <link rel="preload" href="media/CompactCommandRail.png" as="image">
-    <link rel="preload" href="media/TitlebarSearchPalette.png" as="image">
-    <link rel="preload" href="media/CommandCenter.mp4" as="video" type="video/mp4">
+    <link rel="preload" href="media/SearchFilterAll.png" as="image">
     <link rel="preload" href="media/Collections.png" as="image">
     <link rel="preload" href="media/JumpList.png" as="image">
     <link rel="preload" href="media/LinkedShareFrom.mp4" as="video" type="video/mp4">
@@ -53,6 +52,8 @@
                     <ul class="change-list">
                         <li>Search active tabs, History, Favorites, and Collection contents from one titlebar command palette.</li>
                         <li>Keep the current query while switching sources, including empty and no-result states, without dismissing the palette.</li>
+                        <li>Surface frequently visited Favorites first while preserving exact and prefix matches during filtering.</li>
+                        <li>Browse Collections as compact accordion cards, choose a startup Collection, or continue into the full management blade.</li>
                         <li>Open a result in the current tab or a new tab, and load larger result sets ten items at a time.</li>
                         <li>Manage open tabs from the compact rail, close individual tabs, or expand the full tab rail when more room is useful.</li>
                         <li>Keep Active tabs, Library, and New tab within reach while the rail is compacted for a wider page.</li>
@@ -60,19 +61,30 @@
 
                     <div class="command-showcase release-media-grid">
                         <figure class="media-card command-rail-card">
-                            <img src="media/CompactCommandRail.png" alt="LinkScape compact command rail">
-                            <figcaption>Essential commands stay present while the tab rail is compact.</figcaption>
+                            <img src="media/CompactCommandRail.png" alt="Compact LinkScape rail showing Active tabs, Library, and New tab buttons">
+                            <figcaption>The compact rail keeps Active tabs, Library, and New tab together. Library opens Search and Filter on the neutral All scope.</figcaption>
                         </figure>
-                        <div class="video-stage">
-                            <div class="video-loading" aria-hidden="true">
-                                <img src="media/logo.png" alt="">
-                                <span>Loading command-center preview...</span>
+                        <section class="media-card command-palette-card feature-slideshow" data-slideshow aria-label="Search and Filter palette preview">
+                            <div class="slideshow-viewport">
+                                <figure class="slideshow-slide" data-slide>
+                                    <img src="media/SearchFilterAll.png" alt="Current Search and Filter palette showing results from all browser-data sources">
+                                    <figcaption>Start with All to search tabs, History, Favorites, and Collections together.</figcaption>
+                                </figure>
+                                <figure class="slideshow-slide" data-slide hidden>
+                                    <img src="media/SearchFilterCollections.png" loading="lazy" alt="Collections filter showing expandable collection cards and startup controls">
+                                    <figcaption>Expand one Collection at a time, select its startup state, or continue into full management.</figcaption>
+                                </figure>
+                                <figure class="slideshow-slide" data-slide hidden>
+                                    <img src="media/SearchFilterFavorites.png" loading="lazy" alt="Favorites filter showing frequently visited matching favorites first">
+                                    <figcaption>Favorites prioritize frequently visited matches while keeping the current query in place.</figcaption>
+                                </figure>
                             </div>
-                            <video controls preload="metadata" playsinline poster="media/TitlebarSearchPalette.png">
-                                <source src="media/CommandCenter.mp4" type="video/mp4">
-                                <track kind="captions" srclang="en" src="media/CommandCenter.en.vtt" label="English">
-                            </video>
-                        </div>
+                            <div class="slideshow-controls">
+                                <button type="button" data-slide-previous aria-label="Show previous screenshot">← Previous</button>
+                                <span class="slideshow-status" data-slide-status aria-live="polite">1 of 3</span>
+                                <button type="button" data-slide-next aria-label="Show next screenshot">Next →</button>
+                            </div>
+                        </section>
                     </div>
 
                 </div>

@@ -3,6 +3,54 @@ namespace LinkScape.Tests;
 [TestClass]
 public sealed class AddressSearchServiceTests
 {
+    [TestInitialize]
+    public void Initialize()
+    {
+        TestCacheScope.Reset();
+    }
+
+    [TestMethod]
+    public void SearchLocal_FavoritesPrioritizesMostVisitedMatches()
+    {
+        FavoritesService.EnsureDatabase();
+        HistoryPersistenceService.EnsureDatabase();
+        FavoritesService.UpsertFavorite(null, "https://less-used.example", "Less used");
+        FavoritesService.UpsertFavorite(null, "https://most-used.example", "Most used");
+        HistoryPersistenceService.RecordVisit("https://less-used.example", "Less used");
+        HistoryPersistenceService.RecordVisit("https://most-used.example", "Most used");
+        HistoryPersistenceService.RecordVisit("https://most-used.example", "Most used");
+        HistoryPersistenceService.RecordVisit("https://most-used.example", "Most used");
+
+        var results = AddressSearchService.SearchLocal(
+            string.Empty,
+            [],
+            AddressSearchSource.Favorites,
+            10);
+
+        Assert.AreEqual(2, results.Count);
+        Assert.AreEqual("https://most-used.example", results[0].Url);
+        Assert.AreEqual("https://less-used.example", results[1].Url);
+    }
+
+    [TestMethod]
+    public void SearchCollectionGroups_IncludesEmptyCollectionsAndFiltersItems()
+    {
+        TabCollectionService.EnsureDatabase();
+        TabCollectionService.UpsertCollection("Empty");
+        TabCollectionService.AddOrUpdateItem("Work", "https://github.com/linkscape", "LinkScape");
+        TabCollectionService.AddOrUpdateItem("Work", "https://example.com", "Example");
+
+        var allGroups = AddressSearchService.SearchCollectionGroups(string.Empty);
+        var filteredGroups = AddressSearchService.SearchCollectionGroups("linkscape");
+
+        Assert.AreEqual(2, allGroups.Count);
+        Assert.IsTrue(allGroups.Any(group => group.CollectionName == "Empty" && group.ItemCount == 0));
+        Assert.AreEqual(1, filteredGroups.Count);
+        Assert.AreEqual("Work", filteredGroups[0].CollectionName);
+        Assert.AreEqual(1, filteredGroups[0].ItemCount);
+        Assert.AreEqual("https://github.com/linkscape", filteredGroups[0].Items[0].Url);
+    }
+
     [TestMethod]
     public void ParseAiResults_AcceptsJsonCodeFenceAndCapsResults()
     {

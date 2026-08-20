@@ -33,6 +33,7 @@ internal static class BrowserConstants
     public const string GlyphSettings = "\uE713";
     public const string GlyphHelp = "\uE897";
     public const string GlyphPause = "\uE769";
+    public const string GlyphPower = "\uE7E8";
     public const string GlyphChevronUp = "\uE70E";
     public const string GlyphChevronDown = "\uE70D";
     public const string GlyphMagnifyGlass = "\uE721";
