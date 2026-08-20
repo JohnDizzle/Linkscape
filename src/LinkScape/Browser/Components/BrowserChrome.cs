@@ -1480,6 +1480,9 @@ internal static class BrowserChrome
     string selectedTabId,
     bool isTabsCollapsed,
     bool isLoading,
+    Action onAddTab,
+    Action onExpandTabRail,
+    Action onOpenCommandPalette,
     Action<int> onSelect,
     Action<string> onToggleFavoriteTab,
     Action<string> onCloseTabFromContextMenu,
@@ -1604,16 +1607,94 @@ internal static class BrowserChrome
 
         if (isTabsCollapsed)
         {
-            return Border(
-                FlexColumn(
-                    tabList
-                        .Flex(grow: 1, basis: 0)
-                )
-            )
-            .Padding(0)
-            .Set(border => ConfigureRailContainer(border, railWidth, onRailTransitionCompleted))
-            .Flex(shrink: 0)
-            .VAlign(VerticalAlignment.Stretch);
+            var compactRail = Border(
+                    (FlexColumn(
+                        BuildCompactRailCommands(
+                            tabs,
+                            selectedTabId,
+                            onAddTab,
+                            onExpandTabRail,
+                            onSelect,
+                            onCloseTabFromContextMenu,
+                            onOpenCommandPalette),
+                        tabList.Flex(grow: 1, basis: 0)) with
+                    {
+                        RowGap = 2
+                    }))
+                .Padding(0)
+                .Set(border => ConfigureRailContainer(border, railWidth, onRailTransitionCompleted))
+                .Flex(shrink: 0)
+                .VAlign(VerticalAlignment.Stretch);
+
+            var compactCommandCenter = BuildCommandCenterBlade(
+                    railCommandCenterSection,
+                    isCommandCenterExpanded: false,
+                    mostVisitedItems,
+                    recentHistoryItems,
+                    historyFilter,
+                    historyLimit,
+                    historyImportStatus,
+                    historyImportBrowserProfiles,
+                    favoriteItems,
+                    favoritesLimit,
+                    tabCollections,
+                    collectionItems,
+                    collectionMembership,
+                    collectionName,
+                    collectionStatus,
+                    favoritesFilter,
+                    favoritesImportStatus,
+                    favoritesImportBrowserProfiles,
+                    isCommandCenterBusy,
+                    isCommandCenterHighlighted,
+                    settingsSnapshot,
+                    onSaveSettingValue,
+                    onHistoryFilterChanged,
+                    onLoadMoreHistory,
+                    onFavoritesFilterChanged,
+                    onLoadMoreFavorites,
+                    onCollectionNameChanged,
+                    onCreateCollection,
+                    onDeleteCollection,
+                    onAddCurrentTabToCollection,
+                    onAddUrlToCollection,
+                    onSetStartupCollection,
+                    onImportHistory,
+                    onImportBrowserHistory,
+                    onImportBrowserHistoryProfile,
+                    onDeleteAllHistory,
+                    onImportFavorites,
+                    onImportBrowserFavorites,
+                    onImportBrowserFavoritesProfile,
+                    onDeleteAllFavorites,
+                    onOpenHistoryItem,
+                    onOpenHistoryItemInNewTab,
+                    onDeleteHistoryItem,
+                    onOpenFavoriteItem,
+                    onOpenFavoriteItemInNewTab,
+                    onDeleteFavoriteItem,
+                    onOpenCollectionItem,
+                    onOpenCollectionItemInNewTab,
+                    onRemoveCollectionItem,
+                    onMoveCollectionItem,
+                    onToggleCommandCenterExpanded,
+                    onDismissCommandCenter,
+                    showExpandButton: true)
+                .Width(420)
+                .Height(360)
+                .Margin(CollapsedRailWidth + 10, 8, 0, 12)
+                .HAlign(HorizontalAlignment.Left)
+                .VAlign(VerticalAlignment.Top);
+
+            return Grid(
+                    [GridSize.Px(railWidth)],
+                    [GridSize.Star()],
+                    compactRail.Grid(row: 0, column: 0),
+                    compactCommandCenter.Grid(row: 0, column: 0))
+                .Width(railWidth)
+                .Set(grid => Microsoft.UI.Xaml.Controls.Canvas.SetZIndex(grid, 100))
+                .Flex(shrink: 0)
+                .VAlign(VerticalAlignment.Stretch);
         }
 
         bool showCompactTabsCard = !isRailTabsExpanded;
@@ -1711,6 +1792,293 @@ internal static class BrowserChrome
         .WithBorder(Theme.SurfaceStroke)
         .Flex(shrink: 0)
         .VAlign(VerticalAlignment.Stretch);
+    }
+
+    private static Element BuildCompactRailCommands(
+        IReadOnlyList<BrowserTab> tabs,
+        string selectedTabId,
+        Action onAddTab,
+        Action onExpandTabRail,
+        Action<int> onSelectTab,
+        Action<string> onCloseTab,
+        Action onOpenCommandPalette)
+    {
+        var tabsFlyout = CreateCompactTabsFlyout(
+            tabs,
+            selectedTabId,
+            onExpandTabRail,
+            onSelectTab,
+            onCloseTab);
+        return VStack(4,
+                IconButton(
+                        BrowserConstants.GlyphTabs,
+                        () => { },
+                        $"Active tabs, {tabs.Count}",
+                        buttonSize: 34,
+                        iconSize: 14,
+                        useGlass: true)
+                    .Set(button => button.Flyout = tabsFlyout)
+                    .HAlign(HorizontalAlignment.Center),
+                IconButton(
+                        BrowserConstants.GlyphLibrary,
+                        onOpenCommandPalette,
+                        "Search tabs, history, favorites, and collections",
+                        buttonSize: 34,
+                        iconSize: 14,
+                        useGlass: true)
+                    .Background(BrowserMaterialTheme.PillFillBrush)
+                    .HAlign(HorizontalAlignment.Center),
+                IconButton(
+                    BrowserConstants.GlyphAdd,
+                    onAddTab,
+                    "New tab",
+                    buttonSize: 34,
+                    iconSize: 14,
+                    useGlass: true)
+                    .HAlign(HorizontalAlignment.Center),
+                Border(TextBlock(string.Empty))
+                    .Width(28)
+                    .Height(1)
+                    .Margin(0, 5, 0, 4)
+                    .Background(BrowserConstants.SurfaceStrokeColorDefaultBrush))
+            .Width(48)
+            .Margin(4, 8, 4, 0)
+            .HAlign(HorizontalAlignment.Center)
+            .Flex(shrink: 0);
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Flyout CreateCompactTabsFlyout(
+        IReadOnlyList<BrowserTab> tabs,
+        string selectedTabId,
+        Action onExpandTabRail,
+        Action<int> onSelectTab,
+        Action<string> onCloseTab)
+    {
+        var flyout = new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.RightEdgeAlignedTop,
+            FlyoutPresenterStyle = GetLinkerFlyoutPresenterStyle()
+        };
+        var tabList = new StackPanel
+        {
+            Spacing = 4
+        };
+
+        for (var index = 0; index < tabs.Count; index++)
+        {
+            var tabIndex = index;
+            var tab = tabs[index];
+            var isSelected = string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal);
+            var title = string.IsNullOrWhiteSpace(tab.Title) ? "Untitled tab" : tab.Title.Trim();
+            var location = tab.Url;
+            if (Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+            {
+                location = uri.Host;
+            }
+
+            var row = new Grid
+            {
+                ColumnSpacing = 10
+            };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            FrameworkElement tabIcon = HasFaviconHost(tab.Url)
+                ? new Microsoft.UI.Xaml.Controls.Image
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
+                        new Uri(BrowserUrl.GetFaviconUrl(tab.Url), UriKind.Absolute)),
+                    Width = 20,
+                    Height = 20,
+                    Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform
+                }
+                : new FontIcon
+                {
+                    FontFamily = BrowserConstants.IconFontFamily,
+                    Glyph = BrowserConstants.GlyphGlobe,
+                    FontSize = 16
+                };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(tabIcon, 0);
+            row.Children.Add(tabIcon);
+
+            var labels = new StackPanel
+            {
+                Spacing = 2,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxLines = 1
+                    },
+                    new TextBlock
+                    {
+                        Text = location,
+                        Opacity = 0.66,
+                        FontSize = 12,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxLines = 1
+                    }
+                }
+            };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(labels, 1);
+            row.Children.Add(labels);
+
+            var stateIcon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = isSelected ? BrowserConstants.GlyphCheckMark : BrowserConstants.GlyphGo,
+                FontSize = 12,
+                Opacity = isSelected ? 1 : 0.58
+            };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(stateIcon, 2);
+            row.Children.Add(stateIcon);
+
+            var tabButton = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Content = row,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(10, 6, 10, 6),
+                Background = isSelected
+                    ? BrowserConstants.AccentFillColorTertiaryBrush
+                    : BrowserMaterialTheme.PillFillBrush,
+                BorderBrush = isSelected
+                    ? BrowserMaterialTheme.SelectedStrokeBrush
+                    : BrowserMaterialTheme.GlassStrokeBrush,
+                BorderThickness = new Thickness(isSelected ? 1.5 : 1),
+                CornerRadius = new CornerRadius(10)
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+                tabButton,
+                isSelected ? $"{title}, active tab" : title);
+            tabButton.Click += (_, _) =>
+            {
+                onSelectTab(tabIndex);
+                flyout.Hide();
+            };
+
+            var closeButton = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Width = 32,
+                Height = 32,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(10),
+                Background = BrowserMaterialTheme.PillFillBrush,
+                BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+                BorderThickness = new Thickness(1),
+                Content = new FontIcon
+                {
+                    FontFamily = BrowserConstants.IconFontFamily,
+                    Glyph = BrowserConstants.GlyphTrash,
+                    FontSize = 13
+                }
+            };
+            var closeLabel = $"Close {title}";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(closeButton, closeLabel);
+            Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(closeButton, closeLabel);
+            closeButton.Click += (_, _) =>
+            {
+                onCloseTab(tab.Id);
+                flyout.Hide();
+            };
+
+            var managementRow = new Grid
+            {
+                ColumnSpacing = 8
+            };
+            managementRow.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star)
+            });
+            managementRow.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = GridLength.Auto
+            });
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(tabButton, 0);
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(closeButton, 1);
+            managementRow.Children.Add(tabButton);
+            managementRow.Children.Add(closeButton);
+            tabList.Children.Add(managementRow);
+        }
+
+        var expandButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Padding = new Thickness(12, 9, 12, 9),
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new FontIcon
+                    {
+                        FontFamily = BrowserConstants.IconFontFamily,
+                        Glyph = BrowserConstants.GlyphFullScreen,
+                        FontSize = 14
+                    },
+                    new TextBlock
+                    {
+                        Text = "Expand tab rail",
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                    }
+                }
+            }
+        };
+        expandButton.Click += (_, _) =>
+        {
+            flyout.Hide();
+            onExpandTabRail();
+        };
+
+        flyout.Content = new StackPanel
+        {
+            Width = 320,
+            Spacing = 8,
+            Children =
+            {
+                new StackPanel
+                {
+                    Spacing = 2,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "Open tabs",
+                            FontSize = 18,
+                            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                        },
+                        new TextBlock
+                        {
+                            Text = tabs.Count == 1 ? "1 tab in this window" : $"{tabs.Count} tabs in this window",
+                            Opacity = 0.68
+                        }
+                    }
+                },
+                new ScrollViewer
+                {
+                    Content = tabList,
+                    MaxHeight = Math.Clamp(tabs.Count, 1, 8) * 58,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    VerticalScrollMode = ScrollMode.Enabled,
+                    HorizontalScrollMode = ScrollMode.Disabled
+                },
+                new Border
+                {
+                    Height = 1,
+                    Background = BrowserConstants.SurfaceStrokeColorDefaultBrush
+                },
+                expandButton
+            }
+        };
+
+        return flyout;
     }
 
     private static void ConfigureRailContainer(
@@ -1958,7 +2326,8 @@ internal static class BrowserChrome
         Action<string> onRemoveCollectionItem,
         Action<string, int> onMoveCollectionItem,
         Action onToggleCommandCenterExpanded,
-        Action onDismissCommandCenter)
+        Action onDismissCommandCenter,
+        bool showExpandButton = true)
     {
         var shouldHighlight = isCommandCenterBusy || isCommandCenterHighlighted;
 
@@ -2007,6 +2376,7 @@ internal static class BrowserChrome
                         buttonSize: 24,
                         iconSize: 8,
                         useGlass: true)
+                    .IsVisible(showExpandButton)
                     .Margin(2, 0, 0, 0),
                     IconButton(
                         BrowserConstants.GlyphClose,

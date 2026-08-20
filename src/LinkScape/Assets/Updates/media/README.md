@@ -5,6 +5,13 @@ Keep each release's media in this folder so older entries remain accurate.
 
 ## Release map
 
+### 1.0.19
+
+- `CompactCommandRail.png` - the persistent command group shown without surrounding page content
+- `TitlebarSearchPalette.png` - the titlebar address field and its unified results palette
+- `CommandCenter.mp4` - a short, silent walkthrough of titlebar search and active-tab management
+- `CommandCenter.en.vtt` - synchronized English subtitles for the video player
+
 ### 1.0.17 (in development)
 
 Planned capture list, in priority order:

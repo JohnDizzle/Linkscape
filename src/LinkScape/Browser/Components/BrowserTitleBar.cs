@@ -8,9 +8,12 @@ namespace LinkScape.Browser.Components;
 internal sealed class BrowserTitleBarController
 {
     internal Action<string, bool>? SetAddressTextCore { get; set; }
+    internal Action? OpenCommandPaletteCore { get; set; }
 
     public void SetAddressText(string value, bool preserveUserEdit = false) =>
         SetAddressTextCore?.Invoke(value, preserveUserEdit);
+
+    public void OpenCommandPalette() => OpenCommandPaletteCore?.Invoke();
 }
 
 internal sealed record BrowserTitleBarProps(
@@ -57,16 +60,22 @@ internal sealed record BrowserTitleBarProps(
 
 internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 {
+    private const int PalettePageSize = 10;
+    private const int PaletteMaximumItems = 100;
     private Microsoft.UI.Xaml.Controls.AutoSuggestBox? _addressBox;
     private Microsoft.UI.Xaml.Controls.Primitives.Popup? _searchPopup;
     private CancellationTokenSource? _searchCancellation;
     private AddressSearchSource _selectedSearchSource = AddressSearchSource.All;
     private IReadOnlyList<AddressSearchResult> _searchResults = [];
     private bool _isWebSearchRunning;
+    private int _localSearchLimit = PalettePageSize;
+    private bool _hasMoreLocalResults;
     private string _searchError = string.Empty;
     private string _addressBarText = string.Empty;
+    private string _paletteFilterText = string.Empty;
     private bool _isAddressBarEditing;
     private bool _suppressAddressBoxTextChanged;
+    private bool _isCommandPaletteRequested;
     private bool _isInitialized;
 
     public override Element Render()
@@ -80,6 +89,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         }
 
         Props.Controller.SetAddressTextCore = SetAddressBarText;
+        Props.Controller.OpenCommandPaletteCore = OpenCommandPalette;
 
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
@@ -154,6 +164,19 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
         _addressBox = addressBox;
 
+        if (_isCommandPaletteRequested)
+        {
+            if (!string.Equals(addressBox.Text, _paletteFilterText, StringComparison.Ordinal))
+            {
+                _suppressAddressBoxTextChanged = true;
+                addressBox.Text = _paletteFilterText;
+                _suppressAddressBoxTextChanged = false;
+            }
+
+            UpdateCommandPalettePlaceholder();
+            return;
+        }
+
         if (!string.Equals(addressBox.Text, _addressBarText, StringComparison.Ordinal))
         {
             _suppressAddressBoxTextChanged = true;
@@ -169,6 +192,14 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             return;
         }
 
+        if (_isCommandPaletteRequested)
+        {
+            _paletteFilterText = value;
+            ScheduleLocalSearch(value);
+            return;
+        }
+
+        _selectedSearchSource = AddressSearchSource.All;
         _isAddressBarEditing = true;
         _addressBarText = value;
         if (IsAddressBoxFocused())
@@ -177,10 +208,63 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         }
     }
 
+    private void OpenCommandPalette()
+    {
+        var addressBox = _addressBox;
+        if (addressBox?.XamlRoot is null)
+        {
+            return;
+        }
+
+        _selectedSearchSource = AddressSearchSource.Collections;
+        _searchResults = [];
+        _searchError = string.Empty;
+        _isCommandPaletteRequested = true;
+        _isAddressBarEditing = true;
+        _paletteFilterText = string.Empty;
+        _suppressAddressBoxTextChanged = true;
+        addressBox.Text = string.Empty;
+        _suppressAddressBoxTextChanged = false;
+        UpdateCommandPalettePlaceholder();
+        addressBox.Focus(FocusState.Programmatic);
+
+        var editor = FindAddressTextBox(addressBox);
+        editor?.Focus(FocusState.Programmatic);
+        ScheduleLocalSearch(string.Empty);
+    }
+
+    private void UpdateCommandPalettePlaceholder()
+    {
+        if (_addressBox is null)
+        {
+            return;
+        }
+
+        _addressBox.PlaceholderText = _selectedSearchSource switch
+        {
+            AddressSearchSource.Tabs => "Filter active tabs",
+            AddressSearchSource.History => "Filter history",
+            AddressSearchSource.Favorites => "Filter favorites",
+            AddressSearchSource.Collections => "Filter collections",
+            _ => "Search tabs, history, favorites, and collections"
+        };
+        _addressBox.QueryIcon = new FontIcon
+        {
+            FontFamily = BrowserConstants.IconFontFamily,
+            Glyph = GetSearchSourceGlyph(_selectedSearchSource),
+            FontSize = 14
+        };
+    }
+
     private void SetAddressBarText(string value, bool preserveUserEdit = false)
     {
         var nextValue = value ?? string.Empty;
         _addressBarText = nextValue;
+
+        if (_isCommandPaletteRequested)
+        {
+            return;
+        }
 
         if (preserveUserEdit && _isAddressBarEditing)
         {
@@ -213,6 +297,11 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     {
         await Task.Delay(50);
 
+        if (_isCommandPaletteRequested)
+        {
+            return;
+        }
+
         if (_addressBox?.XamlRoot is null)
         {
             CloseSearchPopup();
@@ -242,8 +331,14 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         return false;
     }
 
-    private void ScheduleLocalSearch(string value)
+    private void ScheduleLocalSearch(string value, bool preserveLimit = false)
     {
+        if (!preserveLimit)
+        {
+            _localSearchLimit = PalettePageSize;
+            _hasMoreLocalResults = false;
+        }
+
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
         _searchCancellation = new CancellationTokenSource();
@@ -252,7 +347,20 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
         if (query.Length < 2)
         {
-            CloseSearchPopup();
+            _searchResults = [];
+            if (_isCommandPaletteRequested &&
+                _selectedSearchSource is not AddressSearchSource.All and not AddressSearchSource.AiResults)
+            {
+                _ = RunLocalSearchAsync(query, cancellationToken, skipDelay: true);
+            }
+            else if (_isCommandPaletteRequested)
+            {
+                RenderSearchPopup(query);
+            }
+            else
+            {
+                CloseSearchPopup();
+            }
             return;
         }
 
@@ -264,13 +372,26 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         _ = RunLocalSearchAsync(query, cancellationToken);
     }
 
-    private async Task RunLocalSearchAsync(string query, CancellationToken cancellationToken)
+    private async Task RunLocalSearchAsync(
+        string query,
+        CancellationToken cancellationToken,
+        bool skipDelay = false)
     {
         try
         {
-            await Task.Delay(260, cancellationToken);
+            if (!skipDelay)
+            {
+                await Task.Delay(260, cancellationToken);
+            }
+
+            var visibleLimit = _selectedSearchSource == AddressSearchSource.All
+                ? 8
+                : Math.Clamp(_localSearchLimit, PalettePageSize, PaletteMaximumItems);
+            var requestedLimit = _selectedSearchSource == AddressSearchSource.All
+                ? visibleLimit
+                : Math.Min(visibleLimit + 1, PaletteMaximumItems);
             var results = await Task.Run(
-                () => AddressSearchService.SearchLocal(query, Props.Tabs, _selectedSearchSource),
+                () => AddressSearchService.SearchLocal(query, Props.Tabs, _selectedSearchSource, requestedLimit),
                 cancellationToken);
 
             if (cancellationToken.IsCancellationRequested || _addressBox is null)
@@ -280,13 +401,16 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
             _addressBox.DispatcherQueue.TryEnqueue(() =>
             {
-                if (!IsAddressBoxFocused())
+                if (!_isCommandPaletteRequested && !IsAddressBoxFocused())
                 {
                     CloseSearchPopup();
                     return;
                 }
 
-                _searchResults = results;
+                _hasMoreLocalResults = _selectedSearchSource != AddressSearchSource.All &&
+                    visibleLimit < PaletteMaximumItems &&
+                    results.Count > visibleLimit;
+                _searchResults = results.Take(visibleLimit).ToArray();
                 _searchError = string.Empty;
                 RenderSearchPopup(query);
             });
@@ -331,18 +455,21 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     private void RenderSearchPopup(string query)
     {
         var addressBox = _addressBox;
-        if (addressBox?.XamlRoot is null || query.Length < 2)
+        if (addressBox?.XamlRoot is null || (query.Length < 2 && !_isCommandPaletteRequested))
         {
             return;
         }
 
-        _searchPopup ??= new Microsoft.UI.Xaml.Controls.Primitives.Popup
+        if (_searchPopup is null)
         {
-            // Light-dismiss popups move keyboard focus into the popup when they open.
-            // Keep this non-modal so address-bar typing remains uninterrupted.
-            IsLightDismissEnabled = false,
-            ShouldConstrainToRootBounds = true
-        };
+            _searchPopup = new Microsoft.UI.Xaml.Controls.Primitives.Popup
+            {
+                ShouldConstrainToRootBounds = true
+            };
+            _searchPopup.Closed += OnSearchPopupClosed;
+        }
+
+        _searchPopup.IsLightDismissEnabled = _isCommandPaletteRequested;
         _searchPopup.XamlRoot = addressBox.XamlRoot;
 
         var point = addressBox.TransformToVisual(null).TransformPoint(new Windows.Foundation.Point(0, 0));
@@ -355,6 +482,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         {
             Spacing = 10
         };
+        content.Children.Add(BuildPaletteHeader());
         content.Children.Add(BuildSearchSourcePills(query));
 
         if (_isWebSearchRunning)
@@ -384,13 +512,25 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
                 Margin = new Thickness(4, 10, 4, 10)
             });
         }
+        else if (query.Length < 2 && _selectedSearchSource == AddressSearchSource.All)
+        {
+            content.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+            {
+                Text = "Type to search tabs, history, favorites, and collections. Press Enter to use the default web search.",
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.76,
+                Margin = new Thickness(4, 10, 4, 10)
+            });
+        }
         else if (_searchResults.Count == 0)
         {
             content.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
             {
                 Text = _selectedSearchSource == AddressSearchSource.AiResults
                     ? "Press AI Results → to request provider results."
-                    : "No local matches. Choose AI Results → to ask your configured provider.",
+                    : query.Length == 0
+                        ? $"No {GetSearchSourceLabel(_selectedSearchSource).ToLowerInvariant()} to show yet."
+                        : "No local matches. Press Enter for the default web search, or choose AI Results →.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.76,
                 Margin = new Thickness(4, 10, 4, 10)
@@ -399,18 +539,58 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         else
         {
             var resultStack = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 6 };
-            foreach (var result in _searchResults)
+            if (_selectedSearchSource == AddressSearchSource.Collections)
             {
-                resultStack.Children.Add(BuildSearchResultRow(result));
+                foreach (var group in _searchResults.GroupBy(result => result.Detail))
+                {
+                    resultStack.Children.Add(new Microsoft.UI.Xaml.Controls.TextBlock
+                    {
+                        Text = group.Key.Replace("Collections › ", string.Empty, StringComparison.Ordinal),
+                        FontSize = 12,
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                        Opacity = 0.72,
+                        Margin = new Thickness(6, 8, 6, 2)
+                    });
+
+                    foreach (var result in group)
+                    {
+                        resultStack.Children.Add(BuildSearchResultRow(result));
+                    }
+                }
+            }
+            else
+            {
+                foreach (var result in _searchResults)
+                {
+                    resultStack.Children.Add(BuildSearchResultRow(result));
+                }
             }
 
             content.Children.Add(new Microsoft.UI.Xaml.Controls.ScrollViewer
             {
                 Content = resultStack,
-                MaxHeight = 430,
+                MaxHeight = _hasMoreLocalResults ? 280 : 330,
                 VerticalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Disabled
             });
+
+            if (_hasMoreLocalResults)
+            {
+                var loadMoreButton = BuildSearchPill(
+                    $"Load {PalettePageSize} more",
+                    selected: false,
+                    glyph: BrowserConstants.GlyphChevronDown);
+                loadMoreButton.HorizontalAlignment = HorizontalAlignment.Center;
+                loadMoreButton.Margin = new Thickness(0, 4, 0, 0);
+                loadMoreButton.Click += (_, _) =>
+                {
+                    _localSearchLimit = Math.Min(
+                        _localSearchLimit + PalettePageSize,
+                        PaletteMaximumItems);
+                    ScheduleLocalSearch(query, preserveLimit: true);
+                };
+                content.Children.Add(loadMoreButton);
+            }
         }
 
         var popupBorder = new Microsoft.UI.Xaml.Controls.Border
@@ -420,10 +600,11 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             Padding = new Thickness(12),
             CornerRadius = new CornerRadius(16),
             Background = BrowserMaterialTheme.ChatSurfaceBrush,
-            BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+            BorderBrush = BrowserMaterialTheme.SelectedStrokeBrush,
             BorderThickness = new Thickness(1),
             Child = content,
-            Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow()
+            Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow(),
+            Translation = new System.Numerics.Vector3(0, 2, 12)
         };
 
         _searchPopup.Child = popupBorder;
@@ -431,6 +612,10 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         _searchPopup.HorizontalOffset = Math.Clamp(centeredOffset, leftLimit, Math.Max(leftLimit, rightLimit - popupWidth));
         _searchPopup.VerticalOffset = point.Y + addressBox.ActualHeight + 6;
         _searchPopup.IsOpen = true;
+        if (_isCommandPaletteRequested)
+        {
+            _ = addressBox.DispatcherQueue.TryEnqueue(() => addressBox.Focus(FocusState.Programmatic));
+        }
     }
 
     private static Microsoft.UI.Xaml.Controls.TextBox? FindAddressTextBox(DependencyObject parent)
@@ -479,15 +664,15 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
                      AddressSearchSource.All,
                      AddressSearchSource.Tabs,
                      AddressSearchSource.History,
-                     AddressSearchSource.Favorites
+                     AddressSearchSource.Favorites,
+                     AddressSearchSource.Collections
                  })
         {
-            var sourceButton = BuildSearchPill(source.ToString(), source == _selectedSearchSource);
-            sourceButton.Click += (_, _) =>
-            {
-                _selectedSearchSource = source;
-                ScheduleLocalSearch(query);
-            };
+            var sourceButton = BuildSearchPill(
+                source.ToString(),
+                source == _selectedSearchSource,
+                GetSearchSourceGlyph(source));
+            sourceButton.Click += (_, _) => SelectSearchSource(source, query);
             row.Children.Add(sourceButton);
         }
 
@@ -498,16 +683,157 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
             AddressSearchService.CanSearchAiResults
                 ? $"Request AI-assisted URL results with {LinkerAiCredentialService.SelectedProvider.DisplayName}"
                 : "Add an API key for the selected Linker provider to enable AI results");
-        webButton.Click += (_, _) => _ = RunWebSearchAsync(query);
+        webButton.Click += (_, _) =>
+        {
+            _ = RunWebSearchAsync(query);
+        };
         row.Children.Add(webButton);
 
         return row;
     }
 
-    private static Microsoft.UI.Xaml.Controls.Button BuildSearchPill(string label, bool selected) =>
+    private void SelectSearchSource(AddressSearchSource source, string query)
+    {
+        if (!_isCommandPaletteRequested)
+        {
+            // A source choice made from ordinary address search becomes the same
+            // persistent palette opened by the compact Library command.
+            _paletteFilterText = query;
+            _addressBarText = Props.SelectedTab.Url;
+            _isCommandPaletteRequested = true;
+            _isAddressBarEditing = true;
+        }
+
+        _selectedSearchSource = source;
+        _searchResults = [];
+        _searchError = string.Empty;
+        _hasMoreLocalResults = false;
+        UpdateCommandPalettePlaceholder();
+        RenderSearchPopup(_paletteFilterText);
+        ScheduleLocalSearch(_paletteFilterText);
+    }
+
+    private Microsoft.UI.Xaml.UIElement BuildPaletteHeader()
+    {
+        var sourceLabel = GetSearchSourceLabel(_selectedSearchSource);
+        var detail = _searchResults.Count == 0
+            ? sourceLabel == "Collections" ? "Collection contents" : $"Browse {sourceLabel.ToLowerInvariant()}"
+            : $"{_searchResults.Count} shown";
+
+        var headerGrid = new Microsoft.UI.Xaml.Controls.Grid
+        {
+            ColumnSpacing = 10
+        };
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var sourceIcon = new FontIcon
+        {
+            FontFamily = BrowserConstants.IconFontFamily,
+            Glyph = GetSearchSourceGlyph(_selectedSearchSource),
+            FontSize = 16
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(sourceIcon, 0);
+        headerGrid.Children.Add(sourceIcon);
+
+        var labels = new StackPanel
+        {
+            Spacing = 1,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = sourceLabel,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+                },
+                new TextBlock
+                {
+                    Text = detail,
+                    FontSize = 11,
+                    Opacity = 0.68
+                }
+            }
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(labels, 1);
+        headerGrid.Children.Add(labels);
+
+        var closeButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Width = 30,
+            Height = 30,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(9),
+            Background = BrowserMaterialTheme.PillFillBrush,
+            BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+            BorderThickness = new Thickness(1),
+            Content = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = BrowserConstants.GlyphClose,
+                FontSize = 11
+            }
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(closeButton, "Close command palette");
+        Microsoft.UI.Xaml.Controls.ToolTipService.SetToolTip(closeButton, "Close command palette");
+        closeButton.Click += (_, _) => CloseSearchPopup();
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(closeButton, 2);
+        headerGrid.Children.Add(closeButton);
+
+        return new Border
+        {
+            Padding = new Thickness(10, 8, 10, 8),
+            CornerRadius = new CornerRadius(10),
+            Background = BrowserMaterialTheme.GlassFillBrush,
+            BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
+            BorderThickness = new Thickness(1),
+            Child = headerGrid
+        };
+    }
+
+    private static string GetSearchSourceGlyph(AddressSearchSource source) => source switch
+    {
+        AddressSearchSource.Tabs => BrowserConstants.GlyphTabs,
+        AddressSearchSource.History => BrowserConstants.GlyphHistory,
+        AddressSearchSource.Favorites => BrowserConstants.GlyphFavorite,
+        AddressSearchSource.Collections => BrowserConstants.GlyphCollections,
+        AddressSearchSource.AiResults => BrowserConstants.GlyphChat,
+        _ => BrowserConstants.GlyphMagnifyGlass
+    };
+
+    private static string GetSearchSourceLabel(AddressSearchSource source) => source switch
+    {
+        AddressSearchSource.Tabs => "Tabs",
+        AddressSearchSource.History => "History",
+        AddressSearchSource.Favorites => "Favorites",
+        AddressSearchSource.Collections => "Collections",
+        AddressSearchSource.AiResults => "AI results",
+        _ => "All"
+    };
+
+    private static Microsoft.UI.Xaml.Controls.Button BuildSearchPill(
+        string label,
+        bool selected,
+        string? glyph = null) =>
         new()
         {
-            Content = label,
+            Content = string.IsNullOrWhiteSpace(glyph)
+                ? new TextBlock { Text = label }
+                : new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 7,
+                    Children =
+                    {
+                        new FontIcon
+                        {
+                            FontFamily = BrowserConstants.IconFontFamily,
+                            Glyph = glyph,
+                            FontSize = 12
+                        },
+                        new TextBlock { Text = label }
+                    }
+                },
             Height = 30,
             Padding = new Thickness(12, 0, 12, 0),
             CornerRadius = new CornerRadius(9),
@@ -631,6 +957,27 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     private void CloseSearchPopup()
     {
         _searchCancellation?.Cancel();
+        var shouldRestoreAddress = _isCommandPaletteRequested;
+        _isCommandPaletteRequested = false;
+        _paletteFilterText = string.Empty;
+        _selectedSearchSource = AddressSearchSource.All;
+        if (_addressBox is not null)
+        {
+            _addressBox.PlaceholderText = "Search or enter web address";
+            _addressBox.QueryIcon = new FontIcon
+            {
+                FontFamily = BrowserConstants.IconFontFamily,
+                Glyph = BrowserConstants.GlyphMagnifyGlass,
+                FontSize = 14
+            };
+            if (shouldRestoreAddress && !string.Equals(_addressBox.Text, _addressBarText, StringComparison.Ordinal))
+            {
+                _suppressAddressBoxTextChanged = true;
+                _addressBox.Text = _addressBarText;
+                _suppressAddressBoxTextChanged = false;
+                _isAddressBarEditing = false;
+            }
+        }
         var popup = _searchPopup;
         _searchPopup = null;
 
@@ -651,6 +998,16 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
         catch (InvalidOperationException)
         {
             // Treat disconnected popup cleanup as best-effort.
+        }
+    }
+
+    private void OnSearchPopupClosed(object? sender, object e)
+    {
+        // Native light dismissal closes the Popup first; synchronize the component's
+        // filter/address state through the same cleanup path as X and Escape.
+        if (_searchPopup is not null)
+        {
+            CloseSearchPopup();
         }
     }
 }

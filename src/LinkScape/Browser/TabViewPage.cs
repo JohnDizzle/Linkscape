@@ -603,6 +603,7 @@ class TabViewPage : Component
 
             if (nextExpanded)
             {
+                nextSession = BrowserSessionStore.SetTabsCollapsed(nextSession, false);
                 nextSession = BrowserSessionStore.SetRailTabsExpanded(nextSession, false);
             }
 
@@ -2587,6 +2588,11 @@ class TabViewPage : Component
                 selectedTag,
                 isTabsCollapsed,
                 isLoading,
+                AddTab,
+                () => UpdateBrowserSession(state =>
+                    BrowserSessionStore.MaximizeRailTabs(
+                        BrowserSessionStore.SetTabsCollapsed(state, false))),
+                _browserTitleBarController.OpenCommandPalette,
                 SelectTab,
                 ToggleFavoriteTab,
                 CloseTab,

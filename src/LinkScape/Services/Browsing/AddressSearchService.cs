@@ -14,6 +14,7 @@ public enum AddressSearchSource
     Tabs,
     History,
     Favorites,
+    Collections,
     AiResults
 }
 
@@ -39,7 +40,7 @@ public static class AddressSearchService
         int limit = DefaultResultLimit)
     {
         query = query?.Trim() ?? string.Empty;
-        if (query.Length < 2 || source == AddressSearchSource.AiResults)
+        if ((query.Length < 2 && source == AddressSearchSource.All) || source == AddressSearchSource.AiResults)
         {
             return [];
         }
@@ -89,9 +90,27 @@ public static class AddressSearchService
                     "Favorites")));
         }
 
+        if (source is AddressSearchSource.All or AddressSearchSource.Collections)
+        {
+            var sourceLimit = source == AddressSearchSource.All ? 3 : limit;
+            results.AddRange(TabCollectionService.GetCollections()
+                .SelectMany(collection => TabCollectionService.GetItems(collection.Id)
+                    .Where(item =>
+                        Contains(collection.Name, query) ||
+                        Contains(item.Title, query) ||
+                        Contains(item.Url, query))
+                    .Select(item => new AddressSearchResult(
+                        $"collection:{collection.Id}:{item.Id}",
+                        AddressSearchSource.Collections,
+                        DisplayTitle(item.Title, item.Url),
+                        item.Url,
+                        $"Collections › {collection.Name}")))
+                .Take(sourceLimit));
+        }
+
         return results
             .DistinctBy(result => result.Key)
-            .Take(Math.Clamp(limit, 1, 10))
+            .Take(Math.Clamp(limit, 1, 100))
             .ToArray();
     }
 
