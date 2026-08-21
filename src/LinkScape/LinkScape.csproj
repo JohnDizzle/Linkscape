@@ -35,7 +35,7 @@
         <AppxBundlePlatforms>x64</AppxBundlePlatforms>
         <HoursBetweenUpdateChecks>0</HoursBetweenUpdateChecks>
         <GenerateTemporaryStoreCertificate>false</GenerateTemporaryStoreCertificate>
-        <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+        <ApplicationIcon>Assets\StoreLogo.ico</ApplicationIcon>
     </PropertyGroup>
     <ItemGroup>
       <Compile Remove="Legacy\AIChat.cs" />
@@ -80,7 +80,10 @@
       <Content Include="THIRD-PARTY-NOTICES.md" />
     </ItemGroup>
     <ItemGroup>
-      <Content Update="Assets\icon.ico">
+      <Content Update="Assets\StoreLogo.ico">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+      <Content Update="Assets\StoreLogo.ico">
         <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       </Content>
       <Content Update="Assets\LoadingLink.silver.svg">

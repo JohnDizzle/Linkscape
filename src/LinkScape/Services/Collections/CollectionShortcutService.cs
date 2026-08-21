@@ -19,7 +19,7 @@ public static class CollectionShortcutService
     {
         try
         {
-            GetStableIconPath();
+            var expectedIconPath = GetStableIconPath();
             var shortcutPath = FindShortcutPath(collection) ?? GetShortcutPath(collection);
             var exists = File.Exists(shortcutPath);
             return new CollectionShortcutInfo(
@@ -27,7 +27,7 @@ public static class CollectionShortcutService
                 collection.Name,
                 shortcutPath,
                 exists,
-                exists && HasExpectedTarget(shortcutPath, collection.Id));
+                exists && HasExpectedTarget(shortcutPath, collection.Id, expectedIconPath));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -119,11 +119,15 @@ public static class CollectionShortcutService
         }
     }
 
-    private static bool HasExpectedTarget(string shortcutPath, string collectionId)
+    private static bool HasExpectedTarget(string shortcutPath, string collectionId, string expectedIconPath)
     {
         return TryReadShortcut(shortcutPath, out var activationUri, out var iconPath) &&
             string.Equals(activationUri, CreateActivationUri(collectionId), StringComparison.Ordinal) &&
             !string.IsNullOrWhiteSpace(iconPath) &&
+            string.Equals(
+                Path.GetFullPath(iconPath),
+                Path.GetFullPath(expectedIconPath),
+                StringComparison.OrdinalIgnoreCase) &&
             File.Exists(iconPath);
     }
 
@@ -194,16 +198,20 @@ public static class CollectionShortcutService
     private static string GetStableIconPath()
     {
         var iconFolder = Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "CollectionShortcuts");
-        var iconPath = Path.Combine(iconFolder, "LinkScape.ico");
+        var iconPath = Path.Combine(iconFolder, "LinkScape-Store.ico");
         Directory.CreateDirectory(iconFolder);
 
         var sourcePath = Path.Combine(AppContext.BaseDirectory, "Assets", "StoreLogo.ico");
-        if (File.Exists(sourcePath) &&
-            (!File.Exists(iconPath) || new FileInfo(sourcePath).Length != new FileInfo(iconPath).Length))
+        if (!File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException("The LinkScape shortcut icon is not installed.", sourcePath);
+        }
+
+        if (!File.Exists(iconPath) || new FileInfo(sourcePath).Length != new FileInfo(iconPath).Length)
         {
             File.Copy(sourcePath, iconPath, overwrite: true);
         }
 
-        return File.Exists(iconPath) ? iconPath : Environment.ProcessPath ?? string.Empty;
+        return iconPath;
     }
 }
