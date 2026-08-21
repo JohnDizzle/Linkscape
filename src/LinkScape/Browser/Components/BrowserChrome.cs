@@ -31,6 +31,7 @@ internal static class BrowserChrome
     internal const double CompactTitleBarBreakpoint = 1180;
     private static Style? _expandedTabItemContainerStyle;
     private static Style? _collapsedTabItemContainerStyle;
+    private static readonly HashSet<string> PulsedAppKeys = new(StringComparer.Ordinal);
     
     public static double CollapsedRailWidthDefault { get; private set; } = 400;
 
@@ -182,7 +183,9 @@ internal static class BrowserChrome
                 installableWebApp is not null
                     ? isWebAppInstalled
                         ? IconButton("\uE8A7", onOpenWebApp, $"App available: Open {installableWebApp.Name}", buttonSize: 32, iconSize: 15, useGlass: true)
-                            .Set(button => StartAppAvailablePulse(button, installableWebApp.ManifestUrl))
+                            .Set(button => StartAppAvailablePulse(
+                                button,
+                                $"{selectedTab.Id}|{installableWebApp.ManifestUrl}"))
                         : IconButton("\uE896", onInstallWebApp, $"App available: Install {installableWebApp.Name}", buttonSize: 32, iconSize: 15, useGlass: true)
                     : null,
                 IconButton(BrowserConstants.GlyphNewWindow, onOpenSelectedTabInNewWindow, "Open active tab in new LinkScape window", buttonSize: 32, iconSize: 15, useGlass: true),
@@ -467,17 +470,13 @@ internal static class BrowserChrome
     Microsoft.UI.Xaml.Controls.Button button,
     string appKey)
     {
-        // Already animated for THIS app.
-        if (string.Equals(
-                button.Tag as string,
-                appKey,
-                StringComparison.Ordinal))
+        // Reactor may recreate the title-bar button when switching between
+        // compact and expanded layouts. Remember the discovery independently
+        // of that transient control so the attention pulse runs only once.
+        if (!PulsedAppKeys.Add(appKey))
         {
             return;
         }
-
-        // Remember which app this button was animated for.
-        button.Tag = appKey;
         // Save the existing glass style values.
         var originalBorderBrush = button.BorderBrush;
         var originalBorderThickness = button.BorderThickness;
