@@ -93,5 +93,10 @@
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
     </ItemGroup>
+    <ItemGroup>
+      <Content Update="Assets\Updates\media\ActiveTabCompactRail.png">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </Content>
+    </ItemGroup>
     <Import Project="LinkScape.Signing.props" Condition="Exists('LinkScape.Signing.props')" />
 </Project>
