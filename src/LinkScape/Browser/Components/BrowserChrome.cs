@@ -1,7 +1,9 @@
 using LinkScape.Browser;
 using LinkScape.Models;
+using LinkScape.Services.Collections;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Windows.Services.Store;
 using Windows.System;
@@ -1628,6 +1630,7 @@ internal static class BrowserChrome
             var compactCommandCenter = BuildCommandCenterBlade(
                     railCommandCenterSection,
                     isCommandCenterExpanded: false,
+                    tabs,
                     mostVisitedItems,
                     recentHistoryItems,
                     historyFilter,
@@ -1727,6 +1730,7 @@ internal static class BrowserChrome
                 BuildCommandCenterHost(
                     railCommandCenterSection,
                     isCommandCenterExpanded,
+                    tabs,
                     mostVisitedItems,
                     recentHistoryItems,
                     historyFilter,
@@ -2149,6 +2153,7 @@ internal static class BrowserChrome
     private static Element BuildCommandCenterHost(
         string activeCommandCenterSection,
         bool isCommandCenterExpanded,
+        IReadOnlyList<BrowserTab> activeTabs,
         IReadOnlyList<HistoryItem> mostVisitedItems,
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
@@ -2205,6 +2210,7 @@ internal static class BrowserChrome
         var blade = BuildCommandCenterBlade(
             activeCommandCenterSection,
             isCommandCenterExpanded,
+            activeTabs,
             mostVisitedItems,
             recentHistoryItems,
             historyFilter,
@@ -2276,6 +2282,7 @@ internal static class BrowserChrome
     private static Element BuildCommandCenterBlade(
         string activeCommandCenterSection,
         bool isCommandCenterExpanded,
+        IReadOnlyList<BrowserTab> activeTabs,
         IReadOnlyList<HistoryItem> mostVisitedItems,
         IReadOnlyList<HistoryItem> recentHistoryItems,
         string historyFilter,
@@ -2341,7 +2348,7 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesLimit, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onLoadMoreFavorites, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
-            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onDeleteCollection, onAddCurrentTabToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
+            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, activeTabs, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onDeleteCollection, onAddCurrentTabToCollection, onAddUrlToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
         };
@@ -3370,45 +3377,46 @@ internal static class BrowserChrome
         bool isLoading)
     {
         return Border(
-            Border(
-                (FlexRow(
-                    BuildTabIcon(tab, isLoading),
-                    TextBlock(tab.Title)
-                        .TextTrimming(TextTrimming.CharacterEllipsis)
-                        .TextWrapping(TextWrapping.Wrap)
-                        .Set(textBlock =>
-                        {
-                            textBlock.FontFamily = BrowserConstants.TextFontFamily;
-                            textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                            textBlock.MaxLines = 2;
-                            textBlock.MinWidth = 0;
-                        }).FontSize(12)
-                        .MinWidth(0)
-                        .Flex(grow: 1, basis: 0),
-                    IconButton(
-                        tab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
-                        () => onToggleFavoriteTab(tab.Id),
-                        tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
-                        buttonSize: 28,
-                        iconSize: 14)
-                        .Flex(shrink: 0)
-                ) with
-                {
-                    ColumnGap = 8
-                })
-                .HAlign(HorizontalAlignment.Stretch)
-            )
-            .Padding(10, 8)
-            .CornerRadius(12)
-            .Set(border => border.Style = GetGlassCardStyle())
+            (FlexRow(
+                BuildTabIcon(tab, isLoading, useTileChrome: false),
+                TextBlock(tab.Title)
+                    .TextTrimming(TextTrimming.CharacterEllipsis)
+                    .TextWrapping(TextWrapping.NoWrap)
+                    .Set(textBlock =>
+                    {
+                        textBlock.FontFamily = BrowserConstants.TextFontFamily;
+                        textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                        textBlock.MaxLines = 1;
+                        textBlock.MinWidth = 0;
+                    })
+                    .FontSize(13)
+                    .MinWidth(0)
+                    .Flex(grow: 1, basis: 0),
+                IconButton(
+                    tab.IsFavorite ? BrowserConstants.GlyphFavorite : BrowserConstants.GlyphFavoriteOutline,
+                    () => onToggleFavoriteTab(tab.Id),
+                    tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
+                    buttonSize: 30,
+                    iconSize: 14,
+                    useGlass: true)
+                    .Flex(shrink: 0)
+            ) with
+            {
+                ColumnGap = 10
+            })
+            .HAlign(HorizontalAlignment.Stretch)
+            .VAlign(VerticalAlignment.Center)
         )
-        .Padding(12)
-        .CornerRadius(16)
+        .Padding(14, 10)
+        .CornerRadius(14)
+        .Background(BrowserMaterialTheme.GlassFillBrush)
+        .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
         .Set(border =>
         {
-            border.Style = GetGlassCardStyle();
             border.DoubleTapped += (_, _) => onShowTabs();
             ToolTipService.SetToolTip(border, "Double-click to show the full tabs list.");
+            border.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+            border.Translation = new System.Numerics.Vector3(0, 1, 8);
             ApplyCompactTabsCardBorderState(border, isLoading);
         });
     }
@@ -3423,7 +3431,7 @@ internal static class BrowserChrome
 
         ApplyTabItemBorderState(border, false, false);
         border.BorderThickness = new Thickness(1);
-        border.BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush;
+        border.BorderBrush = BrowserMaterialTheme.GlassStrokeBrush;
     }
 
     private static Element BuildExpandableTabsList(Element tabList, Action onMinimizeTabs)
@@ -3467,62 +3475,56 @@ internal static class BrowserChrome
                         () => onToggleFavoriteTab(tab.Id),
                         tab.IsFavorite ? "Remove active tab from favorites" : "Add active tab to favorites",
                         buttonSize: 28,
-                        iconSize: 14)
+                        iconSize: 14,
+                        useGlass: true)
                 ) with
                 {
                     ColumnGap = 8
                 })
                 .HAlign(HorizontalAlignment.Stretch),
-                Border(
-                    VStack(10,
-                        (FlexRow(
-                            BuildTabIcon(tab, isLoading),
-                            VStack(4,
-                                TextBlock(tab.Title)
-                                    .TextTrimming(TextTrimming.CharacterEllipsis)
-                                    .TextWrapping(TextWrapping.Wrap)
-                                    .Set(textBlock =>
-                                    {
-                                        textBlock.FontFamily = BrowserConstants.TextFontFamily;
-                                        textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
-                                        textBlock.MaxLines = 2;
-                                        textBlock.MinWidth = 0;
-                                    }),
-                                TextBlock("Active tab")
-                                    .Opacity(0.66)
-                                    .FontSize(11)
-                            )
-                            .MinWidth(0)
-                            .Flex(grow: 1, basis: 0),
-                            HStack(4,
-                                IconButton(BrowserConstants.GlyphRefresh, () => onReloadTab(tab.Id), "Reload active tab", buttonSize: 28, iconSize: 13),
-                                IconButton(BrowserConstants.GlyphTrash, () => onCloseTab(tab.Id), "Close active tab", buttonSize: 28, iconSize: 13)
-                            ).Flex(shrink: 0)
-                        ) with
-                        {
-                            ColumnGap = 10
-                        })
-                        .HAlign(HorizontalAlignment.Stretch),
-                        HStack(8,
-                            BuildTabMetricPill("Session", FormatTabSessionAge(tab.DateTime)),
-                            BuildTabMetricPill("Opened", tab.DateTime.ToString("g"))
-                        )
-                    )
-                    .HAlign(HorizontalAlignment.Stretch)
-                )
-                .Padding(12)
-                .CornerRadius(12)
-                .Background(BrowserConstants.LayerFillDefaultBrush)
-                .WithBorder(Theme.SurfaceStroke)
+                (FlexRow(
+                    BuildTabIcon(tab, isLoading, useTileChrome: false),
+                    VStack(3,
+                        TextBlock(tab.Title)
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .TextWrapping(TextWrapping.NoWrap)
+                            .Set(textBlock =>
+                            {
+                                textBlock.FontFamily = BrowserConstants.TextFontFamily;
+                                textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
+                                textBlock.MaxLines = 1;
+                                textBlock.MinWidth = 0;
+                            }),
+                        TextBlock("Active tab")
+                            .Opacity(0.66)
+                            .FontSize(11))
+                    .MinWidth(0)
+                    .Flex(grow: 1, basis: 0),
+                    HStack(6,
+                        IconButton(BrowserConstants.GlyphRefresh, () => onReloadTab(tab.Id), "Reload active tab", buttonSize: 30, iconSize: 13, useGlass: true),
+                        IconButton(BrowserConstants.GlyphTrash, () => onCloseTab(tab.Id), "Close active tab", buttonSize: 30, iconSize: 13, useGlass: true))
+                    .Flex(shrink: 0)) with
+                {
+                    ColumnGap = 10
+                })
+                .HAlign(HorizontalAlignment.Stretch),
+                HStack(8,
+                    BuildTabMetricPill("Session", FormatTabSessionAge(tab.DateTime)),
+                    BuildTabMetricPill("Opened", tab.DateTime.ToString("g")))
             )
             .HAlign(HorizontalAlignment.Stretch)
         )
-        .Padding(12)
-        .CornerRadius(16)
-        .Background(BrowserConstants.LayerFillAltBrush)
-        .WithBorder(Theme.SurfaceStroke)
+        .Padding(14)
+        .CornerRadius(14)
+        .Background(BrowserMaterialTheme.GlassFillBrush)
+        .WithBorder(BrowserMaterialTheme.GlassStrokeBrush)
         .MinHeight(ActiveTabHeaderMinHeight)
-        .HAlign(HorizontalAlignment.Stretch);
+        .HAlign(HorizontalAlignment.Stretch)
+        .Set(border =>
+        {
+            border.Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow();
+            border.Translation = new System.Numerics.Vector3(0, 1, 8);
+        });
     }
 
     private static Element BuildTabMetricPill(string label, string value)
@@ -3539,9 +3541,8 @@ internal static class BrowserChrome
             )
         )
         .Padding(8, 6)
-        .CornerRadius(6)
+        .CornerRadius(8)
         .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
-        .WithBorder(Theme.SurfaceStroke)
         .Flex(grow: 1, basis: 0);
     }
 
@@ -3980,6 +3981,7 @@ internal static class BrowserChrome
 
     private static Element BuildCollectionsBladeContent(
         IReadOnlyDictionary<string, string> settingsSnapshot,
+        IReadOnlyList<BrowserTab> activeTabs,
         IReadOnlyList<TabCollection> collections,
         IReadOnlyList<TabCollectionItem> collectionItems,
         string collectionName,
@@ -3988,6 +3990,7 @@ internal static class BrowserChrome
         Action onCreateCollection,
         Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
+        Action<string, string, string> onAddUrlToCollection,
         Action onSetStartupCollection,
         Action<string> onOpenCollectionItem,
         Action<string> onOpenCollectionItemInNewTab,
@@ -3998,12 +4001,68 @@ internal static class BrowserChrome
         settingsSnapshot.TryGetValue(TabCollectionService.StartupCollectionSettingKey, out var startupCollectionId);
         var selectedCollection = collections.FirstOrDefault(collection =>
             string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase));
+
+        async void RemoveCollectionFromPill(TabCollection collection)
+        {
+            var itemCount = TabCollectionService.GetItems(collection.Id).Count;
+            var itemLabel = itemCount == 1 ? "saved page" : "saved pages";
+            if (!await ConfirmCollectionContextActionAsync(
+                    $"Remove '{collection.Name}'?",
+                    $"This collection contains {itemCount} {itemLabel}. Its open tabs, history, and favorites will remain.",
+                    "Continue"))
+            {
+                return;
+            }
+
+            if (!await ConfirmCollectionContextActionAsync(
+                    "Permanently remove collection?",
+                    $"Remove '{collection.Name}', its {itemCount} {itemLabel}, and its LinkScape Desktop launcher? This cannot be undone.",
+                    "Remove permanently"))
+            {
+                return;
+            }
+
+            if (!TabCollectionService.DeleteCollection(collection.Id))
+            {
+                BrowserNoticeService.Show($"Could not find collection '{collection.Name}'.");
+                return;
+            }
+
+            try
+            {
+                CollectionShortcutService.Remove(collection.Id);
+            }
+            catch
+            {
+                // The collection remains deleted if Windows cannot remove its optional launcher.
+            }
+
+            _ = AppJumpListService.RefreshAsync();
+            var nextCollectionName = string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase)
+                ? collections.FirstOrDefault(candidate => !string.Equals(candidate.Id, collection.Id, StringComparison.Ordinal))?.Name ?? "Personal"
+                : collectionName;
+            BrowserNoticeService.Show($"Removed collection '{collection.Name}'.");
+            onCollectionNameChanged(nextCollectionName);
+        }
+
         var collectionButtons = collections
             .Select(collection =>
             {
                 var isStartup = string.Equals(collection.Id, startupCollectionId, StringComparison.Ordinal);
                 var isSelected = string.Equals(collection.Name, collectionName, StringComparison.OrdinalIgnoreCase);
-                return BuildCollectionSelectorButton(collection.Name, isSelected, isStartup, onCollectionNameChanged);
+                return BuildCollectionSelectorButton(
+                    collection,
+                    isSelected,
+                    isStartup,
+                    onCollectionNameChanged,
+                    () =>
+                    {
+                        if (!ActivationRoutingService.RequestCollectionActivation(collection.Id))
+                        {
+                            BrowserNoticeService.Show($"Could not switch to collection '{collection.Name}'.");
+                        }
+                    },
+                    () => RemoveCollectionFromPill(collection));
             })
             .Cast<Element>()
             .ToArray();
@@ -4030,21 +4089,276 @@ internal static class BrowserChrome
             }
         }
 
+        void CreateSelectedCollectionShortcut()
+        {
+            if (selectedCollection is null)
+            {
+                BrowserNoticeService.Show("Select a collection before creating a shortcut.");
+                return;
+            }
+
+            if (TabCollectionService.GetItems(selectedCollection.Id).Count == 0)
+            {
+                BrowserNoticeService.Show("Add at least one page before creating a collection shortcut.");
+                return;
+            }
+
+            try
+            {
+                var shortcut = CollectionShortcutService.CreateOrUpdate(selectedCollection);
+                BrowserNoticeService.Show($"Desktop launcher ready: {Path.GetFileName(shortcut.ShortcutPath)}");
+                onCollectionNameChanged(selectedCollection.Name);
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not create the desktop launcher: {ex.Message}");
+            }
+        }
+
+        void RemoveSelectedCollectionShortcut()
+        {
+            if (selectedCollection is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var removed = CollectionShortcutService.Remove(selectedCollection.Id);
+                BrowserNoticeService.Show(removed
+                    ? $"Removed the desktop launcher for {selectedCollection.Name}."
+                    : $"No desktop launcher was found for {selectedCollection.Name}.");
+                onCollectionNameChanged(selectedCollection.Name);
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not remove the desktop launcher: {ex.Message}");
+            }
+        }
+
+        ButtonElement ShortcutButton(string glyph, string label, Action action) =>
+            Button(
+                HStack(7,
+                    TextBlock(glyph)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(14),
+                    TextBlock(label)),
+                action)
+            .AutomationName(label);
+
+        void RemoveCollectionShortcut(CollectionShortcutInfo shortcut)
+        {
+            try
+            {
+                var removed = CollectionShortcutService.Remove(shortcut.CollectionId);
+                BrowserNoticeService.Show(removed
+                    ? $"Removed the desktop launcher for {shortcut.CollectionName}."
+                    : $"No desktop launcher was found for {shortcut.CollectionName}.");
+                onCollectionNameChanged(collectionName);
+            }
+            catch (Exception ex)
+            {
+                BrowserNoticeService.Show($"Could not remove the desktop launcher: {ex.Message}");
+            }
+        }
+
+        var selectedShortcut = selectedCollection is null
+            ? null
+            : CollectionShortcutService.GetStatus(selectedCollection);
+        var activeCollectionPageCount = collectionItems.Count(item =>
+            activeTabs.Any(tab => string.Equals(tab.Url, item.Url, StringComparison.OrdinalIgnoreCase)));
+        var isSelectedCollectionRunning = collectionItems.Count > 0 &&
+            activeCollectionPageCount == collectionItems.Count;
+        var installedShortcuts = CollectionShortcutService.GetInstalledShortcuts(collections);
+
+        var shortcutRows = installedShortcuts
+            .Select(shortcut =>
+                HStack(8,
+                    TextBlock(shortcut.IsValid ? BrowserConstants.GlyphCheckMark : BrowserConstants.GlyphWarning)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .Foreground(shortcut.IsValid
+                            ? BrowserMaterialTheme.SelectedStrokeBrush
+                            : BrowserConstants.AccentFillColorDefaultBrush),
+                    VStack(1,
+                        TextBlock($"Start {shortcut.CollectionName}")
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                        TextBlock(shortcut.IsValid ? "Ready on Desktop" : "Needs repair")
+                            .FontSize(12)
+                            .Opacity(0.68))
+                    .Flex(grow: 1, basis: 0),
+                    IconButton(
+                        BrowserConstants.GlyphTrash,
+                        () => RemoveCollectionShortcut(shortcut),
+                        $"Remove desktop launcher for {shortcut.CollectionName}"))
+                .Padding(8, 5)
+                .CornerRadius(6)
+                .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                .HAlign(HorizontalAlignment.Stretch))
+            .Cast<Element>()
+            .ToArray();
+
+        var shortcutActions = isCommandCenterExpanded
+            ? FlexRow(
+                ShortcutButton(
+                    selectedShortcut?.Exists == true ? BrowserConstants.GlyphRefresh : BrowserConstants.GlyphLink,
+                    selectedShortcut?.Exists == true ? "Repair shortcut" : "Create shortcut",
+                    CreateSelectedCollectionShortcut)
+                    .Flex(grow: 1, basis: 150)
+                    .IsEnabled(selectedCollection is not null),
+                ShortcutButton(BrowserConstants.GlyphTrash, "Remove", RemoveSelectedCollectionShortcut)
+                    .Flex(grow: 1, basis: 96)
+                    .IsEnabled(selectedShortcut?.Exists == true)) with
+            {
+                ColumnGap = 8,
+                RowGap = 8,
+                Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+            }
+            : FlexRow(
+                IconButton(
+                    selectedShortcut?.Exists == true ? BrowserConstants.GlyphRefresh : BrowserConstants.GlyphLink,
+                    CreateSelectedCollectionShortcut,
+                    selectedShortcut?.Exists == true ? "Repair desktop shortcut" : "Create desktop shortcut")
+                    .IsEnabled(selectedCollection is not null),
+                IconButton(BrowserConstants.GlyphTrash, RemoveSelectedCollectionShortcut, "Remove desktop shortcut")
+                    .IsEnabled(selectedShortcut?.Exists == true)) with
+            {
+                ColumnGap = 8,
+                RowGap = 8,
+                Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+            };
+
+        var shortcutsPanel = VStack(8,
+            HStack(8,
+                TextBlock(BrowserConstants.GlyphLink)
+                    .FontFamily(BrowserConstants.IconFontFamily)
+                    .FontSize(16),
+                VStack(1,
+                    TextBlock("Desktop launchers")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock(isSelectedCollectionRunning
+                            ? $"Shortcut opens all {collectionItems.Count} saved pages | collection is active"
+                            : activeCollectionPageCount > 0
+                                ? $"Shortcut opens all {collectionItems.Count} saved pages | {activeCollectionPageCount} already open"
+                                : installedShortcuts.Count == 0
+                                    ? $"Create a Desktop shortcut that opens all {collectionItems.Count} saved pages."
+                                    : $"Opens all {collectionItems.Count} saved pages | {installedShortcuts.Count} installed")
+                        .FontSize(12)
+                        .Opacity(0.68))
+                    .Flex(grow: 1, basis: 0)),
+            shortcutActions,
+            shortcutRows.Length == 0
+                ? Border(null).IsVisible(false)
+                : VStack(4, shortcutRows).HAlign(HorizontalAlignment.Stretch))
+            .Padding(14)
+            .CornerRadius(8)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
+
+        string pendingUrl = string.Empty;
+        string pendingTitle = string.Empty;
+        Microsoft.UI.Xaml.Controls.AutoSuggestBox? urlInput = null;
+        Microsoft.UI.Xaml.Controls.AutoSuggestBox? titleInput = null;
+
+        void AddEnteredUrl()
+        {
+            var url = pendingUrl.Trim();
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsedUri) ||
+                (parsedUri.Scheme != Uri.UriSchemeHttp && parsedUri.Scheme != Uri.UriSchemeHttps))
+            {
+                BrowserNoticeService.Show("Enter a complete http:// or https:// address.");
+                urlInput?.Focus(FocusState.Programmatic);
+                return;
+            }
+
+            var targetCollectionName = selectedCollection?.Name ?? collectionName;
+            onAddUrlToCollection(targetCollectionName, parsedUri.AbsoluteUri, pendingTitle.Trim());
+            pendingUrl = string.Empty;
+            pendingTitle = string.Empty;
+            if (urlInput is not null)
+            {
+                urlInput.Text = string.Empty;
+            }
+            if (titleInput is not null)
+            {
+                titleInput.Text = string.Empty;
+            }
+        }
+
+        var addUrlPanel = VStack(8,
+            HStack(8,
+                TextBlock(BrowserConstants.GlyphLink)
+                    .FontFamily(BrowserConstants.IconFontFamily)
+                    .FontSize(16),
+                VStack(1,
+                    TextBlock("Add a page")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock(selectedCollection is null
+                            ? "Create or select a collection first."
+                            : $"Save a URL directly to {selectedCollection.Name}.")
+                        .FontSize(12)
+                        .Opacity(0.68))
+                    .Flex(grow: 1, basis: 0)),
+            AutoSuggestBox(string.Empty, value => pendingUrl = value, submitted =>
+                {
+                    pendingUrl = submitted;
+                    AddEnteredUrl();
+                })
+                .Set(input => urlInput = input)
+                .AutomationName("Page URL")
+                .HAlign(HorizontalAlignment.Stretch)
+                .MinWidth(0) with
+            {
+                PlaceholderText = "https://example.com"
+            },
+            (FlexRow(
+                AutoSuggestBox(string.Empty, value => pendingTitle = value, submitted =>
+                    {
+                        pendingTitle = submitted;
+                        AddEnteredUrl();
+                    })
+                    .Set(input => titleInput = input)
+                    .AutomationName("Page title")
+                    .HAlign(HorizontalAlignment.Stretch)
+                    .MinWidth(0)
+                    .Flex(grow: 1, basis: 190) with
+                {
+                    PlaceholderText = "Title (optional)"
+                },
+                ShortcutButton(BrowserConstants.GlyphAdd, "Add URL", AddEnteredUrl)
+                    .IsEnabled(selectedCollection is not null)
+                    .Flex(grow: 1, basis: 104)) with
+            {
+                ColumnGap = 8,
+                RowGap = 8,
+                Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+            }))
+            .Padding(14)
+            .CornerRadius(8)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
+
         var collectionActions = isCommandCenterExpanded
-            ? HStack(8,
-                Button("Add current tab", onAddCurrentTabToCollection)
-                    .AutomationName("Add current tab to collection"),
-                Button("Use at startup", onSetStartupCollection)
-                    .AutomationName("Set startup collection"),
-                Button("Switch to", SwitchToSelectedCollection)
-                    .AutomationName("Switch to selected collection")
-                    .Set(button => button.IsEnabled = selectedCollection is not null),
-                Button("New window", OpenSelectedCollectionInNewWindow)
-                    .AutomationName("Open selected collection in a new window")
-                    .Set(button => button.IsEnabled = selectedCollection is not null),
-                IconButton(BrowserConstants.GlyphTrash, onDeleteCollection, "Delete selected collection")
-                    .IsEnabled(selectedCollection is not null))
-            : HStack(8,
+            ? FlexRow(
+                ShortcutButton(BrowserConstants.GlyphAdd, "Add current tab", onAddCurrentTabToCollection)
+                    .Flex(grow: 1, basis: 140),
+                ShortcutButton(BrowserConstants.GlyphFavoriteOutline, "Use at startup", onSetStartupCollection)
+                    .Flex(grow: 1, basis: 130),
+                ShortcutButton(BrowserConstants.GlyphGo, "Switch to", SwitchToSelectedCollection)
+                    .Flex(grow: 1, basis: 100)
+                    .IsEnabled(selectedCollection is not null),
+                ShortcutButton(BrowserConstants.GlyphNewWindow, "New window", OpenSelectedCollectionInNewWindow)
+                    .Flex(grow: 1, basis: 110)
+                    .IsEnabled(selectedCollection is not null),
+                ShortcutButton(BrowserConstants.GlyphTrash, "Delete", onDeleteCollection)
+                    .Flex(grow: 1, basis: 88)
+                    .IsEnabled(selectedCollection is not null)) with
+            {
+                ColumnGap = 8,
+                RowGap = 8,
+                Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+            }
+            : FlexRow(
                 IconButton(BrowserConstants.GlyphAdd, onAddCurrentTabToCollection, "Add current tab to collection"),
                 IconButton(BrowserConstants.GlyphFavoriteOutline, onSetStartupCollection, "Set startup collection"),
                 IconButton(BrowserConstants.GlyphGo, SwitchToSelectedCollection, "Switch to selected collection")
@@ -4052,43 +4366,114 @@ internal static class BrowserChrome
                 IconButton(BrowserConstants.GlyphNewWindow, OpenSelectedCollectionInNewWindow, "Open selected collection in a new window")
                     .IsEnabled(selectedCollection is not null),
                 IconButton(BrowserConstants.GlyphTrash, onDeleteCollection, "Delete selected collection")
-                    .IsEnabled(selectedCollection is not null));
+                    .IsEnabled(selectedCollection is not null)) with
+            {
+                ColumnGap = 8,
+                RowGap = 8,
+                Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+            };
+
+        var collectionRunState = isSelectedCollectionRunning
+            ? $"Running | {activeCollectionPageCount} pages active"
+            : activeCollectionPageCount > 0
+                ? $"Partial | {activeCollectionPageCount} of {collectionItems.Count} pages active"
+                : "Ready";
+        var collectionActionsPanel = VStack(10,
+                HStack(8,
+                    TextBlock(BrowserConstants.GlyphSettings)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(16),
+                    VStack(1,
+                        TextBlock(selectedCollection?.Name ?? "Selected collection")
+                            .TextTrimming(TextTrimming.CharacterEllipsis)
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                        TextBlock(collectionRunState)
+                            .FontSize(12)
+                            .Opacity(0.68))
+                    .Flex(grow: 1, basis: 0)),
+                collectionActions)
+            .Padding(14)
+            .CornerRadius(8)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
+        var collectionTools = Expander(
+                "Collection tools",
+                VStack(20,
+                    collectionActionsPanel,
+                    shortcutsPanel,
+                    addUrlPanel)
+                .Padding(12, 10, 12, 14)
+                .HAlign(HorizontalAlignment.Stretch))
+            .HeaderTemplate(
+                HStack(10,
+                    TextBlock(BrowserConstants.GlyphSettings)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(16),
+                    VStack(1,
+                        TextBlock("Collection tools")
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                        TextBlock(collectionRunState)
+                            .FontSize(12)
+                            .Opacity(0.68))
+                    .Flex(grow: 1, basis: 0)))
+            .HAlign(HorizontalAlignment.Stretch);
+
+        var collectionSelectorPanel = collectionButtons.Length == 0
+            ? Border(
+                TextBlock("No collections yet. Create one to begin saving pages.")
+                    .Opacity(0.72)
+                    .TextWrapping(TextWrapping.Wrap))
+                .Padding(12, 10)
+                .CornerRadius(8)
+                .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            : Border(
+                (FlexRow(collectionButtons) with
+                {
+                    ColumnGap = 8,
+                    RowGap = 8,
+                    Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+                })
+                .HAlign(HorizontalAlignment.Stretch))
+                .Padding(10)
+                .CornerRadius(8)
+                .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+                .HAlign(HorizontalAlignment.Stretch);
 
         var header = VStack(10,
             TextBlock("Collections")
                 .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-            (Grid(
-                [GridSize.Star(3), GridSize.Star()],
-                [GridSize.Auto],
-                AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
-                    .AutomationName("Collection filter or name")
-                    .HAlign(HorizontalAlignment.Stretch)
-                    .MinWidth(0)
-                    .Grid(row: 0, column: 0) with
-                {
-                    PlaceholderText = "Filter or create collection"
-                },
-                Button("Create", onCreateCollection)
-                    .AutomationName("Create collection")
-                    .HAlign(HorizontalAlignment.Stretch)
-                    .Grid(row: 0, column: 1)) with
-            {
-                ColumnSpacing = 8
-            }).HAlign(HorizontalAlignment.Stretch),
-            collectionActions);
+            collectionSelectorPanel,
+            Expander(
+                    "New collection",
+                    (FlexRow(
+                        AutoSuggestBox(collectionName, onCollectionNameChanged, submitted => onCollectionNameChanged(submitted))
+                            .AutomationName("New collection name")
+                            .HAlign(HorizontalAlignment.Stretch)
+                            .MinWidth(0)
+                            .Flex(grow: 1, basis: 190) with
+                        {
+                            PlaceholderText = "Collection name"
+                        },
+                        ShortcutButton(BrowserConstants.GlyphAdd, "Create", onCreateCollection)
+                            .Flex(grow: 1, basis: 96)) with
+                    {
+                        ColumnGap = 8,
+                        RowGap = 8,
+                        Wrap = Microsoft.UI.Reactor.Layout.FlexWrap.Wrap
+                    })
+                    .Padding(12, 8, 12, 12)
+                    .HAlign(HorizontalAlignment.Stretch))
+                .HeaderTemplate(
+                    HStack(8,
+                        TextBlock(BrowserConstants.GlyphAdd)
+                            .FontFamily(BrowserConstants.IconFontFamily)
+                            .FontSize(15),
+                        TextBlock("New collection")
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold)))
+                .HAlign(HorizontalAlignment.Stretch));
 
         var body = VStack(12,
-            collectionButtons.Length == 0
-                ? Border(
-                    TextBlock("No collections yet. Enter a name and add the current tab.")
-                        .Opacity(0.72)
-                        .TextWrapping(TextWrapping.Wrap))
-                    .Padding(8, 4)
-                : FlexRow(collectionButtons) with
-                {
-                    ColumnGap = 6,
-                    RowGap = 6
-                },
+            collectionTools,
             itemRows.Length == 0
                 ? Border(
                     TextBlock("No items in this collection yet.")
@@ -4103,14 +4488,6 @@ internal static class BrowserChrome
 
         return FlexColumn(
             header,
-            string.IsNullOrWhiteSpace(collectionStatus)
-                ? Border(null).IsVisible(false)
-                : Border(
-                    TextBlock(collectionStatus)
-                        .TextWrapping(TextWrapping.Wrap))
-                    .Padding(8)
-                    .CornerRadius(8)
-                    .Background(BrowserConstants.SubtleFillColorSecondaryBrush),
             ScrollViewer(body)
                 .Set(scrollViewer =>
                 {
@@ -4128,11 +4505,14 @@ internal static class BrowserChrome
     }
 
     private static ButtonElement BuildCollectionSelectorButton(
-        string collectionName,
+        TabCollection collection,
         bool isSelected,
         bool isStartup,
-        Action<string> onCollectionNameChanged)
+        Action<string> onCollectionNameChanged,
+        Action onSwitchToCollection,
+        Action onRemoveCollection)
     {
+        var collectionName = collection.Name;
         Microsoft.UI.Xaml.Controls.Border? underline = null;
         var content = VStack(3,
             HStack(6,
@@ -4167,7 +4547,56 @@ internal static class BrowserChrome
             .CornerRadius(6)
             .Background(isSelected ? BrowserMaterialTheme.GlassStrongFillBrush : BrowserMaterialTheme.PillFillBrush)
             .WithBorder(isSelected ? BrowserMaterialTheme.SelectedStrokeBrush : BrowserMaterialTheme.GlassStrokeBrush)
-            .Set(button => ConfigureCollectionSelectorButton(button, underline, isSelected));
+            .Set(button =>
+            {
+                ConfigureCollectionSelectorButton(button, underline, isSelected);
+                button.ContextFlyout = CreateCollectionSelectorContextFlyout(
+                    collectionName,
+                    onSwitchToCollection,
+                    onRemoveCollection);
+            });
+    }
+
+    private static MenuFlyout CreateCollectionSelectorContextFlyout(
+        string collectionName,
+        Action onSwitchToCollection,
+        Action onRemoveCollection)
+    {
+        var flyout = new MenuFlyout();
+        flyout.Items.Add(CreateOverflowMenuItem(
+            $"Switch to {collectionName}",
+            BrowserConstants.GlyphGo,
+            onSwitchToCollection));
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        flyout.Items.Add(CreateOverflowMenuItem(
+            $"Remove {collectionName}...",
+            BrowserConstants.GlyphTrash,
+            onRemoveCollection));
+        return flyout;
+    }
+
+    private static async Task<bool> ConfirmCollectionContextActionAsync(
+        string title,
+        string message,
+        string primaryButtonText)
+    {
+        var xamlRoot = global::LinkScape.Application.MainWindowActivation.GetXamlRoot();
+        if (xamlRoot is null)
+        {
+            return false;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = xamlRoot,
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primaryButtonText,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close
+        };
+
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
     private static void ConfigureCollectionSelectorButton(

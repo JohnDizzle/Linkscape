@@ -105,14 +105,14 @@ internal static class ActivationRoutingService
     internal static string CreateNewWindowActivationArguments(string protocolUri) =>
         $"{NewWindowTargetArgument} {protocolUri}";
 
-    internal static bool RequestCollectionActivation(string collectionId)
+    internal static bool RequestCollectionActivation(string collectionId, bool append = false, bool stop = false)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
             return false;
         }
 
-        var uri = new Uri($"link2scape://collection/{Uri.EscapeDataString(collectionId)}");
+        var uri = new Uri(CreateCollectionActivationUri(collectionId, append, stop));
         if (!TryMapProtocolUri(uri, out var target) || ActivationRequested is not { } activationRequested)
         {
             return false;
@@ -121,6 +121,12 @@ internal static class ActivationRoutingService
         StorePendingTarget(target, isFreshWindow: false);
         activationRequested.Invoke();
         return true;
+    }
+
+    internal static string CreateCollectionActivationUri(string collectionId, bool append = false, bool stop = false)
+    {
+        var uri = $"link2scape://collection/{Uri.EscapeDataString(collectionId)}";
+        return stop ? $"{uri}?mode=stop" : append ? $"{uri}?mode=append" : uri;
     }
 
     private static bool OpenInNewWindow(string argumentName, string target)
@@ -343,7 +349,11 @@ internal static class ActivationRoutingService
         if (string.Equals(route, "collection", StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(path))
         {
-            target = new ActivationTarget(ActivationTargetKind.Collection, path);
+            target = new ActivationTarget(
+                ActivationTargetKind.Collection,
+                path,
+                ShouldAppend: HasQueryValue(uri.Query, "mode", "append"),
+                ShouldStop: HasQueryValue(uri.Query, "mode", "stop"));
             return true;
         }
 
@@ -481,6 +491,22 @@ internal static class ActivationRoutingService
         return false;
     }
 
+    private static bool HasQueryValue(string query, string key, string expectedValue)
+    {
+        foreach (var segment in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = segment.Split('=', 2);
+            if (parts.Length == 2 &&
+                string.Equals(WebUtility.UrlDecode(parts[0]), key, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(WebUtility.UrlDecode(parts[1]), expectedValue, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool TryGetFileTarget(IFileActivatedEventArgs? fileArgs, out ActivationTarget target)
     {
         target = default!;
@@ -528,7 +554,9 @@ internal enum ActivationTargetKind
 internal sealed record ActivationTarget(
     ActivationTargetKind Kind,
     string Value = "",
-    ShareOperation? ShareOperation = null)
+    ShareOperation? ShareOperation = null,
+    bool ShouldAppend = false,
+    bool ShouldStop = false)
 {
     internal static ActivationTarget ForUrl(string url) => new(ActivationTargetKind.Url, url);
 

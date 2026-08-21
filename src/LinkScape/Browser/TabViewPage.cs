@@ -1052,10 +1052,127 @@ class TabViewPage : Component
             _browserTitleBarController.SetAddressText(defaultTab.Url);
         }
 
-        void OpenCollectionActivation(string collectionId)
+        void OpenCollectionActivation(string collectionId, bool append, bool stop)
         {
             try
             {
+                if (stop)
+                {
+                    var stoppedCollection = TabCollectionService.GetCollection(collectionId);
+                    if (stoppedCollection is null)
+                    {
+                        BrowserNoticeService.Show("That collection is no longer available.");
+                        return;
+                    }
+
+                    var collectionUrls = TabCollectionService.GetItems(stoppedCollection.Id)
+                        .Select(item => item.Url)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+                    var remainingTabs = currentTabs
+                        .Where(tab => !collectionUrls.Contains(tab.Url))
+                        .ToArray();
+                    var closedCount = currentTabs.Length - remainingTabs.Length;
+                    if (closedCount == 0)
+                    {
+                        var inactiveMessage = $"'{stoppedCollection.Name}' is not running.";
+                        collectionStatus.Set(inactiveMessage);
+                        BrowserNoticeService.Show(inactiveMessage);
+                        return;
+                    }
+
+                    if (remainingTabs.Length == 0)
+                    {
+                        remainingTabs = [BrowserTab.CreateHome(GetConfiguredHomeUrl())];
+                    }
+
+                    remainingTabs = remainingTabs
+                        .Select((tab, index) => tab with { Order = index })
+                        .ToArray();
+                    var selectedTabId = remainingTabs.Any(tab =>
+                        string.Equals(tab.Id, _latestSelectedTabId ?? selectedTag, StringComparison.Ordinal))
+                            ? _latestSelectedTabId ?? selectedTag
+                            : remainingTabs[0].Id;
+                    MarkTabsChanged(remainingTabs);
+                    UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, selectedTabId));
+                    _browserTitleBarController.SetAddressText(
+                        remainingTabs.First(tab => string.Equals(tab.Id, selectedTabId, StringComparison.Ordinal)).Url);
+                    ScheduleTabsSave(remainingTabs, selectedTabId);
+                    collectionName.Set(stoppedCollection.Name);
+                    var stoppedMessage = $"Stopped '{stoppedCollection.Name}' - closed {closedCount} pages.";
+                    collectionStatus.Set(stoppedMessage);
+                    BrowserNoticeService.Show(stoppedMessage);
+                    RefreshCollectionState(stoppedCollection.Name);
+                    return;
+                }
+
+                if (append)
+                {
+                    var appendedCollection = TabCollectionService.GetCollection(collectionId);
+                    if (appendedCollection is null)
+                    {
+                        const string message = "That collection is no longer available.";
+                        collectionStatus.Set(message);
+                        BrowserNoticeService.Show(message);
+                        return;
+                    }
+
+                    var appendedTabs = TabCollectionService.GetItems(appendedCollection.Id)
+                        .Take(MaxTabs)
+                        .Select((item, index) => BrowserTab.CreateNew(index + 1, item.Url) with
+                        {
+                            Title = item.Title,
+                            Order = index
+                        })
+                        .ToArray();
+                    if (appendedTabs.Length == 0)
+                    {
+                        var message = $"'{appendedCollection.Name}' does not contain any pages yet.";
+                        collectionStatus.Set(message);
+                        BrowserNoticeService.Show(message);
+                        return;
+                    }
+
+                    var currentTabs = _latestTabs.Length > 0 ? _latestTabs : tabs;
+                    var existingUrls = currentTabs
+                        .Select(tab => tab.Url)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var newCollectionTabs = appendedTabs
+                        .Where(tab => existingUrls.Add(tab.Url))
+                        .ToArray();
+                    if (newCollectionTabs.Length == 0)
+                    {
+                        var message = $"Running '{appendedCollection.Name}' - all {appendedTabs.Length} pages are active.";
+                        collectionStatus.Set(message);
+                        BrowserNoticeService.Show(message);
+                        return;
+                    }
+
+                    var appendedSessionTabs = AppendImportedTabs(currentTabs, newCollectionTabs);
+                    var addedCount = appendedSessionTabs.Length - currentTabs.Length;
+                    if (addedCount == 0)
+                    {
+                        var message = $"Close a tab before starting '{appendedCollection.Name}'.";
+                        collectionStatus.Set(message);
+                        BrowserNoticeService.Show(message);
+                        return;
+                    }
+
+                    var selectedTabId = _latestSelectedTabId ?? selectedTag;
+                    MarkTabsChanged(appendedSessionTabs);
+                    UpdateBrowserSession(state => BrowserSessionStore.SetSelectedTab(state, selectedTabId));
+                    ScheduleTabsSave(appendedSessionTabs, selectedTabId);
+                    collectionName.Set(appendedCollection.Name);
+                    var activePageCount = currentTabs.Count(tab =>
+                        appendedTabs.Any(collectionTab =>
+                            string.Equals(collectionTab.Url, tab.Url, StringComparison.OrdinalIgnoreCase))) + addedCount;
+                    var successMessage = $"Running '{appendedCollection.Name}' - {activePageCount} pages active.";
+                    collectionStatus.Set(successMessage);
+                    BrowserNoticeService.Show(successMessage);
+                    RefreshCollectionState(appendedCollection.Name);
+                    return;
+                }
+
                 _suppressTabPersistence = false;
                 var nextTabs = SetAndLoadStartupCollection(collectionId);
                 var nextSelected = nextTabs[0];
@@ -1124,7 +1241,7 @@ class TabViewPage : Component
                     WebAppWindowService.TryOpenById(target.Value);
                     break;
                 case ActivationTargetKind.Collection:
-                    OpenCollectionActivation(target.Value);
+                    OpenCollectionActivation(target.Value, target.ShouldAppend, target.ShouldStop);
                     break;
                 case ActivationTargetKind.ActiveTabsPackage:
                     OpenActiveTabsPackageActivation(target.Value);
@@ -1462,6 +1579,15 @@ class TabViewPage : Component
                 {
                     collectionStatus.Set("The selected collection could not be found.");
                     return;
+                }
+
+                try
+                {
+                    CollectionShortcutService.Remove(selectedCollection.Id);
+                }
+                catch
+                {
+                    // The collection is deleted even if Windows cannot remove its optional desktop launcher.
                 }
 
                 _ = AppJumpListService.RefreshAsync();

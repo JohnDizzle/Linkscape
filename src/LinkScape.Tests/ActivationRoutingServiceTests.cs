@@ -42,6 +42,54 @@ public sealed class ActivationRoutingServiceTests
         Assert.IsTrue(mapped);
         Assert.AreEqual(ActivationTargetKind.Collection, target.Kind);
         Assert.AreEqual("personal id", target.Value);
+        Assert.IsFalse(target.ShouldAppend);
+    }
+
+    [TestMethod]
+    public void TryMapProtocolUri_MapsAppendCollectionShortcut()
+    {
+        var mapped = ActivationRoutingService.TryMapProtocolUri(
+            new Uri("link2scape://collection/work%20tools?mode=append"),
+            out var target);
+
+        Assert.IsTrue(mapped);
+        Assert.AreEqual(ActivationTargetKind.Collection, target.Kind);
+        Assert.AreEqual("work tools", target.Value);
+        Assert.IsTrue(target.ShouldAppend);
+        Assert.IsFalse(target.ShouldStop);
+    }
+
+    [TestMethod]
+    public void TryMapProtocolUri_MapsStopCollectionCommand()
+    {
+        var uri = ActivationRoutingService.CreateCollectionActivationUri("work tools", stop: true);
+
+        Assert.AreEqual("link2scape://collection/work%20tools?mode=stop", uri);
+        Assert.IsTrue(ActivationRoutingService.TryMapProtocolUri(new Uri(uri), out var target));
+        Assert.IsFalse(target.ShouldAppend);
+        Assert.IsTrue(target.ShouldStop);
+    }
+
+    [TestMethod]
+    public void CreateCollectionActivationUri_UsesShortAppendRoute()
+    {
+        var uri = ActivationRoutingService.CreateCollectionActivationUri("work tools", append: true);
+
+        Assert.AreEqual("link2scape://collection/work%20tools?mode=append", uri);
+        Assert.IsTrue(ActivationRoutingService.TryMapProtocolUri(new Uri(uri), out var target));
+        Assert.AreEqual("work tools", target.Value);
+        Assert.IsTrue(target.ShouldAppend);
+        Assert.AreEqual(uri, CollectionShortcutService.CreateActivationUri("work tools"));
+    }
+
+    [DataTestMethod]
+    [DataRow("link2scape://collection/work?mode=replace")]
+    [DataRow("link2scape://collection/work?mode=appendix")]
+    [DataRow("link2scape://collection/work?other=append")]
+    public void TryMapProtocolUri_DoesNotAppendForUnrelatedQueryValues(string rawUri)
+    {
+        Assert.IsTrue(ActivationRoutingService.TryMapProtocolUri(new Uri(rawUri), out var target));
+        Assert.IsFalse(target.ShouldAppend);
     }
 
     [TestMethod]
