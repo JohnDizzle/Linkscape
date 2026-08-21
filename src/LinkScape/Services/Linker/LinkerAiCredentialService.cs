@@ -49,16 +49,35 @@ internal static class LinkerAiCredentialService
         Providers.FirstOrDefault(provider => string.Equals(provider.Id, providerId, StringComparison.OrdinalIgnoreCase))
             ?? Providers[0];
 
-    public static bool HasAnyApiKey() =>
-        Providers.Any(provider => HasApiKey(provider.Id));
+    public static bool HasAnyApiKey()
+    {
+        try
+        {
+            var vault = new PasswordVault();
+            return vault.RetrieveAll().Any(IsLinkerCredential);
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
 
     public static bool HasApiKey(string providerId)
     {
         try
         {
-            return GetCredential(providerId) is not null;
+            var vault = new PasswordVault();
+            return FindCredential(vault, providerId) is not null;
         }
-        catch
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
         {
             return false;
         }
@@ -112,10 +131,16 @@ internal static class LinkerAiCredentialService
         try
         {
             var vault = new PasswordVault();
-            var credential = vault.Retrieve(GetVaultResource(provider.Id), VaultUserName);
-            vault.Remove(credential);
+            var credential = FindCredential(vault, provider.Id);
+            if (credential is not null)
+            {
+                vault.Remove(credential);
+            }
         }
-        catch
+        catch (System.Runtime.InteropServices.COMException)
+        {
+        }
+        catch (InvalidOperationException)
         {
         }
 
@@ -228,15 +253,36 @@ internal static class LinkerAiCredentialService
         try
         {
             var vault = new PasswordVault();
-            var credential = vault.Retrieve(GetVaultResource(providerId), VaultUserName);
+            var credential = FindCredential(vault, providerId);
+            if (credential is null)
+            {
+                return null;
+            }
+
             credential.RetrievePassword();
             return string.IsNullOrWhiteSpace(credential.Password) ? null : credential.Password;
         }
-        catch
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
         {
             return null;
         }
     }
+
+    private static PasswordCredential? FindCredential(PasswordVault vault, string providerId)
+    {
+        var resource = GetVaultResource(providerId);
+        return vault.RetrieveAll().FirstOrDefault(credential =>
+            string.Equals(credential.Resource, resource, StringComparison.Ordinal) &&
+            string.Equals(credential.UserName, VaultUserName, StringComparison.Ordinal));
+    }
+
+    private static bool IsLinkerCredential(PasswordCredential credential) =>
+        string.Equals(credential.UserName, VaultUserName, StringComparison.Ordinal) &&
+        credential.Resource.StartsWith($"{VaultResourcePrefix}.", StringComparison.Ordinal);
 
     private static string TryExtractProviderError(string responseText)
     {
