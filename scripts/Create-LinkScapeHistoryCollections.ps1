@@ -1,7 +1,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [int]$HistoryLimit = 600,
-    [int]$ItemsPerCollection = 25,
+    [ValidateRange(1, 10)]
+    [int]$ItemsPerCollection = 10,
     [string]$CollectionPrefix = "Smart - ",
     [string]$CacheDirectory = ""
 )
@@ -430,13 +431,13 @@ Write-Host "LinkScape Smart Collections preview"
 Write-Host "Cache: $cachePath"
 Write-Host "History rows scanned: $($historyItems.Count)"
 Write-Host "Favorites rows scanned: $($favoriteItems.Count)"
-Write-Host "Algorithm: merge local History and Favorites by URL, remove sign-in/auth pages, match topic by domain/URL, then rank favorites above ordinary history and pages found in both highest."
+Write-Host "Algorithm: merge local History and Favorites by URL, remove sign-in/auth pages, match topic by domain/URL, then keep the top $ItemsPerCollection ranked items per collection."
 Write-Host ""
 
 foreach ($category in $categories) {
     $items = $selectedByCategory[$category.Name]
     Write-Host "$($category.Name): $($items.Count) item(s)"
-    foreach ($item in ($items | Select-Object -First 5)) {
+    foreach ($item in ($items | Select-Object -First $ItemsPerCollection)) {
         Write-Host "  - $($item.Title) <$($item.Url)>"
     }
 }
@@ -451,11 +452,23 @@ try {
 
     foreach ($category in $categories) {
         $items = $selectedByCategory[$category.Name]
+        $existingCollectionId = Invoke-Scalar $collectionConnection `
+            "SELECT Id FROM TabCollections WHERE Name = `$name COLLATE NOCASE LIMIT 1;" `
+            @{ '$name' = $category.Name }
+
         if ($items.Count -eq 0) {
+            if ($null -ne $existingCollectionId -and -not [Convert]::IsDBNull($existingCollectionId)) {
+                Invoke-NonQuery $collectionConnection `
+                    "DELETE FROM TabCollectionItems WHERE CollectionId = `$collectionId;" `
+                    @{ '$collectionId' = [string]$existingCollectionId }
+            }
             continue
         }
 
         $collectionId = Get-OrCreateCollection $collectionConnection $category.Name
+        Invoke-NonQuery $collectionConnection `
+            "DELETE FROM TabCollectionItems WHERE CollectionId = `$collectionId;" `
+            @{ '$collectionId' = $collectionId }
         foreach ($item in $items) {
             Add-CollectionItem $collectionConnection $collectionId $item
         }

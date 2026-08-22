@@ -55,7 +55,7 @@
 
                     <ul class="change-list">
                         <li>Create Smart Collections from local History and Favorites in the Collections UI, from Linker, through local MCP, or with the included PowerShell/BAT script.</li>
-                        <li>Use the same Smart Collections algorithm everywhere: LinkScape merges local History and Favorites by URL, filters sign-in/auth pages, matches topic patterns, and ranks Favorites and frequently visited pages higher.</li>
+                        <li>Use the same Smart Collections algorithm everywhere: LinkScape merges local History and Favorites by URL, filters sign-in/auth pages, matches topic patterns, and keeps the top 10 ranked pages per topic.</li>
                         <li>Create or repair Desktop shortcuts for Collections, using the LinkScape icon and a collection activation URL that appends the saved pages to the current session.</li>
                         <li>Switch to a Collection directly from the Collection selector context menu, and remove Collections with confirmation that also cleans up their optional Desktop launcher.</li>
                         <li>Add active tabs to Collections from the management blade and keep Collection selection stable when items are added, removed, or refreshed.</li>
@@ -64,7 +64,7 @@
 
                     <aside class="contributor-note">
                         <strong>CLI and automation</strong>
-                        <span>The new Smart Collections script writes the same generated topic collections used by the app, supports custom history limits and collection prefixes, and includes a BAT launcher for systems that need a double-click path into PowerShell 7.</span>
+                        <span>The Smart Collections script writes the same top-10 topic snapshots used by the app, supports custom history limits and collection prefixes, and includes a BAT launcher for systems that need a double-click path into PowerShell 7.</span>
                     </aside>
 
                     <section class="media-card feature-slideshow release-media-grid" data-slideshow aria-label="Smart Collections and shortcuts preview">

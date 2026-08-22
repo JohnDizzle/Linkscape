@@ -673,6 +673,12 @@ class TabViewPage : Component
             SettingsService.SetValue(key, value);
             settingsSnapshot.Set(SettingsService.Dump());
 
+            if (string.Equals(key, PasswordAutosaveService.SettingKey, StringComparison.Ordinal) &&
+                bool.TryParse(value, out var passwordAutosaveEnabled))
+            {
+                _browserWebViewHostController.SetPasswordAutosaveEnabled(passwordAutosaveEnabled);
+            }
+
             if (string.Equals(key, FirstRunExperienceService.SettingKey, StringComparison.Ordinal) &&
                 string.Equals(value, FirstRunExperienceService.PendingValue, StringComparison.OrdinalIgnoreCase))
             {

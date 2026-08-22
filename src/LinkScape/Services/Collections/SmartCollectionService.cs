@@ -9,6 +9,8 @@ public sealed record SmartCollectionSummary(
 public static class SmartCollectionService
 {
     public const string DefaultPrefix = "Smart - ";
+    public const int DefaultItemsPerCollection = 10;
+    public const int MaximumItemsPerCollection = 10;
 
     private sealed record Candidate(
         string Url,
@@ -35,7 +37,7 @@ public static class SmartCollectionService
     public static SmartCollectionSummary CreateOrRefresh(
         bool rebuild = false,
         int historyLimit = 600,
-        int itemsPerCollection = 25,
+        int itemsPerCollection = DefaultItemsPerCollection,
         string collectionPrefix = DefaultPrefix)
     {
         HistoryPersistenceService.EnsureDatabase();
@@ -54,12 +56,21 @@ public static class SmartCollectionService
         foreach (var category in Categories)
         {
             var collectionName = $"{collectionPrefix}{category.Name}";
+            var itemLimit = Math.Clamp(itemsPerCollection, 1, MaximumItemsPerCollection);
             var items = candidates
                 .Where(candidate => IsMatch(candidate, category.Patterns))
                 .OrderByDescending(GetScore)
                 .ThenByDescending(candidate => candidate.LastUsedAt)
-                .Take(Math.Max(1, itemsPerCollection))
+                .Take(itemLimit)
                 .ToArray();
+
+            // A Smart Collection is a ranked snapshot, not an append-only list.
+            // Clear the previous generated contents so lowering the limit or
+            // changing the ranking cannot leave stale items behind.
+            foreach (var existingItem in TabCollectionService.GetItems(collectionName).ToArray())
+            {
+                TabCollectionService.RemoveItem(collectionName, existingItem.Url);
+            }
 
             if (items.Length == 0)
             {

@@ -451,6 +451,7 @@ public static class BrowserDataAssistantService
             : "## Smart Collections refreshed");
         markdown.AppendLine();
         markdown.AppendLine("Sources: **History + Favorites**");
+        markdown.AppendLine($"Snapshot size: **top {SmartCollectionService.MaximumItemsPerCollection} per collection**");
         markdown.AppendLine($"Collections checked: **{summary.CollectionCount}**");
         markdown.AppendLine($"Items matched this run: **{summary.ItemCount}**");
         markdown.AppendLine();
@@ -463,7 +464,7 @@ public static class BrowserDataAssistantService
         markdown.AppendLine();
         markdown.AppendLine(rebuild
             ? "Rebuild removed the generated Smart collections first, then recreated them."
-            : "Refresh adds or updates matching pages without removing existing Smart collection items.");
+            : "Refresh synchronized each Smart collection to its current ranked top-10 snapshot.");
         return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
     }
 

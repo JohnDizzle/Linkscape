@@ -42,7 +42,7 @@ public static class BrowserDataToolService
         new(CollectionsRemoveItemToolName, true, "Removes a URL or the active page from a tab collection."),
         new(CollectionsRenameToolName, true, "Renames a tab collection."),
         new(CollectionsSetStartupToolName, true, "Sets the collection LinkScape should open on startup."),
-        new(CollectionsSmartToolName, true, "Creates or refreshes Smart Collections from local history and favorites.")
+        new(CollectionsSmartToolName, true, "Creates or refreshes top-10 Smart Collection snapshots from local history and favorites.")
     ];
 
     public static BrowserDataAssistantResult Invoke(

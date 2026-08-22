@@ -52,6 +52,7 @@ internal sealed class WebAppWindow : Window
     private Microsoft.UI.Xaml.Controls.Button? _backButton;
     private Microsoft.UI.Xaml.Controls.Grid? _contentHost;
     private Microsoft.UI.Xaml.Controls.Grid? _startupSplash;
+    private Action<string, string?>? _passwordSettingChangedHandler;
 
     internal event Action<WebAppWindow>? RestoreRequested;
 
@@ -88,7 +89,20 @@ internal sealed class WebAppWindow : Window
         var core = _webView.CoreWebView2
             ?? throw new InvalidOperationException("WebView2 could not be initialized for the installed app window.");
 
-        
+        PasswordAutosaveService.Apply(core.Profile);
+        _passwordSettingChangedHandler ??= (key, value) =>
+        {
+            if (!string.Equals(key, PasswordAutosaveService.SettingKey, StringComparison.Ordinal) ||
+                !bool.TryParse(value, out var enabled))
+            {
+                return;
+            }
+
+            _webView.DispatcherQueue.TryEnqueue(() =>
+                PasswordAutosaveService.Apply(_webView.CoreWebView2?.Profile, enabled));
+        };
+        SettingsService.SettingChanged -= _passwordSettingChangedHandler;
+        SettingsService.SettingChanged += _passwordSettingChangedHandler;
 
         core.Settings.IsStatusBarEnabled = false;
         core.NavigationCompleted += (_, _) =>
@@ -137,6 +151,11 @@ internal sealed class WebAppWindow : Window
         }
 
         _isClosed = true;
+
+        if (_passwordSettingChangedHandler is not null)
+        {
+            SettingsService.SettingChanged -= _passwordSettingChangedHandler;
+        }
 
         try
         {

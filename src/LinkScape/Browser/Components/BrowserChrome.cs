@@ -2476,6 +2476,7 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var passwordAutosaveEnabled = GetBooleanSetting(settingsSnapshot, PasswordAutosaveService.SettingKey);
         var automaticDailyUpdateChecks = GetBooleanSetting(settingsSnapshot, AppUpdateService.AutomaticDailyChecksSettingKey, true);
         var selectedBackdropPreset = settingsSnapshot.TryGetValue(BackdropGradientPresetSettingKey, out var configuredBackdropPreset)
             ? NormalizeBackdropGradientPreset(configuredBackdropPreset)
@@ -2492,8 +2493,8 @@ internal static class BrowserChrome
 
         var content = new StackPanel
         {
-            Spacing = 10,
-            Width = 420,
+            Spacing = 7,
+            Width = 400,
             Children =
             {
                 new TextBlock
@@ -2565,6 +2566,19 @@ internal static class BrowserChrome
                         "When enabled, entering a normalized URL in the address bar opens a new tab if the destination host differs from the current tab.",
                         addressBarOpenDifferentDomainInNewTab,
                         nextValue => onSaveSettingValue(BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey, nextValue ? "true" : "false"))),
+                CreateSettingsFlyoutCard(
+                    CreateSettingsFlyoutCardHeader("Passwords", glyph: BrowserConstants.GlyphSave),
+                    new TextBlock
+                    {
+                        Text = "Saved passwords are encrypted in the local WebView2 profile using Windows account protection.",
+                        TextWrapping = TextWrapping.Wrap,
+                        Opacity = 0.76
+                    },
+                    CreateSettingsFlyoutToggle(
+                        "Save passwords",
+                        "When enabled, WebView2 can offer to save or update passwords. Turning this off stops new saves and prompts but does not delete passwords already stored.",
+                        passwordAutosaveEnabled,
+                        nextValue => onSaveSettingValue(PasswordAutosaveService.SettingKey, nextValue ? "true" : "false"))),
                 CreateSettingsFlyoutCard(
                     CreateSettingsFlyoutCardHeader("LinkScape updates", glyph: BrowserConstants.GlyphRefresh),
                     new TextBlock
@@ -2654,7 +2668,7 @@ internal static class BrowserChrome
             Content = new ScrollViewer
             {
                 Content = content,
-                MaxHeight = 520,
+                MaxHeight = 600,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollMode = ScrollMode.Enabled,
@@ -2695,7 +2709,7 @@ internal static class BrowserChrome
     {
         var panel = new StackPanel
         {
-            Spacing = 10
+            Spacing = 6
         };
 
         foreach (var child in children)
@@ -2705,14 +2719,12 @@ internal static class BrowserChrome
 
         return new Microsoft.UI.Xaml.Controls.Border
         {
-            Padding = new Thickness(12),
+            Padding = new Thickness(8),
             Background = BrowserConstants.LayerFillDefaultBrush,
             BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Child = panel,
-            Shadow = new Microsoft.UI.Xaml.Media.ThemeShadow(),
-            Translation = new System.Numerics.Vector3(0, 1, 10)
+            CornerRadius = new CornerRadius(8),
+            Child = panel
         };
     }
 
@@ -2745,10 +2757,10 @@ internal static class BrowserChrome
             {
                 new Microsoft.UI.Xaml.Controls.Border
                 {
-                    Width = 28,
-                    Height = 28,
-                    Padding = new Thickness(4),
-                    CornerRadius = new CornerRadius(9),
+                    Width = 24,
+                    Height = 24,
+                    Padding = new Thickness(3),
+                    CornerRadius = new CornerRadius(7),
                     Background = BrowserMaterialTheme.PillFillBrush,
                     BorderBrush = BrowserMaterialTheme.GlassStrokeBrush,
                     BorderThickness = new Thickness(1),
@@ -2769,14 +2781,48 @@ internal static class BrowserChrome
 
     private static Microsoft.UI.Xaml.Controls.Button CreateSettingsFlyoutActionButton(string label, Action onClick)
     {
+        var content = new Microsoft.UI.Xaml.Controls.Grid
+        {
+            ColumnSpacing = 12,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            }
+        };
+        var title = new TextBlock
+        {
+            Text = label,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
+        };
+        var actionIcon = new TextBlock
+        {
+            Text = BrowserConstants.GlyphGo,
+            FontFamily = BrowserConstants.IconFontFamily,
+            FontSize = 13,
+            Opacity = 0.72,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(title, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(actionIcon, 1);
+        content.Children.Add(title);
+        content.Children.Add(actionIcon);
+
         var button = new Microsoft.UI.Xaml.Controls.Button
         {
-            Content = label,
-            Padding = new Thickness(12, 6, 12, 6),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            CornerRadius = new CornerRadius(10)
+            Content = content,
+            Padding = new Thickness(10, 7, 10, 7),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = BrowserConstants.SubtleFillColorSecondaryBrush,
+            BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8)
         };
 
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, label);
         button.Click += (_, _) => onClick();
         return button;
     }
@@ -2985,19 +3031,20 @@ internal static class BrowserChrome
         bool value,
         Action<bool> onChanged)
     {
-        var panel = new StackPanel
+        var text = new StackPanel
         {
-            Spacing = 4
+            Spacing = 2,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        panel.Children.Add(new TextBlock
+        text.Children.Add(new TextBlock
         {
             Text = title,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap
         });
 
-        panel.Children.Add(new TextBlock
+        text.Children.Add(new TextBlock
         {
             Text = description,
             TextWrapping = TextWrapping.Wrap,
@@ -3007,15 +3054,36 @@ internal static class BrowserChrome
         var toggle = new ToggleSwitch
         {
             IsOn = value,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            OnContent = "On",
-            OffContent = "Off"
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
         toggle.Toggled += (_, _) => onChanged(toggle.IsOn);
-        panel.Children.Add(toggle);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, title);
 
-        return panel;
+        var grid = new Grid
+        {
+            ColumnSpacing = 10,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            }
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(text, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(toggle, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(toggle);
+
+        return new Border
+        {
+            Padding = new Thickness(10, 8, 10, 8),
+            Background = BrowserConstants.SubtleFillColorSecondaryBrush,
+            BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = grid
+        };
     }
 
     private static UIElement CreateSettingsFlyoutCollectionPicker(
@@ -3024,33 +3092,47 @@ internal static class BrowserChrome
         bool isEnabled,
         Action<string, string> onSaveSettingValue)
     {
-        var panel = new StackPanel
+        var text = new StackPanel
         {
-            Spacing = 6
+            Spacing = 2,
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        panel.Children.Add(new TextBlock
+        text.Children.Add(new TextBlock
         {
             Text = "Startup collection",
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
         });
 
         if (collections.Count == 0)
         {
-            panel.Children.Add(new TextBlock
+            text.Children.Add(new TextBlock
             {
                 Text = "Create a collection before choosing one for startup.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.68
             });
 
-            return panel;
+            return new Border
+            {
+                Padding = new Thickness(10, 8, 10, 8),
+                Background = BrowserConstants.SubtleFillColorSecondaryBrush,
+                BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Child = text
+            };
         }
 
         var comboBox = new Microsoft.UI.Xaml.Controls.ComboBox
         {
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            IsEnabled = isEnabled
+            MinWidth = 138,
+            MaxWidth = 160,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsEnabled = isEnabled,
+            PlaceholderText = "Select collection"
         };
 
         var selectedIndex = 0;
@@ -3083,8 +3165,7 @@ internal static class BrowserChrome
             onSaveSettingValue(TabCollectionService.StartupModeSettingKey, TabCollectionService.StartupModeCollection);
         };
 
-        panel.Children.Add(comboBox);
-        panel.Children.Add(new TextBlock
+        text.Children.Add(new TextBlock
         {
             Text = isEnabled
                 ? "This collection will open on the next app launch."
@@ -3093,7 +3174,31 @@ internal static class BrowserChrome
             Opacity = 0.68
         });
 
-        return panel;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(comboBox, "Startup collection");
+
+        var grid = new Grid
+        {
+            ColumnSpacing = 10,
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            }
+        };
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(text, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(comboBox, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(comboBox);
+
+        return new Border
+        {
+            Padding = new Thickness(10, 8, 10, 8),
+            Background = BrowserConstants.SubtleFillColorSecondaryBrush,
+            BorderBrush = BrowserConstants.SurfaceStrokeColorDefaultBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Child = grid
+        };
     }
 
     private static UIElement CreateSettingsFlyoutMaterialThemePicker(
@@ -4418,7 +4523,7 @@ internal static class BrowserChrome
                     VStack(1,
                         TextBlock("Smart Collections")
                             .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
-                        TextBlock("Creates topic collections from local History and Favorites. No AI is used.")
+                        TextBlock("Creates a ranked top-10 snapshot per topic from local History and Favorites. No AI is used.")
                             .FontSize(12)
                             .Opacity(0.68)
                             .TextWrapping(TextWrapping.Wrap))
@@ -4868,6 +4973,7 @@ internal static class BrowserChrome
         var historyOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.HistoryOpenInNewTabSettingKey);
         var favoritesOpenInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.FavoritesOpenInNewTabSettingKey);
         var addressBarOpenDifferentDomainInNewTab = GetBooleanSetting(settingsSnapshot, BrowserConstants.AddressBarOpenDifferentDomainInNewTabSettingKey);
+        var passwordAutosaveEnabled = GetBooleanSetting(settingsSnapshot, PasswordAutosaveService.SettingKey);
         var automaticDailyUpdateChecks = GetBooleanSetting(settingsSnapshot, AppUpdateService.AutomaticDailyChecksSettingKey, true);
 
         return VStack(10,
@@ -4889,6 +4995,22 @@ internal static class BrowserChrome
                     Button("Reset home to default", () => onSaveSettingValue(BrowserConstants.HomeUrlSettingKey, BrowserConstants.HomeUrl))
                         .CornerRadius(999)
                         .Padding(12, 6)
+                )
+            )
+            .Padding(10)
+            .WithBorder(Theme.SurfaceStroke),
+            Border(
+                VStack(10,
+                    TextBlock("Passwords")
+                        .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                    TextBlock("Saved passwords are encrypted in the local WebView2 profile using Windows account protection.")
+                        .TextWrapping(TextWrapping.Wrap)
+                        .Opacity(0.76),
+                    BuildBooleanSettingRow(
+                        "Save passwords",
+                        "When enabled, WebView2 can offer to save or update passwords. Turning this off stops new saves and prompts but does not delete passwords already stored.",
+                        passwordAutosaveEnabled,
+                        nextValue => onSaveSettingValue(PasswordAutosaveService.SettingKey, nextValue ? "true" : "false"))
                 )
             )
             .Padding(10)

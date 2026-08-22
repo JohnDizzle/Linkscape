@@ -36,6 +36,7 @@ internal sealed class BrowserWebViewHostController
     internal Func<Task>? ResetSitePermissionsAsyncCore { get; set; }
     internal Func<Task>? ClearSiteDataAsyncCore { get; set; }
     internal Func<int, Task>? SetZoomPercentAsyncCore { get; set; }
+    internal Action<bool>? SetPasswordAutosaveEnabledCore { get; set; }
 
     public void Navigate(string tabId, string url) => NavigateCore?.Invoke(tabId, url);
 
@@ -87,6 +88,9 @@ internal sealed class BrowserWebViewHostController
 
     public Task SetZoomPercentAsync(int percent) =>
         SetZoomPercentAsyncCore?.Invoke(percent) ?? Task.CompletedTask;
+
+    public void SetPasswordAutosaveEnabled(bool enabled) =>
+        SetPasswordAutosaveEnabledCore?.Invoke(enabled);
 
 }
 
@@ -189,6 +193,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
             SiteControlsService.ResetPermissionsAsync(_activeWebView?.CoreWebView2);
         Props.Controller.ClearSiteDataAsyncCore = ClearActiveSiteDataAsync;
         Props.Controller.SetZoomPercentAsyncCore = SetActiveZoomPercentAsync;
+        Props.Controller.SetPasswordAutosaveEnabledCore = SetPasswordAutosaveEnabled;
 
         return Border(null)
             .Set(host =>
@@ -364,6 +369,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (core is not null)
         {
+            PasswordAutosaveService.Apply(core.Profile);
             await BrowserExtensionService.MaintainExtensionsAsync(core.Profile);
         }
 
@@ -883,6 +889,14 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
         }
 
         return core.Profile.ClearBrowsingDataAsync(dataKinds).AsTask();
+    }
+
+    private void SetPasswordAutosaveEnabled(bool enabled)
+    {
+        foreach (var webView in _webViewsByTabId.Values)
+        {
+            PasswordAutosaveService.Apply(webView.CoreWebView2?.Profile, enabled);
+        }
     }
 
     private async Task SetActiveSitePermissionAsync(
