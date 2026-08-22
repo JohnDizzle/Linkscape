@@ -52,6 +52,32 @@ public sealed class HistoryPersistenceServiceTests
     }
 
     [TestMethod]
+    public void Mutations_RaiseHistoryChanged_AfterCommittedDataChanges()
+    {
+        HistoryPersistenceService.EnsureDatabase();
+        var changeCount = 0;
+
+        void OnHistoryChanged() => changeCount++;
+
+        HistoryPersistenceService.HistoryChanged += OnHistoryChanged;
+        try
+        {
+            HistoryPersistenceService.RecordVisit("about:blank", "Ignored");
+            Assert.AreEqual(0, changeCount);
+
+            HistoryPersistenceService.RecordVisit("https://example.com", "Example");
+            HistoryPersistenceService.RecordVisit("https://example.com", "Example refreshed");
+            HistoryPersistenceService.DeleteUrl("https://example.com");
+
+            Assert.AreEqual(3, changeCount);
+        }
+        finally
+        {
+            HistoryPersistenceService.HistoryChanged -= OnHistoryChanged;
+        }
+    }
+
+    [TestMethod]
     public void GetRecentHistory_AndSearchHistory_ReturnExpectedItems()
     {
         HistoryPersistenceService.EnsureDatabase();

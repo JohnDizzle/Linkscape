@@ -9,11 +9,14 @@ internal sealed class BrowserTitleBarController
 {
     internal Action<string, bool>? SetAddressTextCore { get; set; }
     internal Action? OpenCommandPaletteCore { get; set; }
+    internal Action? RefreshCommandPaletteCore { get; set; }
 
     public void SetAddressText(string value, bool preserveUserEdit = false) =>
         SetAddressTextCore?.Invoke(value, preserveUserEdit);
 
     public void OpenCommandPalette() => OpenCommandPaletteCore?.Invoke();
+
+    public void RefreshCommandPalette() => RefreshCommandPaletteCore?.Invoke();
 }
 
 internal sealed record BrowserTitleBarProps(
@@ -94,6 +97,7 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
 
         Props.Controller.SetAddressTextCore = SetAddressBarText;
         Props.Controller.OpenCommandPaletteCore = OpenCommandPalette;
+        Props.Controller.RefreshCommandPaletteCore = RefreshCommandPalette;
 
         return BrowserChrome.BuildTitleBar(
             Props.SelectedTab,
@@ -317,6 +321,19 @@ internal sealed class BrowserTitleBar : Component<BrowserTitleBarProps>
     {
         _paletteFilterText = value;
         ScheduleLocalSearch(value);
+    }
+
+    private void RefreshCommandPalette()
+    {
+        if (_searchPopup?.IsOpen != true)
+        {
+            return;
+        }
+
+        var query = _isCommandPaletteRequested
+            ? _paletteFilterText
+            : _addressBarText;
+        ScheduleLocalSearch(query, preserveLimit: true);
     }
 
     private void SubmitCommandPaletteFilter(string value)

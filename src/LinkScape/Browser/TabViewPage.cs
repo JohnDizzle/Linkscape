@@ -68,6 +68,8 @@ class TabViewPage : Component
     private CancellationTokenSource? _historyFilterCts;
     private CancellationTokenSource? _favoritesFilterCts;
     private bool _browserNoticeListenerRegistered;
+    private bool _historyDataListenerRegistered;
+    private Action? _refreshHistoryDataState;
     private bool _fullScreenPresentationMessengerRegistered;
     private Action<bool>? _setFullScreenPresentationState;
     private static IMessenger Messenger => LinkScapeServiceProvider.GetRequiredService<IMessenger>();
@@ -1380,6 +1382,13 @@ class TabViewPage : Component
             mostVisitedHistory.Set(LoadMostVisitedHistoryItems());
         }
 
+        RegisterHistoryDataListener(() =>
+            EnqueueUiTransition(() =>
+            {
+                SetHistoryStateFromDatabase();
+                _browserTitleBarController.RefreshCommandPalette();
+            }));
+
         void RefreshHistoryState(string? filterOverride = null, string busyText = "Loading history…")
         {
             var version = BeginCommandCenterWork(busyText);
@@ -1477,18 +1486,6 @@ class TabViewPage : Component
                 {
                 }
             });
-        }
-
-        void RefreshVisibleHistoryAfterNavigation()
-        {
-            if (!string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.History), StringComparison.Ordinal) &&
-                !string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.Recent), StringComparison.Ordinal) &&
-                !string.Equals(activeCommandCenterSection, nameof(CommandCenterSection.MostVisited), StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _ = Task.Run(() => SetHistoryStateFromDatabase());
         }
 
         void LoadMoreFavorites()
@@ -2866,7 +2863,6 @@ class TabViewPage : Component
                     nextAddress,
                     preserveUserEdit: true),
                 SetLoadingIfNeeded,
-                RefreshVisibleHistoryAfterNavigation,
                 SetInstallableWebAppFromCore,
                 CloseTab
             ));
@@ -3171,6 +3167,24 @@ class TabViewPage : Component
         {
             setBrowserNotice(BrowserNoticeService.CurrentNotice);
         }
+    }
+
+    private void RegisterHistoryDataListener(Action refreshHistoryDataState)
+    {
+        _refreshHistoryDataState = refreshHistoryDataState;
+
+        if (_historyDataListenerRegistered)
+        {
+            return;
+        }
+
+        _historyDataListenerRegistered = true;
+        HistoryPersistenceService.HistoryChanged += OnHistoryChanged;
+    }
+
+    private void OnHistoryChanged()
+    {
+        _refreshHistoryDataState?.Invoke();
     }
 
     private static Element BuildBrowserNoticeBanner(BrowserNotice? browserNotice)

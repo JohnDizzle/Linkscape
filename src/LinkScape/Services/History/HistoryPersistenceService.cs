@@ -23,6 +23,8 @@ public static class HistoryPersistenceService
 {
     private static readonly string DbConnectionString = LinkScapeCachePaths.GetDatabaseConnectionString("history.db");
 
+    public static event Action? HistoryChanged;
+
     public static void EnsureDatabase()
     {
         using var conn = new SqliteConnection(DbConnectionString);
@@ -106,6 +108,7 @@ public static class HistoryPersistenceService
         cmd.Parameters.AddWithValue("$now", now.ToString("O"));
 
         cmd.ExecuteNonQuery();
+        HistoryChanged?.Invoke();
     }
 
     public static IReadOnlyList<HistoryItem> GetRecentHistory(int limit = 100)
@@ -346,6 +349,7 @@ public static class HistoryPersistenceService
         delete.ExecuteNonQuery();
 
         transaction.Commit();
+        HistoryChanged?.Invoke();
         return new HistoryArchiveSummary(archivePeriod, startedAt, endedAt, archivedCount);
     }
 
@@ -411,6 +415,7 @@ public static class HistoryPersistenceService
         }
 
         transaction.Commit();
+        HistoryChanged?.Invoke();
     }
 
     public static void DeleteUrl(string url)
@@ -428,7 +433,10 @@ public static class HistoryPersistenceService
         cmd.CommandText = "DELETE FROM HistoryItems WHERE Url = $url";
         cmd.Parameters.AddWithValue("$url", normalizedUrl);
 
-        cmd.ExecuteNonQuery();
+        if (cmd.ExecuteNonQuery() > 0)
+        {
+            HistoryChanged?.Invoke();
+        }
     }
 
     public static void ClearHistory()
@@ -439,7 +447,10 @@ public static class HistoryPersistenceService
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "DELETE FROM HistoryItems";
 
-        cmd.ExecuteNonQuery();
+        if (cmd.ExecuteNonQuery() > 0)
+        {
+            HistoryChanged?.Invoke();
+        }
     }
 
     public static bool ContainsUrl(string url)

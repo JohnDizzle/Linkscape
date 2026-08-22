@@ -104,7 +104,6 @@ internal sealed record BrowserWebViewHostProps(
     Action<bool, bool> SetNavAvailability,
     Action<string> SetAddressFromCore,
     Action<bool> SetLoadingStateFromCore,
-    Action RefreshHistoryFromCore,
     Action<string, InstallableWebApp?> SetInstallableWebAppFromCore,
     Action<string> CloseInternalTab);
 
@@ -382,7 +381,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
 
         if (core is not null && _hookedWebViewTabs.Add(tab.Id))
         {
-            void SyncTabFromCore(bool completeLoading)
+            void SyncTabFromCore(bool completeLoading, bool recordVisit = false)
             {
                 if (_closingWebViewTabs.Contains(tab.Id) || !_webViewsByTabId.ContainsKey(tab.Id))
                 {
@@ -427,7 +426,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                         Url = currentUrl,
                         Title = nextTitle,
                         DateTime = DateTime.Now,
-                        VisitedCount = urlChanged
+                        VisitedCount = recordVisit
                             ? current.VisitedCount + 1
                             : current.VisitedCount,
                         ScrollX = urlChanged ? 0 : current.ScrollX,
@@ -435,7 +434,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     };
                 });
 
-                if (urlChanged && !IsLinkerInternalUrl(currentUrl))
+                if (recordVisit && !IsLinkerInternalUrl(currentUrl))
                 {
                     try
                     {
@@ -444,7 +443,7 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                             tab.Id,
                             incrementVisitCount: true,
                             newUrl: currentUrl,
-                            urlChanged: true);
+                            urlChanged: urlChanged);
                     }
                     catch
                     {
@@ -458,7 +457,6 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     {
                     }
 
-                    Props.RefreshHistoryFromCore();
                 }
 
                 if (string.Equals(_activeWebViewTabId, tab.Id, StringComparison.Ordinal))
@@ -532,7 +530,9 @@ internal sealed class BrowserWebViewHost : Component<BrowserWebViewHostProps>
                     BrowserNoticeService.Show("No network connection. Check your internet access and try again.");
                 }
 
-                SyncTabFromCore(completeLoading: true);
+                SyncTabFromCore(
+                    completeLoading: true,
+                    recordVisit: args.IsSuccess);
 
                 var currentTab = GetTabSnapshot(tab.Id, tab);
                 if (_pendingInitialScrollRestoreTabs.Remove(tab.Id))
