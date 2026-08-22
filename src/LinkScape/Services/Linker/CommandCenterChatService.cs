@@ -164,9 +164,9 @@ public static class CommandCenterChatService
             case "collections":
                 builder.AppendLine("## Collections");
                 builder.AppendLine();
-                builder.AppendLine("Linker can list collections, show the pages in one, add or remove the current page, and use a collection as a startup set.");
+                builder.AppendLine("Linker can list collections, create Smart Collections from history and favorites, show the pages in one, add or remove the current page, and use a collection as a startup set.");
                 builder.AppendLine();
-                builder.AppendLine("Try: `show my collections` or `add the current page to Personal`.");
+                builder.AppendLine("Try: `create smart collections`, `show my collections`, or `add the current page to Personal`.");
                 break;
 
             default:
@@ -175,7 +175,7 @@ public static class CommandCenterChatService
                 builder.AppendLine("- **Navigate and act** — open addresses, search, go back or forward, reload, and go home");
                 builder.AppendLine("- **Manage tabs** — list, find, activate, create, close, and restore tabs");
                 builder.AppendLine("- **Explore history** — review recent activity, search visits, see most-visited sites, and group results");
-                builder.AppendLine("- **Use collections** — list collections, inspect them, and add or remove the current page");
+                builder.AppendLine("- **Use collections** — create Smart Collections, list collections, inspect them, and add or remove the current page");
                 builder.AppendLine("- **Work with favorites** — summarize or search saved favorites");
                 builder.AppendLine();
                 builder.AppendLine("Choose a topic from **Status** for examples. **Technical status** shows the underlying local tool diagnostics.");
@@ -502,7 +502,7 @@ public static class CommandCenterChatService
         builder.AppendLine("- **Browser history**: today, recent activity, most visited sites, active pages");
         builder.AppendLine("- **Favorites**: summarize saved favorites or search bookmarks");
         builder.AppendLine("- **Tabs**: summarize the saved tab session and selected/restored tabs");
-        builder.AppendLine("- **Collections**: list/show collections, add the current page, remove the current page, or choose a startup collection");
+        builder.AppendLine("- **Collections**: create Smart Collections, list/show collections, add the current page, remove the current page, or choose a startup collection");
         builder.AppendLine("- **Local MCP tools**: type `mcp status` or `tools` to see the current tool catalog");
         builder.AppendLine();
         builder.AppendLine("### Add a provider key for full chat");

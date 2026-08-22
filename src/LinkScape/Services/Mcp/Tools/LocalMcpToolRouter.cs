@@ -68,6 +68,7 @@ public static class LocalMcpToolRouter
             BrowserDataToolService.CollectionsRemoveItemToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.CollectionsRenameToolName => InvokeBrowserTool(toolName, arguments),
             BrowserDataToolService.CollectionsSetStartupToolName => InvokeBrowserTool(toolName, arguments),
+            BrowserDataToolService.CollectionsSmartToolName => InvokeBrowserTool(toolName, arguments),
             _ => new ChatToolResult(toolName, false, $"Local MCP tool '{toolName}' is not registered.")
         };
     }

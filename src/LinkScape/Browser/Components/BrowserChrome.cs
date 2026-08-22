@@ -1523,6 +1523,8 @@ internal static class BrowserChrome
     Action onLoadMoreFavorites,
     Action<string> onCollectionNameChanged,
     Action onCreateCollection,
+    Action onCreateSmartCollections,
+    Action<string?> onRefreshCollections,
     Action onDeleteCollection,
     Action onAddCurrentTabToCollection,
     Action<string, string, string> onAddUrlToCollection,
@@ -1657,6 +1659,8 @@ internal static class BrowserChrome
                     onLoadMoreFavorites,
                     onCollectionNameChanged,
                     onCreateCollection,
+                    onCreateSmartCollections,
+                    onRefreshCollections,
                     onDeleteCollection,
                     onAddCurrentTabToCollection,
                     onAddUrlToCollection,
@@ -1758,6 +1762,8 @@ internal static class BrowserChrome
                     onLoadMoreFavorites,
                     onCollectionNameChanged,
                     onCreateCollection,
+                    onCreateSmartCollections,
+                    onRefreshCollections,
                     onDeleteCollection,
                     onAddCurrentTabToCollection,
                     onAddUrlToCollection,
@@ -2181,6 +2187,8 @@ internal static class BrowserChrome
         Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onCreateSmartCollections,
+        Action<string?> onRefreshCollections,
         Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action<string, string, string> onAddUrlToCollection,
@@ -2237,6 +2245,8 @@ internal static class BrowserChrome
             onLoadMoreFavorites,
             onCollectionNameChanged,
             onCreateCollection,
+            onCreateSmartCollections,
+            onRefreshCollections,
             onDeleteCollection,
             onAddCurrentTabToCollection,
             onAddUrlToCollection,
@@ -2309,6 +2319,8 @@ internal static class BrowserChrome
         Action onLoadMoreFavorites,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onCreateSmartCollections,
+        Action<string?> onRefreshCollections,
         Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action<string, string, string> onAddUrlToCollection,
@@ -2348,7 +2360,7 @@ internal static class BrowserChrome
             "Recent" => BuildRecentBladeContent(settingsSnapshot, recentHistoryItems, historyLimit, isCommandCenterBusy, tabCollections, collectionMembership, onLoadMoreHistory, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "MostVisited" => BuildMostVisitedBladeContent(settingsSnapshot, mostVisitedItems, isCommandCenterBusy, tabCollections, collectionMembership, onOpenHistoryItem, onOpenHistoryItemInNewTab, onDeleteHistoryItem, onAddUrlToCollection, isCommandCenterExpanded),
             "Favorites" => BuildFavoritesBladeContent(settingsSnapshot, favoriteItems, favoritesFilter, favoritesLimit, favoritesImportStatus, favoritesImportBrowserProfiles, isCommandCenterBusy, tabCollections, collectionMembership, onFavoritesFilterChanged, onLoadMoreFavorites, onImportFavorites, onImportBrowserFavorites, onImportBrowserFavoritesProfile, onDeleteAllFavorites, onOpenFavoriteItem, onOpenFavoriteItemInNewTab, onDeleteFavoriteItem, onAddUrlToCollection, isCommandCenterExpanded),
-            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, activeTabs, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onDeleteCollection, onAddCurrentTabToCollection, onAddUrlToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
+            "Collections" => BuildCollectionsBladeContent(settingsSnapshot, activeTabs, tabCollections, collectionItems, collectionName, collectionStatus, onCollectionNameChanged, onCreateCollection, onCreateSmartCollections, onRefreshCollections, onDeleteCollection, onAddCurrentTabToCollection, onAddUrlToCollection, onSetStartupCollection, onOpenCollectionItem, onOpenCollectionItemInNewTab, onRemoveCollectionItem, onMoveCollectionItem, isCommandCenterExpanded),
             "Backdrop" => BuildBackdropBladeContent(settingsSnapshot, onSaveSettingValue),
             _ => Border(null)
         };
@@ -3988,6 +4000,8 @@ internal static class BrowserChrome
         string collectionStatus,
         Action<string> onCollectionNameChanged,
         Action onCreateCollection,
+        Action onCreateSmartCollections,
+        Action<string?> onRefreshCollections,
         Action onDeleteCollection,
         Action onAddCurrentTabToCollection,
         Action<string, string, string> onAddUrlToCollection,
@@ -4042,7 +4056,7 @@ internal static class BrowserChrome
                 ? collections.FirstOrDefault(candidate => !string.Equals(candidate.Id, collection.Id, StringComparison.Ordinal))?.Name ?? "Personal"
                 : collectionName;
             BrowserNoticeService.Show($"Removed collection '{collection.Name}'.");
-            onCollectionNameChanged(nextCollectionName);
+            onRefreshCollections(nextCollectionName);
         }
 
         var collectionButtons = collections
@@ -4396,9 +4410,31 @@ internal static class BrowserChrome
             .CornerRadius(8)
             .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
             .HAlign(HorizontalAlignment.Stretch);
+        var smartCollectionsPanel = VStack(10,
+                HStack(8,
+                    TextBlock(BrowserConstants.GlyphCollections)
+                        .FontFamily(BrowserConstants.IconFontFamily)
+                        .FontSize(16),
+                    VStack(1,
+                        TextBlock("Smart Collections")
+                            .Set(textBlock => textBlock.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold),
+                        TextBlock("Creates topic collections from local History and Favorites. No AI is used.")
+                            .FontSize(12)
+                            .Opacity(0.68)
+                            .TextWrapping(TextWrapping.Wrap))
+                    .Flex(grow: 1, basis: 0)),
+                isCommandCenterExpanded
+                    ? ShortcutButton(BrowserConstants.GlyphRefresh, "Create / refresh", onCreateSmartCollections)
+                        .HAlign(HorizontalAlignment.Stretch)
+                    : IconButton(BrowserConstants.GlyphRefresh, onCreateSmartCollections, "Create or refresh Smart Collections"))
+            .Padding(14)
+            .CornerRadius(8)
+            .Background(BrowserConstants.SubtleFillColorSecondaryBrush)
+            .HAlign(HorizontalAlignment.Stretch);
         var collectionTools = Expander(
                 "Collection tools",
                 VStack(20,
+                    smartCollectionsPanel,
                     collectionActionsPanel,
                     shortcutsPanel,
                     addUrlPanel)

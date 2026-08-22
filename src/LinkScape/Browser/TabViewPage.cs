@@ -1495,16 +1495,22 @@ class TabViewPage : Component
         void SetCollectionStateFromDatabase(string? collectionNameOverride = null)
         {
             var collections = TabCollectionService.GetCollections().ToArray();
-            var effectiveName = collectionNameOverride ?? collectionName.Value;
+            var requestedName = collectionNameOverride ?? collectionName.Value;
+            var effectiveCollection = collections.FirstOrDefault(collection =>
+                string.Equals(collection.Name, requestedName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(collection.Id, requestedName, StringComparison.Ordinal));
 
-            if (string.IsNullOrWhiteSpace(effectiveName))
+            if (effectiveCollection is null)
             {
-                effectiveName = collections.FirstOrDefault()?.Name ?? "Personal";
+                effectiveCollection = collections.FirstOrDefault();
             }
 
+            var effectiveName = effectiveCollection?.Name ?? "Personal";
             tabCollections.Set(collections);
             collectionName.Set(effectiveName);
-            collectionItems.Set(TabCollectionService.GetItems(effectiveName).ToArray());
+            collectionItems.Set(effectiveCollection is null
+                ? []
+                : TabCollectionService.GetItems(effectiveCollection.Id).ToArray());
             collectionMembership.Set(BuildCollectionMembership(collections));
         }
 
@@ -1550,6 +1556,41 @@ class TabViewPage : Component
             {
                 collectionStatus.Set(ex.Message);
             }
+        }
+
+        void CreateSmartCollections()
+        {
+            if (isCommandCenterBusy.Value)
+            {
+                return;
+            }
+
+            var version = BeginCommandCenterWork("Creating Smart Collections...");
+            collectionStatus.Set("Creating Smart Collections from History and Favorites...");
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var summary = SmartCollectionService.CreateOrRefresh();
+                    var firstCollection = summary.CollectionItemCounts
+                        .Where(item => item.Value > 0)
+                        .Select(item => item.Key)
+                        .FirstOrDefault();
+                    collectionStatus.Set(
+                        $"Smart Collections refreshed: {summary.ItemCount} matched items from History and Favorites.");
+                    _ = AppJumpListService.RefreshAsync();
+                    SetCollectionStateFromDatabase(firstCollection);
+                }
+                catch (Exception ex)
+                {
+                    collectionStatus.Set($"Smart Collections failed: {ex.Message}");
+                }
+                finally
+                {
+                    EndCommandCenterWork(version);
+                }
+            });
         }
 
         async void DeleteSelectedCollection()
@@ -2054,12 +2095,20 @@ class TabViewPage : Component
 
             try
             {
-                if (TabCollectionService.RemoveItem(collectionName.Value, url))
+                var currentItem = collectionItems.Value.FirstOrDefault(item =>
+                    string.Equals(item.Url, url, StringComparison.OrdinalIgnoreCase));
+                var targetCollectionId = currentItem?.CollectionId ?? collectionName.Value;
+
+                if (TabCollectionService.RemoveItem(targetCollectionId, url))
                 {
                     _ = AppJumpListService.RefreshAsync();
                     collectionStatus.Set("Removed item from collection.");
-                    RefreshCollectionState(collectionName.Value);
+                    RefreshCollectionState(TabCollectionService.GetCollection(targetCollectionId)?.Name);
+                    return;
                 }
+
+                collectionStatus.Set("That item was already removed.");
+                RefreshCollectionState(collectionName.Value);
             }
             catch (Exception ex)
             {
@@ -2758,6 +2807,8 @@ class TabViewPage : Component
                 LoadMoreFavorites,
                 ApplyCollectionName,
                 CreateCollection,
+                CreateSmartCollections,
+                nextCollectionName => RefreshCollectionState(nextCollectionName),
                 DeleteSelectedCollection,
                 AddCurrentTabToCollection,
                 AddUrlToCollection,

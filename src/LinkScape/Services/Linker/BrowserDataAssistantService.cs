@@ -439,6 +439,34 @@ public static class BrowserDataAssistantService
             """.Trim());
     }
 
+    public static BrowserDataAssistantResult BuildSmartCollectionsReport(string prompt)
+    {
+        var rebuild = prompt.Contains("rebuild", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("reset", StringComparison.OrdinalIgnoreCase) ||
+            prompt.Contains("replace", StringComparison.OrdinalIgnoreCase);
+        var summary = SmartCollectionService.CreateOrRefresh(rebuild);
+        var markdown = new StringBuilder();
+        markdown.AppendLine(rebuild
+            ? "## Smart Collections rebuilt"
+            : "## Smart Collections refreshed");
+        markdown.AppendLine();
+        markdown.AppendLine("Sources: **History + Favorites**");
+        markdown.AppendLine($"Collections checked: **{summary.CollectionCount}**");
+        markdown.AppendLine($"Items matched this run: **{summary.ItemCount}**");
+        markdown.AppendLine();
+
+        foreach (var item in summary.CollectionItemCounts)
+        {
+            markdown.AppendLine($"- **{EscapeMarkdown(item.Key)}** · {item.Value} item{(item.Value == 1 ? "" : "s")}");
+        }
+
+        markdown.AppendLine();
+        markdown.AppendLine(rebuild
+            ? "Rebuild removed the generated Smart collections first, then recreated them."
+            : "Refresh adds or updates matching pages without removing existing Smart collection items.");
+        return new BrowserDataAssistantResult(markdown.ToString().TrimEnd());
+    }
+
     public static BrowserDataAssistantResult BuildFavoritesSearchReport(string query)
     {
         var favorites = FavoritesService.SearchFavorites(query).Take(12).ToArray();

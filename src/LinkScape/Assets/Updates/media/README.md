@@ -5,6 +5,15 @@ Keep each release's media in this folder so older entries remain accurate.
 
 ## Release map
 
+### 1.0.20
+
+- `SmartCollectionsFilter.png` - Search and Filter showing generated Smart Collections in the Collections source
+- `SmartCollectionItems.png` - generated Smart Dev and Docs collection items
+- `CollectionShortcutCreate.png` - cropped Desktop launchers panel before creating a Collection shortcut
+- `CollectionShortcutReady.png` - cropped Desktop shortcut ready state with LinkScape confirmation
+
+The timeline entry covers the post-1.0.19 Smart Collections work, Collection Desktop shortcuts, CLI/BAT script path, Linker/MCP command support, and credential-vault hardening.
+
 ### 1.0.19
 
 - `CompactCommandRail.png` - the persistent command group shown without surrounding page content

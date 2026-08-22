@@ -21,6 +21,7 @@ public static class BrowserDataToolService
     public const string CollectionsRemoveItemToolName = "browser.collections.removeItem";
     public const string CollectionsRenameToolName = "browser.collections.rename";
     public const string CollectionsSetStartupToolName = "browser.collections.setStartup";
+    public const string CollectionsSmartToolName = "browser.collections.smart";
 
     public static IReadOnlyList<ChatToolStatus> GetTools() =>
     [
@@ -40,7 +41,8 @@ public static class BrowserDataToolService
         new(CollectionsAddItemToolName, true, "Adds a URL or the active page to a tab collection."),
         new(CollectionsRemoveItemToolName, true, "Removes a URL or the active page from a tab collection."),
         new(CollectionsRenameToolName, true, "Renames a tab collection."),
-        new(CollectionsSetStartupToolName, true, "Sets the collection LinkScape should open on startup.")
+        new(CollectionsSetStartupToolName, true, "Sets the collection LinkScape should open on startup."),
+        new(CollectionsSmartToolName, true, "Creates or refreshes Smart Collections from local history and favorites.")
     ];
 
     public static BrowserDataAssistantResult Invoke(
@@ -75,6 +77,7 @@ public static class BrowserDataToolService
                 GetArgument(arguments, "collection", "currentName", "prompt"),
                 GetArgument(arguments, "nextName", "newName")),
             CollectionsSetStartupToolName => BrowserDataAssistantService.BuildSetStartupCollectionReport(GetArgument(arguments, "collection", "query", "prompt")),
+            CollectionsSmartToolName => BrowserDataAssistantService.BuildSmartCollectionsReport(GetArgument(arguments, "mode", "query", "prompt")),
             _ => new BrowserDataAssistantResult($"## Unknown browser data tool\nTool `{toolName}` is not registered.")
         };
     }
@@ -102,6 +105,12 @@ public static class BrowserDataToolService
 
         if (IsCollectionPrompt(prompt))
         {
+            if (IsSmartCollectionPrompt(prompt))
+            {
+                toolName = CollectionsSmartToolName;
+                return true;
+            }
+
             if (prompt.Contains("remove", StringComparison.OrdinalIgnoreCase) ||
                 prompt.Contains("delete", StringComparison.OrdinalIgnoreCase) ||
                 prompt.Contains("take out", StringComparison.OrdinalIgnoreCase))
@@ -274,6 +283,13 @@ public static class BrowserDataToolService
     private static bool IsCollectionPrompt(string prompt) =>
         prompt.Contains("collection", StringComparison.OrdinalIgnoreCase) ||
         prompt.Contains("collections", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSmartCollectionPrompt(string prompt) =>
+        prompt.Contains("smart collection", StringComparison.OrdinalIgnoreCase) ||
+        prompt.Contains("smart collections", StringComparison.OrdinalIgnoreCase) ||
+        (prompt.Contains("history", StringComparison.OrdinalIgnoreCase) &&
+            prompt.Contains("favorites", StringComparison.OrdinalIgnoreCase) &&
+            prompt.Contains("collection", StringComparison.OrdinalIgnoreCase));
 
     private static string GetArgument(IReadOnlyDictionary<string, string> arguments, params string[] names)
     {

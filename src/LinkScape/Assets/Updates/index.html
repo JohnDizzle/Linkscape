@@ -7,6 +7,10 @@
     <title>What's new in LinkScape</title>
     <link rel="icon" type="image/png" href="media/logo.png">
     <link rel="preload" href="media/logo.png" as="image">
+    <link rel="preload" href="media/SmartCollectionsFilter.png" as="image">
+    <link rel="preload" href="media/SmartCollectionItems.png" as="image">
+    <link rel="preload" href="media/CollectionShortcutCreate.png" as="image">
+    <link rel="preload" href="media/CollectionShortcutReady.png" as="image">
     <link rel="preload" href="media/CompactCommandRail.png" as="image">
     <link rel="preload" href="media/SearchFilterAll.png" as="image">
     <link rel="preload" href="media/Collections.png" as="image">
@@ -38,12 +42,65 @@
         </section>
 
         <section class="release-timeline" aria-label="LinkScape release history">
-            <article class="timeline-release" id="release-1-0-19" data-version="1.0.19" data-release-state="preview">
+            <article class="timeline-release" id="release-1-0-20" data-version="1.0.20" data-release-state="preview">
                 <div class="timeline-marker" aria-hidden="true"></div>
                 <div class="guide-section release-content">
                     <header class="release-heading">
                         <div>
                             <p class="eyebrow" data-release-label>IN DEVELOPMENT</p>
+                            <h2>Smart Collections and faster launches</h2>
+                        </div>
+                        <span class="release-version">1.0.20</span>
+                    </header>
+
+                    <ul class="change-list">
+                        <li>Create Smart Collections from local History and Favorites in the Collections UI, from Linker, through local MCP, or with the included PowerShell/BAT script.</li>
+                        <li>Use the same Smart Collections algorithm everywhere: LinkScape merges local History and Favorites by URL, filters sign-in/auth pages, matches topic patterns, and ranks Favorites and frequently visited pages higher.</li>
+                        <li>Create or repair Desktop shortcuts for Collections, using the LinkScape icon and a collection activation URL that appends the saved pages to the current session.</li>
+                        <li>Switch to a Collection directly from the Collection selector context menu, and remove Collections with confirmation that also cleans up their optional Desktop launcher.</li>
+                        <li>Add active tabs to Collections from the management blade and keep Collection selection stable when items are added, removed, or refreshed.</li>
+                        <li>Improve Linker credential checks so missing or unavailable Windows vault entries fail quietly instead of surfacing COM errors.</li>
+                    </ul>
+
+                    <aside class="contributor-note">
+                        <strong>CLI and automation</strong>
+                        <span>The new Smart Collections script writes the same generated topic collections used by the app, supports custom history limits and collection prefixes, and includes a BAT launcher for systems that need a double-click path into PowerShell 7.</span>
+                    </aside>
+
+                    <section class="media-card feature-slideshow release-media-grid" data-slideshow aria-label="Smart Collections and shortcuts preview">
+                        <div class="slideshow-viewport">
+                            <figure class="slideshow-slide" data-slide>
+                                <img src="media/SmartCollectionsFilter.png" alt="LinkScape Search and Filter palette showing Smart Collections results">
+                                <figcaption>Search and Filter can surface generated Smart Collections beside tabs, History, Favorites, and other browser data.</figcaption>
+                            </figure>
+                            <figure class="slideshow-slide" data-slide hidden>
+                                <img src="media/SmartCollectionItems.png" alt="LinkScape Collections blade showing generated Smart Dev and Docs collection items">
+                                <figcaption>Generated topic collections keep their matched pages visible, editable, and ready to reopen from the browser.</figcaption>
+                            </figure>
+                            <figure class="slideshow-slide" data-slide hidden>
+                                <img src="media/CollectionShortcutCreate.png" alt="LinkScape Desktop launchers panel showing the Create shortcut action">
+                                <figcaption>Any Collection with saved pages can create a Desktop launcher from the Collections blade.</figcaption>
+                            </figure>
+                            <figure class="slideshow-slide" data-slide hidden>
+                                <img src="media/CollectionShortcutReady.png" alt="Windows Desktop and LinkScape showing a ready Collection shortcut">
+                                <figcaption>Created launchers use the LinkScape icon, appear on the Desktop, and can be repaired or removed from the same panel.</figcaption>
+                            </figure>
+                        </div>
+                        <div class="slideshow-controls">
+                            <button type="button" data-slide-previous aria-label="Show previous screenshot">← Previous</button>
+                            <span class="slideshow-status" data-slide-status aria-live="polite">1 of 4</span>
+                            <button type="button" data-slide-next aria-label="Show next screenshot">Next →</button>
+                        </div>
+                    </section>
+                </div>
+            </article>
+
+            <article class="timeline-release" id="release-1-0-19" data-version="1.0.19">
+                <div class="timeline-marker" aria-hidden="true"></div>
+                <div class="guide-section release-content">
+                    <header class="release-heading">
+                        <div>
+                            <p class="eyebrow">AUGUST 20, 2026</p>
                             <h2>Your browser data, one command away</h2>
                         </div>
                         <span class="release-version">1.0.19</span>
